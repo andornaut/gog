@@ -10,7 +10,8 @@ import (
 	"github.com/andornaut/gog/repository"
 )
 
-// Dir recursively creates symbolic links from a repository directory's files the root filesystem
+// Dir recursively creates symbolic links from a repository directory's files
+// to the root filesystem
 func Dir(repoPath, intPath string) error {
 	return filepath.Walk(intPath, func(p string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -43,9 +44,9 @@ func Dir(repoPath, intPath string) error {
 	})
 }
 
-// File creates a symbolic link from a repository file to the root filesystem
-// Declares an `error` return type to match the signature of `Dir`, but always
-// returns nil
+// File creates a symbolic link from a repository file to the root filesystem.
+// File declares an `error` return type to match the signature of `Dir`, but
+// always returns nil.
 func File(repoPath, intPath string) error {
 	if intPath == path.Join(repoPath, "LICENSE") || intPath == path.Join(repoPath, "README.md") {
 		return nil

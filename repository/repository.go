@@ -67,7 +67,8 @@ func GetDefault() (string, error) {
 	return p, nil
 }
 
-// RootPath returns an absolute filesystem path for the given repository name or a default path
+// RootPath returns an absolute filesystem path which corresponds to the given
+// repository name or the default repository's path if the given name is empty
 func RootPath(name string) (string, error) {
 	if name == "" {
 		return GetDefault()

@@ -22,7 +22,7 @@ func UnlinkDir(repoPath, intPath string) error {
 	})
 }
 
-// UnlinkFile replaces a symbolic link withthe file that it linked to
+// UnlinkFile replaces a symbolic link with the file that it linked to
 func UnlinkFile(repoPath, intPath string) error {
 	extPath := repository.ToExternalPath(repoPath, intPath)
 
