@@ -116,5 +116,18 @@ export GOG_DEFAULT_REPOSITORY_PATH="${XDG_DATA_HOME}/gog/dotfiles"
 ## Developing
 
 ```bash
-go get -u github.com/golang/dep/cmd/dep
+# Install `dep`, ensure that `./vendor/` is up to date, and build `./gog`
+make
+
+# Build and install to /usr/local/bin/gog
+make install
+
+# Delete /usr/local/bin/gog
+make uninstall
+
+# Run tests
+make test
+
+# Build release binaries in `./dist/`
+make release
 ```
