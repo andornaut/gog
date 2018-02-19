@@ -80,15 +80,15 @@ OPTIONS:
    --repository NAME, -r NAME  NAME of the target repository
 ```
 
-## Command notes
+### Notes
 
-### `gog add`
+#### `gog add`
 
 If any of the path arguments to `gog add` begin with the current user's home
 directory, then this prefix is replaced with an escaped `\$HOME` path
 component, and then the `$HOME` variable is expanded when `gog apply` is run.
 
-### `gog apply`
+#### `gog apply`
 
 `gog apply` does not support being run on multiple repositories at the same
 time, because if multiple repositories link to the same files, then the order
