@@ -11,7 +11,7 @@ func printError(p string, err interface{}) {
 }
 
 func printLinked(intPath string, extPath string) {
-	fmt.Printf("%s -> %s\n", escapeHomeVar(intPath), extPath)
+	fmt.Printf("%s -> %s\n", extPath, escapeHomeVar(intPath))
 }
 
 func printUnLinked(intPath string, extPath string) {
