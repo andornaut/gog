@@ -1,22 +1,36 @@
+# https://www.gnu.org/prep/standards/html_node/Directory-Variables.html#Directory-Variables
 PREFIX    ?= /usr/local
 BINPREFIX ?= $(PREFIX)/bin
-TARGET = gog
+DISTDIR := dist
+TARGET := gog
+PKGS := $(shell go list ./... | grep -v /vendor)
+PLATFORMS := darwin freebsd linux
 
-.PHONY: all clean install uninstall
+.PHONY: $(PLATFORMS) $(TARGET) all clean deps install release test uninstall
 
-gog: clean
-	go get
-	go build
+all: $(TARGET)
 
-all: 
-	@echo "Run make install"
+$(PLATFORMS):
+	GOARCH=amd64 GOOS=$@ go build -o "$(DISTDIR)/$@-amd64/$(TARGET)"
+
+$(TARGET): deps
+	go build -o $@
 
 clean:
-	    rm -f $(TARGET)
+	go clean
+	rm -rf $(DISTDIR)
 
-install: gog
+deps:
+	go get
+
+install: $(TARGET)
 	sudo mkdir -p "$(DESTDIR)$(BINPREFIX)"
-	sudo cp -pf gog "$(DESTDIR)$(BINPREFIX)/"
+	sudo cp -pf $(TARGET) "$(DESTDIR)$(BINPREFIX)/"
+
+release: clean $(PLATFORMS)
+
+test:
+	go test -v $(PKGS)
 
 uninstall:
 	rm -f "$(DESTDIR)$(BINPREFIX)/$(TARGET)"
