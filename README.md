@@ -112,3 +112,9 @@ directory in `${XDG_DATA_HOME}/gog/` will be selected automatically.
 # ~/.bashrc
 export GOG_DEFAULT_REPOSITORY_PATH="${XDG_DATA_HOME}/gog/dotfiles"
 ``` 
+
+## Developing
+
+```bash
+go get -u github.com/golang/dep/cmd/dep
+```
