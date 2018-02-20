@@ -15,7 +15,7 @@ func printLinked(intPath string, extPath string) {
 }
 
 func printUnLinked(intPath string, extPath string) {
-	fmt.Printf("%s <- %s\n", extPath, escapeHomeVar(intPath))
+	fmt.Printf("%s -> %s\n", escapeHomeVar(intPath), extPath)
 }
 
 func escapeHomeVar(p string) string {
