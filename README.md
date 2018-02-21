@@ -4,6 +4,14 @@ Link files to Git repositories
 
 ## Installation
 
+### Pre-compiled binary
+
+Download one of the pre-compiled binaries from the
+[releases page](https://github.com/andornaut/gog/releases), and then copy it to
+your path: `chmod +x gog-linux-amd64 && cp gog-linux-amd64 /usr/local/bin/`
+
+### Compile and install from git
+
 ```
 git clone ...
 cd gog
