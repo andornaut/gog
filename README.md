@@ -22,19 +22,19 @@ make install
 
 ```bash
 gog repository add dotfiles https://example.com/user/dotfiles.git
-gog add ~/.config/sxhkd
+gog add ~/.config/foorc
+#> REPOSITORY: /home/user/.local/share/gog/dotfiles
+#> ---
+#> /home/user/.config/foorc -> /home/user/.local/share/gog/dotfiles/\$HOME/.config/foorc
 gog git commit -am 'Add sxhkd config'
 gog git push
-file .config/sxhkd/sxhkdrc 
-#> .config/sxhkd/sxhkdrc: symbolic link to \
-#> /home/user/.local/share/gog/dotfiles/$HOME/.config/sxhkd/sxhkdrc
 
 ssh remote@example.com
 gog repository add dotfiles https://example.com/user/dotfiles.git
 gog apply
-file .config/sxhkd/sxhkdrc 
-#> .config/sxhkd/sxhkdrc: symbolic link to \
-#> /home/user/.local/share/gog/dotfiles/$HOME/.config/sxhkd/sxhkdrc
+#> REPOSITORY: /home/user/.local/share/gog/personal
+#> ---
+#> /home/user/.config/foorc -> /home/user/.local/share/gog/dotfiles/\$HOME/.config/foorc
 ```
 
 ## Usage
