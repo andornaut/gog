@@ -22,7 +22,7 @@ func main() {
 	app.Name = "gog"
 	app.Usage = "Go Overlay Git"
 	app.Description = "Link files to Git repositories"
-	app.Version = "0.1.0"
+	app.Version = "0.1.1"
 	app.HideVersion = true
 	app.HideHelp = true
 	app.UsageText = "gog command [options] [arguments...]"
