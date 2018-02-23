@@ -31,6 +31,7 @@ install: $(TARGET)
 
 release: clean $(PLATFORMS)
 
+# TODO switch to go test ./... after upgrading to Go>=1.9
 test:
 	go test -v $(PKGS)
 

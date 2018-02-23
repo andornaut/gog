@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"fmt"
 	"os"
 	"path"
 	"path/filepath"
@@ -17,7 +16,6 @@ func RunAdd(repoName string, paths []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("repository: %s\n---\n", repoPath)
 
 	paths = cleanPaths(paths)
 	if err := updateRepository(repoPath, paths, repository.AddPath); err != nil {
@@ -32,7 +30,6 @@ func RunRemove(repoName string, paths []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("repository: %s\n---\n", repoPath)
 
 	paths = cleanPaths(paths)
 	if err := updateLinks(repoPath, paths, link.UnlinkDir, link.UnlinkFile); err != nil {

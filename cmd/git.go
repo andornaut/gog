@@ -1,8 +1,6 @@
 package cmd
 
 import (
-	"fmt"
-
 	"github.com/andornaut/gog/git"
 	"github.com/andornaut/gog/repository"
 )
@@ -13,7 +11,6 @@ func RunGit(repoName string, arguments []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("repository: %s\n---\n", repoPath)
 
 	return git.Run(repoPath, arguments)
 }
