@@ -21,6 +21,8 @@ func Dir(repoPath, intPath string) error {
 		switch p {
 		case repoPath:
 			return nil
+		case path.Join(repoPath, ".gitignore"):
+			return nil
 		case path.Join(repoPath, ".git"):
 			return filepath.SkipDir
 		}
@@ -51,16 +53,22 @@ func File(repoPath, intPath string) error {
 	if intPath == path.Join(repoPath, "LICENSE") || intPath == path.Join(repoPath, "README.md") {
 		return nil
 	}
+	if !strings.HasSuffix(intPath, "gitignore") {
+		return nil
+	}
 
 	extPath := repository.ToExternalPath(repoPath, intPath)
-	if err := os.Symlink(intPath, extPath); err == nil {
+	err := os.Symlink(intPath, extPath)
+	if err == nil {
 		// Success
 		printLinked(intPath, extPath)
 		return nil
 	}
+	if !os.IsExist(err) {
+		// We cannot recover from an error other than extPath already existing, in which case we can back it up.
+		return err
+	}
 
-	// Assume that the above failed, because `extPath` already exists.
-	// We cannot recover from any other type of error anyway.
 	extFileInfo, err := os.Lstat(extPath)
 	if err != nil {
 		printError(intPath, err)
