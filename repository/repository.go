@@ -64,7 +64,6 @@ func GetDefault() (string, error) {
 	if err := validateRepoPath(p); err != nil {
 		return "", err
 	}
-	printPath(p)
 	return p, nil
 }
 
@@ -78,7 +77,6 @@ func RootPath(name string) (string, error) {
 	if err := validateRepoPath(p); err != nil {
 		return "", err
 	}
-	printPath(p)
 	return p, nil
 }
 
@@ -94,10 +92,6 @@ func getFirst() (string, error) {
 		}
 	}
 	return "", fmt.Errorf("run `gog repository add` to add a repository")
-}
-
-func printPath(p string) {
-	fmt.Printf("REPOSITORY: %s\n---\n", p)
 }
 
 func init() {

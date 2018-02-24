@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"fmt"
+
 	"github.com/andornaut/gog/link"
 	"github.com/andornaut/gog/repository"
 )
@@ -11,6 +13,6 @@ func RunApply(repoName string) error {
 	if err != nil {
 		return err
 	}
-
+	fmt.Printf("REPOSITORY: %s\n---\n", repoPath)
 	return link.Dir(repoPath, repoPath)
 }
