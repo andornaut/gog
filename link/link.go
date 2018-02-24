@@ -53,9 +53,6 @@ func File(repoPath, intPath string) error {
 	if intPath == path.Join(repoPath, "LICENSE") || intPath == path.Join(repoPath, "README.md") {
 		return nil
 	}
-	if !strings.HasSuffix(intPath, "gitignore") {
-		return nil
-	}
 
 	extPath := repository.ToExternalPath(repoPath, intPath)
 	err := os.Symlink(intPath, extPath)
