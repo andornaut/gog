@@ -104,7 +104,7 @@ in which they are applied may be significant. If you know that your
 repositories do not overlap, then you can run `gog apply` on them all like so:
 
 ```bash
-for repoName in $(gog repository list --path); do 
+for repoName in $(gog repository list); do 
   gog apply --repository ${repoName}
 done
 ```
