@@ -23,6 +23,8 @@ func Dir(repoPath, intPath string) error {
 			return nil
 		case path.Join(repoPath, ".gitignore"):
 			return nil
+		case path.Join(repoPath, "README.md"):
+			return nil
 		case path.Join(repoPath, ".git"):
 			return filepath.SkipDir
 		}
