@@ -21,10 +21,6 @@ func Dir(repoPath, intPath string) error {
 		switch p {
 		case repoPath:
 			return nil
-		case path.Join(repoPath, ".gitignore"):
-			return nil
-		case path.Join(repoPath, "README.md"):
-			return nil
 		case path.Join(repoPath, ".git"):
 			return filepath.SkipDir
 		}
@@ -52,7 +48,12 @@ func Dir(repoPath, intPath string) error {
 // File declares an `error` return type to match the signature of `Dir`, but
 // always returns nil.
 func File(repoPath, intPath string) error {
-	if intPath == path.Join(repoPath, "LICENSE") || intPath == path.Join(repoPath, "README.md") {
+	switch intPath {
+	case path.Join(repoPath, ".gitignore"):
+		return nil
+	case path.Join(repoPath, "LICENSE"):
+		return nil
+	case path.Join(repoPath, "README.md"):
 		return nil
 	}
 
