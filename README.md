@@ -25,7 +25,7 @@ gog repository add dotfiles https://example.com/user/dotfiles.git
 gog add ~/.config/foorc
 #> REPOSITORY: dotfiles
 #> /home/user/.config/foorc -> /home/user/.local/share/gog/dotfiles/\$HOME/.config/foorc
-gog git commit -am 'Add sxhkd config'
+gog git commit -am 'Add foorc'
 gog git push
 
 ssh remote@example.com
@@ -121,7 +121,7 @@ done
 
 ## Configuration
 
-You can set a `GOG_DEFAULT_REPOSITORY_PATH` environment variable in order to
+You can set the `GOG_DEFAULT_REPOSITORY_PATH` environment variable in order to
 configure the default repository path to use when the `--repository NAME` flag
 is omitted. If `$GOG_DEFAULT_REPOSITORY_PATH` is empty, then the first
 directory in `${XDG_DATA_HOME}/gog/` will be selected automatically.
