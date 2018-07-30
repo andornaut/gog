@@ -24,9 +24,10 @@ func Execute() {
 var repositoryFlag string
 
 var rootCmd = &cobra.Command{
-	Use:          "gog [command]",
-	Short:        "Link files to Git repositories",
-	SilenceUsage: true,
+	Use:              "gog [command]",
+	Short:            "Link files to Git repositories",
+	SilenceUsage:     true,
+	TraverseChildren: true,
 }
 
 var addCmd = &cobra.Command{
@@ -69,7 +70,7 @@ var removeCmd = &cobra.Command{
 
 var applyCmd = &cobra.Command{
 	Use:   "apply",
-	Short: "Create symbolic links from a repository's files to the root filesystem",
+	Short: "Link a repository's contents to the filesystem",
 	Args:  cobra.NoArgs,
 	DisableFlagsInUseLine: true,
 	RunE: func(c *cobra.Command, args []string) error {
@@ -82,8 +83,9 @@ var applyCmd = &cobra.Command{
 }
 
 var gitCmd = &cobra.Command{
-	Use:   "git [git arguments...]",
-	Short: "Run a git command in a repository",
+	Use:                   "git [git command and arguments...]",
+	Short:                 "Run a git command in a repository's directory",
+	DisableFlagParsing:    true,
 	DisableFlagsInUseLine: true,
 	DisableSuggestions:    true,
 	RunE: func(c *cobra.Command, args []string) error {
@@ -132,6 +134,10 @@ func repoPath() (string, error) {
 }
 
 func init() {
-	rootCmd.PersistentFlags().StringVarP(&repositoryFlag, "repository", "r", "", "name of repository")
+	// Cannot add --repository as a persistent flag, because this breaks passthrough to `git`
+	addCmd.Flags().StringVarP(&repositoryFlag, "repository", "r", "", "name of repository to add to")
+	applyCmd.Flags().StringVarP(&repositoryFlag, "repository", "r", "", "name of repository to apply")
+	removeCmd.Flags().StringVarP(&repositoryFlag, "repository", "r", "", "name of repository to remove from")
+	rootCmd.Flags().StringVarP(&repositoryFlag, "repository", "r", "", "name of repository")
 	rootCmd.AddCommand(addCmd, applyCmd, gitCmd, removeCmd, repositoryCmd)
 }
