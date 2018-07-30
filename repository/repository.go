@@ -73,6 +73,10 @@ func RootPath(name string) (string, error) {
 	if name == "" {
 		return GetDefault()
 	}
+
+	if err := ValidateRepoName(name); err != nil {
+		return "", err
+	}
 	p := path.Join(BaseDir, name)
 	if err := validateRepoPath(p); err != nil {
 		return "", err

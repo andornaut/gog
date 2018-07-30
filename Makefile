@@ -18,7 +18,7 @@ $(PLATFORMS):
 	GOARCH=amd64 GOOS=$@ go build -o "$(DISTDIR)/$(TARGET)-$@-amd64"
 
 $(TARGET): $(GODEP)
-	dep ensure
+	$(GODEP) ensure
 	go build -o $@
 
 clean:

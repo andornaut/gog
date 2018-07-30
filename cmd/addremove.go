@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"fmt"
 	"os"
 	"path"
 	"path/filepath"
@@ -11,14 +10,8 @@ import (
 	"github.com/andornaut/gog/repository"
 )
 
-// RunAdd runs the `gog add` command
-func RunAdd(repoName string, paths []string) error {
-	repoPath, err := repository.RootPath(repoName)
-	if err != nil {
-		return err
-	}
-	fmt.Printf("REPOSITORY: %s\n---\n", repoPath)
-
+// Add runs the `gog add` command
+func runAdd(repoPath string, paths []string) error {
 	paths = cleanPaths(paths)
 	if err := updateRepository(repoPath, paths, repository.AddPath); err != nil {
 		return err
@@ -26,14 +19,8 @@ func RunAdd(repoName string, paths []string) error {
 	return updateLinks(repoPath, paths, link.Dir, link.File)
 }
 
-// RunRemove runs the `gog remove` command
-func RunRemove(repoName string, paths []string) error {
-	repoPath, err := repository.RootPath(repoName)
-	if err != nil {
-		return err
-	}
-	fmt.Printf("REPOSITORY: %s\n---\n", repoPath)
-
+// Remove runs the `gog remove` command
+func runRemove(repoPath string, paths []string) error {
 	paths = cleanPaths(paths)
 	if err := updateLinks(repoPath, paths, link.UnlinkDir, link.UnlinkFile); err != nil {
 		return err
