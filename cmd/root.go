@@ -3,11 +3,14 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
+	"strings"
 
 	"github.com/andornaut/gog/git"
 	"github.com/andornaut/gog/link"
 	"github.com/andornaut/gog/repository"
+	"github.com/andornaut/gog/sync"
 	"github.com/spf13/cobra"
 )
 
@@ -36,7 +39,12 @@ var addCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return runAdd(repoPath, args)
+
+		paths := cleanPaths(args)
+		if err := sync.Repository(repoPath, paths, repository.AddPath); err != nil {
+			return err
+		}
+		return sync.Links(repoPath, paths, link.Dir, link.File)
 	},
 }
 
@@ -50,7 +58,12 @@ var removeCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return runRemove(repoPath, args)
+
+		paths := cleanPaths(args)
+		if err := sync.Links(repoPath, paths, link.UnlinkDir, link.UnlinkFile); err != nil {
+			return err
+		}
+		return sync.Repository(repoPath, paths, repository.RemovePath)
 	},
 }
 
@@ -78,8 +91,35 @@ var gitCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return git.Run(repoPath, args)
+		return git.RunCommand(repoPath, args...)
 	},
+}
+
+func cleanPaths(paths []string) []string {
+	cleanedPaths := []string{}
+	for _, p := range paths {
+		if strings.TrimSpace(p) == "" {
+			continue
+		}
+		p, err := normalizePath(p)
+		if err != nil {
+			continue
+		}
+		cleanedPaths = append(cleanedPaths, p)
+	}
+	return cleanedPaths
+}
+
+func normalizePath(p string) (string, error) {
+	if !path.IsAbs(p) {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return "", err
+		}
+		p = path.Join(cwd, p)
+	}
+
+	return filepath.Clean(p), nil
 }
 
 func repoPath() (string, error) {
