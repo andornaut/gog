@@ -47,8 +47,8 @@ Usage:
 
 Available Commands:
   add         Add files or directories to a repository
-  apply       Create symbolic links from a repository's files to the root filesystem
-  git         Run a git command in a repository
+  apply       Link a repository's contents to the filesystem
+  git         Run a git command in a repository's directory
   help        Help about any command
   remove      Remove files or directories from a repository
   repository  Manage repositories
@@ -77,9 +77,6 @@ Available Commands:
 Flags:
   -h, --help   help for repository
 
-Global Flags:
-  -r, --repository string   name of repository
-
 Use "gog repository [command] --help" for more information about a command.
 ```
 
@@ -92,10 +89,21 @@ Usage:
   gog add [paths...]
 
 Flags:
-  -h, --help   help for add
+  -h, --help                help for add
+  -r, --repository string   name of repository to add to
+```
 
-Global Flags:
-  -r, --repository string   name of repository
+`gog apply --help`
+
+```
+Link a repository's contents to the filesystem
+
+Usage:
+  gog apply
+
+Flags:
+  -h, --help                help for apply
+  -r, --repository string   name of repository to apply
 ```
 
 ### Notes
