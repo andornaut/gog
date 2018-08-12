@@ -57,14 +57,11 @@ func RemovePath(repoPath, targetPath string) error {
 
 // GetDefault returns the default repository path
 func GetDefault() (string, error) {
-	p := os.Getenv("GOG_DEFAULT_REPOSITORY_PATH")
-	if p == "" {
-		return getFirst()
+	defaultName := os.Getenv("GOG_DEFAULT_REPOSITORY_NAME")
+	if defaultName != "" {
+		return RootPath(defaultName)
 	}
-	if err := validateRepoPath(p); err != nil {
-		return "", err
-	}
-	return p, nil
+	return getFirst()
 }
 
 // RootPath returns an absolute filesystem path which corresponds to the given
@@ -94,18 +91,27 @@ func getFirst() (string, error) {
 	return "", fmt.Errorf("run `gog repository add` to add a repository")
 }
 
-func init() {
+func initBaseDir() {
+	BaseDir = os.Getenv("GOG_REPOSITORY_BASE_DIR")
+	if BaseDir != "" {
+		return
+	}
+
+	dataDir := os.Getenv("XDG_DATA_HOME")
+	if dataDir != "" {
+		BaseDir = path.Join(dataDir, "gog")
+		return
+	}
+
 	homeDir = os.Getenv("HOME")
 	if homeDir == "" {
 		log.Fatal("The $HOME environment variable cannot be empty")
 	}
+	BaseDir = path.Join(homeDir, ".local/share/gog")
+}
 
-	dataDir := os.Getenv("XDG_DATA_HOME")
-	if dataDir == "" {
-		dataDir = path.Join(homeDir, ".local/share")
-	}
-
-	BaseDir = path.Join(dataDir, "gog")
+func init() {
+	initBaseDir()
 	if err := os.MkdirAll(BaseDir, 0700); err != nil {
 		log.Fatal(err)
 	}
