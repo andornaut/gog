@@ -15,7 +15,7 @@ your path: `chmod +x gog-linux-amd64 && sudo mv gog-linux-amd64 /usr/local/bin/g
 
 ### Compile from source
 
-Install dependencies.
+Install dependencies:
 
 - [Go](https://golang.org/doc/install)
 - [Make](https://www.gnu.org/software/make/)
@@ -40,7 +40,7 @@ ls -l ~/.config/foorc | awk '{print $9,$10,$11}'
 > /home/example/.config/foorc -> /home/example/.local/share/gog/dotfiles/$HOME/.config/foorc
 
 # Commit and push the changeset to make it available from elsewhere
-gog git commit -am 'Add sxhkd config'
+gog git commit -am 'Add foo config'
 gog git push
 
 # Login to a remote machine and initialize the same git repository as above
