@@ -153,7 +153,7 @@ GOG_REPOSITORY_BASE_DIR | The directory which contains gog repositories (default
 
 ```bash
 # ~/.bashrc
-export GOG_DEFAULT_REPOSITORY_NAME="dotfiles"
+export GOG_DEFAULT_REPOSITORY_NAME=dotfiles
 export GOG_REPOSITORY_BASE_DIR="${XDG_DATA_HOME}/gog"
 ``` 
 
