@@ -125,8 +125,8 @@ Flags:
 #### `gog add`
 
 If any of the path arguments to `gog add` begin with the current user's home
-directory, then this prefix is replaced with an escaped `\$HOME` path
-component, and then the `$HOME` variable is expanded when `gog apply` is run.
+directory, then this prefix is replaced with an escaped `\${HOME}` path
+component, and then the `${HOME}` variable is expanded when `gog apply` is run.
 
 #### `gog apply`
 
