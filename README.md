@@ -31,7 +31,7 @@ gog add ~/.config/foorc
 # Gog moved `~/.config/foorc` into the default git repository ("dotfiles") and
 # then created a symlink to it at its original location 
 ls -l ~/.config/foorc | awk '{print $9,$10,$11}'
-> /home/example/.config/foorc -> /home/example/.local/share/gog/example/$HOME/.config/foorc
+> /home/example/.config/foorc -> /home/example/.local/share/gog/dotfiles/$HOME/.config/foorc
 
 # Commit and push the changeset to make it available from elsewhere
 gog git commit -am 'Add sxhkd config'
@@ -46,7 +46,7 @@ gog apply
 # Gog linked `~/.config/foorc` as above, while preserving any preexisting file at
 # that location as ~/.config/.foorc.gog`
 ls -l ~/.config/foorc | awk '{print $9,$10,$11}'
-> /home/example/.config/foorc -> /home/example/.local/share/gog/example/$HOME/.config/foorc
+> /home/example/.config/foorc -> /home/example/.local/share/gog/dotfiles/$HOME/.config/foorc
 ```
 
 ## Usage
