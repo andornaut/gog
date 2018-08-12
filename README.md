@@ -10,8 +10,8 @@ Link files to Git repositories
 ### Pre-compiled binary
 
 Download one of the pre-compiled binaries from the
-[releases page](https://github.com/example/gog/releases), and then copy it to
-your path: `chmod +x gog-linux-amd64 && cp gog-linux-amd64 /usr/local/bin/gog`
+[releases page](https://github.com/andornaut/gog/releases), and then move it onto
+your path: `chmod +x gog-linux-amd64 && sudo mv gog-linux-amd64 /usr/local/bin/gog`
 
 ### Compile and install from git
 
@@ -54,50 +54,70 @@ ls -l ~/.config/foorc | awk '{print $9,$10,$11}'
 `gog --help`
 
 ```
-NAME:
-   gog - Go Overlay Git
+Link files to Git repositories
 
-USAGE:
-   gog command [options] [arguments...]
+Usage:
+  gog [command]
 
-DESCRIPTION:
-   Link files to Git repositories
+Available Commands:
+  add         Add files or directories to a repository
+  apply       Link a repository's contents to the filesystem
+  git         Run a git command in a repository's directory
+  help        Help about any command
+  remove      Remove files or directories from a repository
+  repository  Manage repositories
 
-COMMANDS:
-     repository  Manage repositories
-     add         Add files or directories to a repository
-     remove      Remove files or directories from a repository
-     apply       Create symbolic links from a repository's files to the root filesystem
-     git         Run a git command in a repository
+Flags:
+  -h, --help                help for gog
+  -r, --repository string   name of repository
+
+Use "gog [command] --help" for more information about a command.
 ```
 
 `gog repository --help`
 
 ```
-NAME:
-   gog repository - Manage repositories
+Manage repositories
 
-USAGE:
-   gog repository command [options] [arguments...]
+Usage:
+  gog repository [command]
 
-COMMANDS:
-     add          Add and initialize a git repository
-     remove       Remove a repository
-     get-default  Print the name of the default repository
-     list         Print the names of all repositories
+Available Commands:
+  add         Add a git repository
+  get-default Print the name of the default repository
+  list        Print the names of all repositories
+  remove      Remove a repository
+
+Flags:
+  -h, --help   help for repository
+
+Use "gog repository [command] --help" for more information about a command.
 ```
 
 `gog add --help`
 
 ```
-NAME:
-   gog add - Add files or directories to a repository
+Add files or directories to a repository
 
-USAGE:
-   gog add [--repository NAME] <path> [paths...]
+Usage:
+  gog add [paths...]
 
-OPTIONS:
-   --repository NAME, -r NAME  NAME of the target repository
+Flags:
+  -h, --help                help for add
+  -r, --repository string   name of repository to add to
+```
+
+`gog apply --help`
+
+```
+Link a repository's contents to the filesystem
+
+Usage:
+  gog apply
+
+Flags:
+  -h, --help                help for apply
+  -r, --repository string   name of repository to apply
 ```
 
 ### Notes
