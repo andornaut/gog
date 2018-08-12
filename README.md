@@ -13,10 +13,16 @@ Download one of the pre-compiled binaries from the
 [releases page](https://github.com/andornaut/gog/releases), and then move it onto
 your path: `chmod +x gog-linux-amd64 && sudo mv gog-linux-amd64 /usr/local/bin/gog`
 
-### Compile and install from git
+### Compile from source
+
+Install dependencies.
+
+- [Go](https://golang.org/doc/install)
+- [Make](https://www.gnu.org/software/make/)
+
 
 ```
-git clone ...
+git clone https://github.com/andornaut/gog.git
 cd gog
 make install
 ```
