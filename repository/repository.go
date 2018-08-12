@@ -70,7 +70,18 @@ func RootPath(name string) (string, error) {
 	if name == "" {
 		return GetDefault()
 	}
+
+	if err := ValidateRepoName(name); err != nil {
+		return "", err
+	}
 	p := path.Join(BaseDir, name)
+	globPaths, err := filepath.Glob(p + "*")
+	if err != nil {
+		return "", err
+	}
+	if globPaths != nil {
+		p = globPaths[0]
+	}
 	if err := validateRepoPath(p); err != nil {
 		return "", err
 	}
