@@ -130,13 +130,11 @@ component, and then the `$HOME` variable is expanded when `gog apply` is run.
 
 #### `gog apply`
 
-`gog apply` does not support being run on multiple repositories at the same
-time, because if multiple repositories link to the same files, then the order
-in which they are applied may be significant. If you know that your
-repositories do not overlap, then you can run `gog apply` on them all like so:
+`gog apply` operates on a single repository at a time, but you can apply
+multiple repositories - even if they contain partially overlapping files.
 
 ```bash
-for repoName in $(gog repository list); do 
+for repoName in $(gog repository list | sort -r); do
   gog apply --repository ${repoName}
 done
 ```
