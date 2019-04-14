@@ -1,9 +1,14 @@
 package main
 
 import (
+	"os"
+
 	"github.com/andornaut/gog/cmd"
 )
 
+// Execute starts the CLI
 func main() {
-	cmd.Execute()
+	if err := cmd.Cmd.Execute(); err != nil {
+		os.Exit(1)
+	}
 }

@@ -2,23 +2,17 @@
 PREFIX    ?= /usr/local
 BINPREFIX ?= $(PREFIX)/bin
 DISTDIR   := dist
-GODEP     := $(GOPATH)/bin/dep
 TARGET    := gog
-PKGS      := $(shell go list ./... | grep -v /vendor)
 PLATFORMS := darwin freebsd linux
 
-.PHONY: $(PLATFORMS) $(TARGET) all clean deps install release test uninstall
+.PHONY: $(PLATFORMS) $(TARGET) all clean install release test uninstall
 
 all: $(TARGET)
-
-$(GODEP):
-	go get -u github.com/golang/dep/cmd/dep
 
 $(PLATFORMS):
 	GOARCH=amd64 GOOS=$@ go build -o "$(DISTDIR)/$(TARGET)-$@-amd64"
 
-$(TARGET): $(GODEP)
-	$(GODEP) ensure
+$(TARGET):
 	go build -o $@
 
 clean:
