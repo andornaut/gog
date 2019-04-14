@@ -1,12 +1,6 @@
 package cmd
 
 import (
-	"fmt"
-	"os"
-	"path"
-	"path/filepath"
-	"strings"
-
 	"github.com/andornaut/gog/cmd/repositorycmd"
 	"github.com/andornaut/gog/internal/link"
 	"github.com/andornaut/gog/internal/repository"
@@ -30,25 +24,6 @@ var add = &cobra.Command{
 			return err
 		}
 		return repository.SyncLinks(repoPath, paths, link.Dir, link.File)
-	},
-}
-
-var remove = &cobra.Command{
-	Use:                   "remove [paths...]",
-	Short:                 "Remove files or directories from a repository",
-	Args:                  cobra.MinimumNArgs(1),
-	DisableFlagsInUseLine: true,
-	RunE: func(c *cobra.Command, args []string) error {
-		repoPath, err := repoPath()
-		if err != nil {
-			return err
-		}
-
-		paths := cleanPaths(args)
-		if err := repository.SyncLinks(repoPath, paths, link.UnlinkDir, link.UnlinkFile); err != nil {
-			return err
-		}
-		return repository.SyncRepository(repoPath, paths, repository.RemovePath)
 	},
 }
 
@@ -81,40 +56,23 @@ var git = &cobra.Command{
 	},
 }
 
-func cleanPaths(paths []string) []string {
-	cleanedPaths := []string{}
-	for _, p := range paths {
-		if strings.TrimSpace(p) == "" {
-			continue
-		}
-		p, err := normalizePath(p)
+var remove = &cobra.Command{
+	Use:                   "remove [paths...]",
+	Short:                 "Remove files or directories from a repository",
+	Args:                  cobra.MinimumNArgs(1),
+	DisableFlagsInUseLine: true,
+	RunE: func(c *cobra.Command, args []string) error {
+		repoPath, err := repoPath()
 		if err != nil {
-			continue
+			return err
 		}
-		cleanedPaths = append(cleanedPaths, p)
-	}
-	return cleanedPaths
-}
 
-func normalizePath(p string) (string, error) {
-	if !path.IsAbs(p) {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return "", err
+		paths := cleanPaths(args)
+		if err := repository.SyncLinks(repoPath, paths, link.UnlinkDir, link.UnlinkFile); err != nil {
+			return err
 		}
-		p = path.Join(cwd, p)
-	}
-
-	return filepath.Clean(p), nil
-}
-
-func repoPath() (string, error) {
-	repoPath, err := repository.RootPath(repositoryFlag)
-	if err != nil {
-		return "", err
-	}
-	fmt.Println("REPOSITORY:", filepath.Base(repoPath))
-	return repoPath, nil
+		return repository.SyncRepository(repoPath, paths, repository.RemovePath)
+	},
 }
 
 // Cmd implements the root ./gog command
