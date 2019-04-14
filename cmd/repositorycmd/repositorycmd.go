@@ -11,14 +11,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var isPath bool
-
 // Cmd implements ./gog repository
 var Cmd = &cobra.Command{
 	Use:          "repository [command]",
 	Short:        "Manage repositories",
 	SilenceUsage: true,
 }
+
+var isPath bool
 
 var add = &cobra.Command{
 	Use:                   "add [name] [url]",
@@ -49,25 +49,6 @@ var add = &cobra.Command{
 			if err := repository.GitClone(repoPath, repoURL); err != nil {
 				return err
 			}
-		}
-		fmt.Println(repoPath)
-		return nil
-	},
-}
-
-var remove = &cobra.Command{
-	Use:                   "remove [name]",
-	Short:                 "Remove a repository",
-	Args:                  cobra.ExactArgs(1),
-	DisableFlagsInUseLine: true,
-	RunE: func(c *cobra.Command, args []string) error {
-		repoName := args[0]
-		if err := repository.ValidateRepoName(repoName); err != nil {
-			return err
-		}
-		repoPath := path.Join(repository.BaseDir, repoName)
-		if err := os.RemoveAll(repoPath); err != nil {
-			return err
 		}
 		fmt.Println(repoPath)
 		return nil
@@ -114,6 +95,25 @@ var list = &cobra.Command{
 				fmt.Println(msg)
 			}
 		}
+		return nil
+	},
+}
+
+var remove = &cobra.Command{
+	Use:                   "remove [name]",
+	Short:                 "Remove a repository",
+	Args:                  cobra.ExactArgs(1),
+	DisableFlagsInUseLine: true,
+	RunE: func(c *cobra.Command, args []string) error {
+		repoName := args[0]
+		if err := repository.ValidateRepoName(repoName); err != nil {
+			return err
+		}
+		repoPath := path.Join(repository.BaseDir, repoName)
+		if err := os.RemoveAll(repoPath); err != nil {
+			return err
+		}
+		fmt.Println(repoPath)
 		return nil
 	},
 }
