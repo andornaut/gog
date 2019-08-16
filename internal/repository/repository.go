@@ -11,9 +11,11 @@ import (
 	"github.com/andornaut/gog/internal/copy"
 )
 
-// BaseDir is the root data dir, which is usually ~/.local/share/gog
-var BaseDir string
-var homeDir string
+var (
+	// BaseDir is the root data directory
+	BaseDir string
+	homeDir string
+)
 
 // AddPath adds a path to a repository
 func AddPath(repoPath, targetPath string) error {
@@ -40,7 +42,7 @@ func AddPath(repoPath, targetPath string) error {
 	}
 
 	// Create the parent directory, because `copy.File` does not create directories
-	if err := os.MkdirAll(filepath.Dir(intPath), os.ModePerm); err != nil {
+	if err := os.MkdirAll(filepath.Dir(intPath), 0755); err != nil {
 		return err
 	}
 	return copy.File(extPath, intPath)
@@ -102,28 +104,28 @@ func getFirst() (string, error) {
 	return "", fmt.Errorf("run `gog repository add` to add a repository")
 }
 
-func initBaseDir() {
-	BaseDir = os.Getenv("GOG_REPOSITORY_BASE_DIR")
-	if BaseDir != "" {
-		return
+func getBaseDir(homeDir string) string {
+	b := os.Getenv("GOG_HOME")
+	if b != "" {
+		return b
 	}
 
 	dataDir := os.Getenv("XDG_DATA_HOME")
 	if dataDir != "" {
-		BaseDir = path.Join(dataDir, "gog")
-		return
+		return path.Join(dataDir, "gog")
 	}
 
-	homeDir = os.Getenv("HOME")
-	if homeDir == "" {
-		log.Fatal("The $HOME environment variable cannot be empty")
-	}
-	BaseDir = path.Join(homeDir, ".local/share/gog")
+	return path.Join(homeDir, ".local/share/gog")
 }
 
 func init() {
-	initBaseDir()
-	if err := os.MkdirAll(BaseDir, 0700); err != nil {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+			log.Fatal(err)
+	}
+
+	BaseDir = getBaseDir(homeDir)
+	if err := os.MkdirAll(BaseDir, 0755); err != nil {
 		log.Fatal(err)
 	}
 }

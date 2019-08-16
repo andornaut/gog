@@ -1,4 +1,4 @@
-package repositorycmd
+package managecmd
 
 import (
 	"fmt"
@@ -13,7 +13,7 @@ import (
 
 // Cmd implements ./gog repository
 var Cmd = &cobra.Command{
-	Use:          "repository [command]",
+	Use:          "manage [command]",
 	Short:        "Manage repositories",
 	SilenceUsage: true,
 }
@@ -37,7 +37,7 @@ var add = &cobra.Command{
 		}
 
 		repoPath := path.Join(repository.BaseDir, repoName)
-		if err := os.MkdirAll(repoPath, os.ModePerm); err != nil {
+		if err := os.MkdirAll(repoPath, 0755); err != nil {
 			return err
 		}
 
@@ -57,7 +57,8 @@ var add = &cobra.Command{
 
 var getDefault = &cobra.Command{
 	Use:                   "get-default [--path]",
-	Short:                 "Print the name of the default repository",
+	Short:                 "Print the name or path of the default repository",
+	Long:                  "Either the first repository or the one defined by $GOG_DEFAULT_REPOSITORY_NAME",
 	Args:                  cobra.NoArgs,
 	DisableFlagsInUseLine: true,
 	RunE: func(c *cobra.Command, args []string) error {
@@ -77,7 +78,7 @@ var getDefault = &cobra.Command{
 
 var list = &cobra.Command{
 	Use:                   "list [--path]",
-	Short:                 "Print the names of all repositories",
+	Short:                 "Print the names or paths of all repositories",
 	Args:                  cobra.NoArgs,
 	DisableFlagsInUseLine: true,
 	RunE: func(c *cobra.Command, args []string) error {
@@ -119,7 +120,7 @@ var remove = &cobra.Command{
 }
 
 func init() {
-	getDefault.Flags().BoolVarP(&isPath, "path", "p", false, "print the path of the default repository")
-	list.Flags().BoolVarP(&isPath, "path", "p", false, "print the paths of all repositories")
+	getDefault.Flags().BoolVarP(&isPath, "path", "p", false, "print the path instead of the name")
+	list.Flags().BoolVarP(&isPath, "path", "p", false, "print paths instead of names")
 	Cmd.AddCommand(add, remove, getDefault, list)
 }

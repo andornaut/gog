@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"github.com/andornaut/gog/cmd/repositorycmd"
+	"github.com/andornaut/gog/cmd/managecmd"
 	"github.com/andornaut/gog/internal/link"
 	"github.com/andornaut/gog/internal/repository"
 	"github.com/spf13/cobra"
@@ -85,9 +85,9 @@ var Cmd = &cobra.Command{
 
 func init() {
 	// Cannot add --repository as a persistent flag, because this breaks passthrough to `git`
-	add.Flags().StringVarP(&repositoryFlag, "repository", "r", "", "name of repository to add to")
-	apply.Flags().StringVarP(&repositoryFlag, "repository", "r", "", "name of repository to apply")
-	remove.Flags().StringVarP(&repositoryFlag, "repository", "r", "", "name of repository to remove from")
+	add.Flags().StringVarP(&repositoryFlag, "repository", "r", "", "name of repository")
+	apply.Flags().StringVarP(&repositoryFlag, "repository", "r", "", "name of repository")
+	remove.Flags().StringVarP(&repositoryFlag, "repository", "r", "", "name of repository")
 	Cmd.Flags().StringVarP(&repositoryFlag, "repository", "r", "", "name of repository")
-	Cmd.AddCommand(add, apply, git, remove, repositorycmd.Cmd)
+	Cmd.AddCommand(add, apply, git, remove, managecmd.Cmd)
 }
