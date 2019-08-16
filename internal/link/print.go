@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-func printError(p string, err interface{}) {
+func printError(p string, err error) {
 	fmt.Fprintf(os.Stderr, "ERROR %s %s\n", p, err)
 }
 

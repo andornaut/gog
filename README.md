@@ -3,7 +3,7 @@
 Link files to Git repositories
 
 - `gog` can be used to manage "dotfiles" in `${HOME}`, but it can also manage links to files elsewhere on the filesystem
-- `gog` supports multiple git repositories, which can be useful, for instance, to separate personal and work files
+- `gog` supports multiple git repositories, which can be useful to separate personal and work files
 
 ## Installation
 
@@ -31,7 +31,7 @@ make install
 
 ```bash
 # Clone a git repository and add a file to it
-gog repository add dotfiles https://example.com/user/dotfiles.git
+gog manage add dotfiles https://example.com/user/dotfiles.git
 gog add ~/.config/foorc
 
 # Gog moved `~/.config/foorc` into the default git repository ("dotfiles") and
@@ -45,7 +45,7 @@ gog git push
 
 # Login to a remote machine and initialize the same git repository as above
 ssh remote@example.com
-gog repository add dotfiles https://example.com/user/dotfiles.git
+gog manage add dotfiles https://example.com/user/dotfiles.git
 
 gog apply
 
@@ -70,8 +70,8 @@ Available Commands:
   apply       Link a repository's contents to the filesystem
   git         Run a git command in a repository's directory
   help        Help about any command
+  manage      Manage repositories
   remove      Remove files or directories from a repository
-  repository  Manage repositories
 
 Flags:
   -h, --help                help for gog
@@ -80,13 +80,13 @@ Flags:
 Use "gog [command] --help" for more information about a command.
 ```
 
-`gog repository --help`
+`gog manage --help`
 
 ```
 Manage repositories
 
 Usage:
-  gog repository [command]
+  gog manage [command]
 
 Available Commands:
   add         Add a git repository
@@ -97,7 +97,7 @@ Available Commands:
 Flags:
   -h, --help   help for repository
 
-Use "gog repository [command] --help" for more information about a command.
+Use "gog manage [command] --help" for more information about a command.
 ```
 
 `gog add --help`
@@ -140,39 +140,20 @@ component, and then the `${HOME}` variable is expanded when `gog apply` is run.
 multiple repositories - even if they contain partially overlapping files.
 
 ```bash
-for repoName in $(gog repository list | sort -r); do
-  gog apply --repository ${repoName}
+for repoName in $(gog manage list | sort -r); do
+  gog --repository ${repoName} apply
 done
 ```
 
 ## Configuration
 
-You can set environment variables - typically by adding entries to `~/.bashrc`
-or similar - to override a couple of defaults settings.
+You can use environment variables to customize some settings.
 
 Environment variable | Description
 ---|---
-GOG_DEFAULT_REPOSITORY_NAME | The repository to select when `--repository NAME` is not specified (default: the first directory in `${XDG_DATA_HOME}/gog`)
-GOG_REPOSITORY_BASE_DIR | The directory which contains gog repositories (default: `${XDG_DATA_HOME}/gog`)
-
-```bash
-# ~/.bashrc
-export GOG_DEFAULT_REPOSITORY_NAME=dotfiles
-export GOG_REPOSITORY_BASE_DIR="${XDG_DATA_HOME}/gog"
-``` 
+GOG_DEFAULT_REPOSITORY_NAME | The repository to use when `--repository NAME` is not specified (default: the first directory in `${HOME}/.local/share/gog`)
+GOG_HOME | The directory where gog stores its files (default: `${HOME}/.local/share/gog`)
 
 ## Developing
 
-```bash
-# Install `dep`, ensure that `./vendor/` is up to date, and compile `./gog`
-make
-
-# Compile and install to /usr/local/bin/gog
-make install
-
-# Delete /usr/local/bin/gog
-make uninstall
-
-# Compile release binaries in `./dist/`
-make release
-```
+See the [Makefile](./Makefile).

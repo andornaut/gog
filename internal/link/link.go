@@ -1,6 +1,7 @@
 package link
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -29,12 +30,12 @@ func Dir(repoPath, intPath string) error {
 			extPath := repository.ToExternalPath(repoPath, p)
 			if isSymlink(extPath) {
 				if ok := backup(extPath); !ok {
-					printError(p, "Backup of existing file failed. Skipping.")
+					printError(p, errors.New("Backup of existing file failed. Skipping."))
 					return filepath.SkipDir
 				}
 			}
 
-			if err := os.MkdirAll(extPath, os.ModePerm); err != nil {
+			if err := os.MkdirAll(extPath, 0755); err != nil {
 				printError(p, err)
 				return filepath.SkipDir
 			}
@@ -75,7 +76,7 @@ func File(repoPath, intPath string) error {
 		return nil
 	}
 	if extFileInfo.IsDir() {
-		printError(intPath, "Path expected to be a file, but is a directory: "+extPath)
+		printError(intPath, fmt.Errorf("Path expected to be a file, but is a directory: %s", extPath))
 		return nil
 	}
 
@@ -102,7 +103,7 @@ func File(repoPath, intPath string) error {
 
 	if shouldBackup {
 		if ok := backup(extPath); !ok {
-			printError(intPath, "Backup of existing file failed. Skipping.")
+			printError(intPath, errors.New("Backup of existing file failed. Skipping."))
 			return nil
 		}
 	}
