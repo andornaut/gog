@@ -49,6 +49,9 @@ func Dir(repoPath, intPath string) error {
 // always returns nil.
 func File(repoPath, intPath string) error {
 	switch intPath {
+	case path.Join(repoPath, "install"):
+        // TODO move this to an env var
+		return nil
 	case path.Join(repoPath, ".gitignore"):
 		return nil
 	case path.Join(repoPath, "LICENSE"):
