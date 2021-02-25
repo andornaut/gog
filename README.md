@@ -21,7 +21,7 @@ Install dependencies:
 - [Make](https://www.gnu.org/software/make/)
 
 
-```
+```bash
 git clone https://github.com/andornaut/gog.git
 cd gog
 make install
