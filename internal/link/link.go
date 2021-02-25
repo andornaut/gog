@@ -3,12 +3,19 @@ package link
 import (
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/andornaut/gog/internal/repository"
+)
+
+var (
+	backupDisabled   = false
+	ignoreFilesRegex = regexp.MustCompile("a^") // Do not match anything by default
 )
 
 // Dir recursively creates symbolic links from a repository directory's files
@@ -30,7 +37,7 @@ func Dir(repoPath, intPath string) error {
 			extPath := repository.ToExternalPath(repoPath, p)
 			if isSymlink(extPath) {
 				if ok := backup(extPath); !ok {
-					printError(p, errors.New("Backup of existing file failed. Skipping."))
+					printError(p, errors.New("backup of existing file failed. Skipping"))
 					return filepath.SkipDir
 				}
 			}
@@ -49,10 +56,10 @@ func Dir(repoPath, intPath string) error {
 // File declares an `error` return type to match the signature of `Dir`, but
 // always returns nil.
 func File(repoPath, intPath string) error {
-	switch intPath {
-	case path.Join(repoPath, "install"):
-        // TODO move this to an env var
+	if ignoreFilesRegex.MatchString(strings.TrimPrefix(intPath, repoPath+"/")) {
 		return nil
+	}
+	switch intPath {
 	case path.Join(repoPath, ".gitignore"):
 		return nil
 	case path.Join(repoPath, "LICENSE"):
@@ -83,7 +90,7 @@ func File(repoPath, intPath string) error {
 		return nil
 	}
 
-	shouldBackup := true
+	shouldBackup := !backupDisabled
 	actualExtPath, err := filepath.EvalSymlinks(extPath)
 	if err != nil {
 		// Can only recover from an error due to a broken symbolic link
@@ -106,7 +113,7 @@ func File(repoPath, intPath string) error {
 
 	if shouldBackup {
 		if ok := backup(extPath); !ok {
-			printError(intPath, errors.New("Backup of existing file failed. Skipping."))
+			printError(intPath, errors.New("backup of existing file failed. Skipping"))
 			return nil
 		}
 	}
@@ -141,4 +148,17 @@ func isSymlink(p string) bool {
 		return false
 	}
 	return fileInfo.Mode()&os.ModeSymlink == os.ModeSymlink
+}
+
+func init() {
+	_, backupDisabled = os.LookupEnv("GOG_DO_NOT_CREATE_BACKUPS")
+
+	ignoreFilesStr := os.Getenv("GOG_IGNORE_FILES_REGEX")
+	if ignoreFilesStr != "" {
+		var err error
+		ignoreFilesRegex, err = regexp.Compile(ignoreFilesStr)
+		if err != nil {
+			log.Fatalf("Invalid regular expression GOG_IGNORE_FILES_REGEX: %s\n", ignoreFilesStr)
+		}
+	}
 }
