@@ -121,7 +121,7 @@ func getBaseDir(homeDir string) string {
 func init() {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-			log.Fatal(err)
+		log.Fatal(err)
 	}
 
 	BaseDir = getBaseDir(homeDir)

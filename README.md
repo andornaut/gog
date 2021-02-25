@@ -20,7 +20,6 @@ Install dependencies:
 - [Go](https://golang.org/doc/install)
 - [Make](https://www.gnu.org/software/make/)
 
-
 ```bash
 git clone https://github.com/andornaut/gog.git
 cd gog
@@ -35,7 +34,7 @@ gog manage add dotfiles https://example.com/user/dotfiles.git
 gog add ~/.config/foorc
 
 # Gog moved `~/.config/foorc` into the default git repository ("dotfiles") and
-# then created a symlink to it at its original location 
+# then created a symlink to it at its original location
 ls -l ~/.config/foorc | awk '{print $9,$10,$11}'
 > /home/example/.config/foorc -> /home/example/.local/share/gog/dotfiles/$HOME/.config/foorc
 
@@ -152,7 +151,9 @@ You can use environment variables to customize some settings.
 Environment variable | Description
 ---|---
 GOG_DEFAULT_REPOSITORY_NAME | The repository to use when `--repository NAME` is not specified (default: the first directory in `${HOME}/.local/share/gog`)
+GOG_DO_NOT_CREATE_BACKUPS | Do not create .gog backup files
 GOG_HOME | The directory where gog stores its files (default: `${HOME}/.local/share/gog`)
+GOG_IGNORE_FILES_REGEX | Do not link repository-relative file paths that match this regular expression
 
 ## Developing
 
