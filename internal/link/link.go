@@ -54,7 +54,7 @@ func Dir(repoPath, intPath string) error {
 
 // File creates a symbolic link from a repository file to the root filesystem.
 // File declares an `error` return type to match the signature of `Dir`, but
-// always returns nil.
+// usually print an error message and return nil.
 func File(repoPath, intPath string) error {
 	if ignoreFilesRegex.MatchString(strings.TrimPrefix(intPath, repoPath+"/")) {
 		return nil
@@ -98,11 +98,6 @@ func File(repoPath, intPath string) error {
 			printError(intPath, err)
 			return nil
 		}
-		// If extPath is a broken symbolic link, then delete it and continue
-		if err = os.Remove(extPath); err != nil {
-			printError(intPath, err)
-			return nil
-		}
 		shouldBackup = false
 	}
 
@@ -114,6 +109,12 @@ func File(repoPath, intPath string) error {
 	if shouldBackup {
 		if ok := backup(extPath); !ok {
 			printError(intPath, errors.New("backup of existing file failed. Skipping"))
+			return nil
+		}
+	} else {
+		// Either extPath is a broken symbolic link or backups are disabled
+		if err = os.Remove(extPath); err != nil {
+			printError(intPath, err)
 			return nil
 		}
 	}

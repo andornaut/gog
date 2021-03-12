@@ -119,13 +119,15 @@ func getBaseDir(homeDir string) string {
 }
 
 func init() {
-	homeDir, err := os.UserHomeDir()
+	var err error
+
+	homeDir, err = os.UserHomeDir()
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	BaseDir = getBaseDir(homeDir)
-	if err := os.MkdirAll(BaseDir, 0755); err != nil {
+	if err = os.MkdirAll(BaseDir, 0755); err != nil {
 		log.Fatal(err)
 	}
 }
