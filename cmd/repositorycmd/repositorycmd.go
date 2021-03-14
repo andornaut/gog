@@ -1,4 +1,4 @@
-package managecmd
+package repositorycmd
 
 import (
 	"fmt"
@@ -13,7 +13,7 @@ import (
 
 // Cmd implements ./gog repository
 var Cmd = &cobra.Command{
-	Use:          "manage [command]",
+	Use:          "repository [command]",
 	Short:        "Manage repositories",
 	SilenceUsage: true,
 }

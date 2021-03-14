@@ -2,8 +2,8 @@
 
 Link files to Git repositories
 
-- `gog` can be used to manage "dotfiles" in `${HOME}`, but it can also manage links to files elsewhere on the filesystem
-- `gog` supports multiple git repositories, which can be useful to separate personal and work files
+- `gog` can be used to manage "dotfiles" in `${HOME}` or elsewhere on the filesystem
+- `gog` supports multiple Git repositories, which can be useful to separate personal and work files
 
 ## Installation
 
@@ -69,34 +69,34 @@ Available Commands:
   apply       Link a repository's contents to the filesystem
   git         Run a git command in a repository's directory
   help        Help about any command
-  manage      Manage repositories
   remove      Remove files or directories from a repository
+  repository  Manage repositories
 
 Flags:
   -h, --help                help for gog
   -r, --repository string   name of repository
 
-Use "gog [command] --help" for more information about a command.
+Use "gog [command] --help" for more information about a command..
 ```
 
-`gog manage --help`
+`gog repository --help`
 
 ```
 Manage repositories
 
 Usage:
-  gog manage [command]
+  gog repository [command]
 
 Available Commands:
   add         Add a git repository
-  get-default Print the name of the default repository
-  list        Print the names of all repositories
+  get-default Print the name or path of the default repository
+  list        Print the names or paths of all repositories
   remove      Remove a repository
 
 Flags:
   -h, --help   help for repository
 
-Use "gog manage [command] --help" for more information about a command.
+Use "gog repository [command] --help" for more information about a command.
 ```
 
 `gog add --help`
@@ -109,7 +109,7 @@ Usage:
 
 Flags:
   -h, --help                help for add
-  -r, --repository string   name of repository to add to
+  -r, --repository string   name of repository
 ```
 
 `gog apply --help`
