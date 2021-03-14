@@ -7,8 +7,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-
-	"github.com/andornaut/gog/internal/copy"
 )
 
 var (
@@ -16,46 +14,6 @@ var (
 	BaseDir string
 	homeDir string
 )
-
-// AddPath adds a path to a repository
-func AddPath(repoPath, targetPath string) error {
-	if err := validateTargetPath(targetPath); err != nil {
-		return err
-	}
-	extPath, err := filepath.EvalSymlinks(targetPath)
-	if err != nil {
-		return err
-	}
-
-	intPath := ToInternalPath(repoPath, targetPath)
-	if extPath == intPath {
-		// Already added
-		return nil
-	}
-
-	extFileInfo, err := os.Stat(extPath)
-	if err != nil {
-		return err
-	}
-	if extFileInfo.IsDir() {
-		return copy.Dir(extPath, intPath, shouldSkip)
-	}
-
-	// Create the parent directory, because `copy.File` does not create directories
-	if err := os.MkdirAll(filepath.Dir(intPath), 0755); err != nil {
-		return err
-	}
-	return copy.File(extPath, intPath)
-}
-
-// RemovePath removes a path from a repository
-func RemovePath(repoPath, targetPath string) error {
-	if err := validateTargetPath(targetPath); err != nil {
-		return err
-	}
-	intPath := ToInternalPath(repoPath, targetPath)
-	return os.RemoveAll(intPath)
-}
 
 // GetDefault returns the default repository path
 func GetDefault() (string, error) {

@@ -20,10 +20,10 @@ var add = &cobra.Command{
 			return err
 		}
 		paths := cleanPaths(args)
-		if err := repository.SyncRepository(repoPath, paths, repository.AddPath); err != nil {
+		if err := repository.AddPaths(repoPath, paths); err != nil {
 			return err
 		}
-		return repository.SyncLinks(repoPath, paths, link.Dir, link.File)
+		return link.Link(repoPath, paths)
 	},
 }
 
@@ -68,10 +68,10 @@ var remove = &cobra.Command{
 		}
 
 		paths := cleanPaths(args)
-		if err := repository.SyncLinks(repoPath, paths, link.UnlinkDir, link.UnlinkFile); err != nil {
+		if err := link.Unlink(repoPath, paths); err != nil {
 			return err
 		}
-		return repository.SyncRepository(repoPath, paths, repository.RemovePath)
+		return repository.RemovePaths(repoPath, paths)
 	},
 }
 

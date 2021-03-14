@@ -18,6 +18,16 @@ var (
 	ignoreFilesRegex = regexp.MustCompile("a^") // Do not match anything by default
 )
 
+// Unlink unlinks the given paths
+func Unlink(repoPath string, paths []string) error {
+	return repository.SyncLinks(repoPath, paths, UnlinkDir, UnlinkFile)
+}
+
+// Link unlinks the given paths
+func Link(repoPath string, paths []string) error {
+	return repository.SyncLinks(repoPath, paths, Dir, File)
+}
+
 // Dir recursively creates symbolic links from a repository directory's files
 // to the root filesystem
 func Dir(repoPath, intPath string) error {
