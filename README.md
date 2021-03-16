@@ -30,7 +30,7 @@ make install
 
 ```bash
 # Clone a git repository and add a file to it
-gog manage add dotfiles https://example.com/user/dotfiles.git
+gog repository add dotfiles https://example.com/user/dotfiles.git
 gog add ~/.config/foorc
 
 # Gog moved `~/.config/foorc` into the default git repository ("dotfiles") and
@@ -44,7 +44,7 @@ gog git push
 
 # Login to a remote machine and initialize the same git repository as above
 ssh remote@example.com
-gog manage add dotfiles https://example.com/user/dotfiles.git
+gog repository add dotfiles https://example.com/user/dotfiles.git
 
 gog apply
 
@@ -139,7 +139,7 @@ component, and then the `${HOME}` variable is expanded when `gog apply` is run.
 multiple repositories - even if they contain partially overlapping files.
 
 ```bash
-for repoName in $(gog manage list | sort -r); do
+for repoName in $(gog repository list | sort -r); do
   gog --repository ${repoName} apply
 done
 ```
