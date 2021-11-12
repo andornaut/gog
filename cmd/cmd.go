@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"github.com/andornaut/gog/cmd/repositorycmd"
+	"github.com/andornaut/gog/internal/git"
 	"github.com/andornaut/gog/internal/link"
 	"github.com/andornaut/gog/internal/repository"
 	"github.com/spf13/cobra"
@@ -41,7 +42,7 @@ var apply = &cobra.Command{
 	},
 }
 
-var git = &cobra.Command{
+var git_ = &cobra.Command{
 	Use:                   "git [git command and arguments...]",
 	Short:                 "Run a git command in a repository's directory",
 	DisableFlagParsing:    true,
@@ -52,7 +53,7 @@ var git = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return repository.GitRun(repoPath, args...)
+		return git.Run(repoPath, args...)
 	},
 }
 
@@ -89,5 +90,5 @@ func init() {
 	apply.Flags().StringVarP(&repositoryFlag, "repository", "r", "", "name of repository")
 	remove.Flags().StringVarP(&repositoryFlag, "repository", "r", "", "name of repository")
 	Cmd.Flags().StringVarP(&repositoryFlag, "repository", "r", "", "name of repository")
-	Cmd.AddCommand(add, apply, git, remove, repositorycmd.Cmd)
+	Cmd.AddCommand(add, apply, git_, remove, repositorycmd.Cmd)
 }

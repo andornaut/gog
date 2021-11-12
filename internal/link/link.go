@@ -20,12 +20,38 @@ var (
 
 // Unlink unlinks the given paths
 func Unlink(repoPath string, paths []string) error {
-	return repository.SyncLinks(repoPath, paths, UnlinkDir, UnlinkFile)
+	return syncLinks(repoPath, paths, UnlinkDir, UnlinkFile)
 }
 
 // Link unlinks the given paths
 func Link(repoPath string, paths []string) error {
-	return repository.SyncLinks(repoPath, paths, Dir, File)
+	return syncLinks(repoPath, paths, Dir, File)
+}
+
+type syncFunc func(string, string) error
+
+func syncLinks(repoPath string, paths []string, updateDir, updateFile syncFunc) error {
+	for _, extPath := range paths {
+		intPath := repository.ToInternalPath(repoPath, extPath)
+		intFileInfo, err := os.Lstat(intPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				// Nothing to update
+				continue
+			}
+			return err
+		}
+		if intFileInfo.IsDir() {
+			if err := updateDir(repoPath, intPath); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := updateFile(repoPath, intPath); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Dir recursively creates symbolic links from a repository directory's files

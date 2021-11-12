@@ -42,6 +42,6 @@ func repoPath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	fmt.Println("REPOSITORY:", filepath.Base(repoPath))
+	fmt.Println("Repository:", filepath.Base(repoPath))
 	return repoPath, nil
 }
