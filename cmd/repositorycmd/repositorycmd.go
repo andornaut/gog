@@ -2,8 +2,6 @@ package repositorycmd
 
 import (
 	"fmt"
-	"io/ioutil"
-	"os"
 	"path"
 	"path/filepath"
 
@@ -32,25 +30,11 @@ var add = &cobra.Command{
 			repoURL = args[1]
 		}
 
-		if err := repository.ValidateRepoName(repoName); err != nil {
+		repoPath, err := repository.Add(repoName, repoURL)
+		if err != nil {
 			return err
 		}
-
-		repoPath := path.Join(repository.BaseDir, repoName)
-		if err := os.MkdirAll(repoPath, 0755); err != nil {
-			return err
-		}
-
-		if repoURL == "" {
-			if err := repository.GitInit(repoPath); err != nil {
-				return err
-			}
-		} else {
-			if err := repository.GitClone(repoPath, repoURL); err != nil {
-				return err
-			}
-		}
-		fmt.Println(repoPath)
+		fmt.Printf("Added repository: %s\n", repoPath)
 		return nil
 	},
 }
@@ -82,19 +66,15 @@ var list = &cobra.Command{
 	Args:                  cobra.NoArgs,
 	DisableFlagsInUseLine: true,
 	RunE: func(c *cobra.Command, args []string) error {
-		entries, err := ioutil.ReadDir(repository.BaseDir)
+		names, err := repository.List()
 		if err != nil {
 			return err
 		}
-
-		for _, fileInfo := range entries {
-			if fileInfo.IsDir() {
-				msg := fileInfo.Name()
-				if isPath {
-					msg = path.Join(repository.BaseDir, msg)
-				}
-				fmt.Println(msg)
+		for _, msg := range names {
+			if isPath {
+				msg = path.Join(repository.BaseDir, msg)
 			}
+			fmt.Println(msg)
 		}
 		return nil
 	},
@@ -107,14 +87,11 @@ var remove = &cobra.Command{
 	DisableFlagsInUseLine: true,
 	RunE: func(c *cobra.Command, args []string) error {
 		repoName := args[0]
-		if err := repository.ValidateRepoName(repoName); err != nil {
+		repoPath, err := repository.Remove(repoName)
+		if err != nil {
 			return err
 		}
-		repoPath := path.Join(repository.BaseDir, repoName)
-		if err := os.RemoveAll(repoPath); err != nil {
-			return err
-		}
-		fmt.Println(repoPath)
+		fmt.Printf("Removed repository: %s\n", repoPath)
 		return nil
 	},
 }

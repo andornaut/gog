@@ -24,6 +24,27 @@ func GetDefault() (string, error) {
 	return getFirst()
 }
 
+// List returns a list of repositories
+func List() ([]string, error) {
+	entries, err := ioutil.ReadDir(BaseDir)
+	if err != nil {
+		return nil, err
+	}
+	repoNames := []string{}
+	for _, fileInfo := range entries {
+		repoName := fileInfo.Name()
+		if err := validateRepoName(repoName); err != nil {
+			continue
+		}
+		repoPath := path.Join(BaseDir, repoName)
+		if err := validateRepoPath(repoPath); err != nil {
+			continue
+		}
+		repoNames = append(repoNames, repoName)
+	}
+	return repoNames, nil
+}
+
 // RootPath returns an absolute filesystem path which corresponds to the given
 // repository name or the default repository's path if the given name is empty
 func RootPath(name string) (string, error) {
@@ -31,7 +52,7 @@ func RootPath(name string) (string, error) {
 		return GetDefault()
 	}
 
-	if err := ValidateRepoName(name); err != nil {
+	if err := validateRepoName(name); err != nil {
 		return "", err
 	}
 	p := path.Join(BaseDir, name)

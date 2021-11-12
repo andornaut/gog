@@ -5,13 +5,15 @@ import (
 	"os"
 	"regexp"
 	"strings"
+
+	"github.com/andornaut/gog/internal/git"
 )
 
-// ValidateRepoName returns an error if the repo name is invalid
-func ValidateRepoName(name string) error {
+// validateRepoName returns an error if the repo name is invalid
+func validateRepoName(name string) error {
 	validRepoName := regexp.MustCompile(`^[\w-_]+$`)
 	if !validRepoName.MatchString(name) {
-		return fmt.Errorf("Invalid repository name: %s", name)
+		return fmt.Errorf("invalid repository name: %s", name)
 	}
 	return nil
 }
@@ -19,17 +21,20 @@ func ValidateRepoName(name string) error {
 func validateRepoPath(p string) error {
 	fileInfo, err := os.Stat(p)
 	if err != nil {
-		return fmt.Errorf("Invalid repository path: %s", p)
+		return fmt.Errorf("invalid repository path: %s", p)
 	}
 	if !fileInfo.IsDir() {
-		return fmt.Errorf("Repository path must be a directory: %s", p)
+		return fmt.Errorf("repository path must be a directory: %s", p)
+	}
+	if !git.Is(p) {
+		return fmt.Errorf("repository must be initialized as a git repository")
 	}
 	return nil
 }
 
 func validateTargetPath(p string) error {
 	if shouldSkip(p, "") {
-		return fmt.Errorf("Invalid target path: %s", p)
+		return fmt.Errorf("invalid target path: %s", p)
 	}
 	return nil
 }

@@ -1,37 +1,55 @@
 package repository
 
 import (
+	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 
 	"github.com/andornaut/gog/internal/copy"
+	"github.com/andornaut/gog/internal/git"
 )
 
-type syncFunc func(string, string) error
+// Add adds a new repository
+func Add(repoName, repoURL string) (string, error) {
+	if err := validateRepoName(repoName); err != nil {
+		return "", err
+	}
 
-// SyncLinks synchronizes all given paths within `repoPath`
-func SyncLinks(repoPath string, paths []string, updateDir, updateFile syncFunc) error {
-	for _, extPath := range paths {
-		intPath := ToInternalPath(repoPath, extPath)
-		intFileInfo, err := os.Lstat(intPath)
-		if err != nil {
-			if os.IsNotExist(err) {
-				// Nothing to update
-				continue
-			}
-			return err
+	repoPath := path.Join(BaseDir, repoName)
+	if err := validateRepoPath(repoPath); err == nil {
+		return "", fmt.Errorf("repository already exists: %s", repoPath)
+	}
+
+	if err := os.MkdirAll(repoPath, 0755); err != nil {
+		return "", err
+	}
+
+	if repoURL == "" {
+		if err := git.Init(BaseDir, repoPath); err != nil {
+			return "", err
 		}
-		if intFileInfo.IsDir() {
-			if err := updateDir(repoPath, intPath); err != nil {
-				return err
-			}
-			continue
-		}
-		if err := updateFile(repoPath, intPath); err != nil {
-			return err
+	} else {
+		if err := git.Clone(BaseDir, repoPath, repoURL); err != nil {
+			return "", err
 		}
 	}
-	return nil
+	return repoPath, nil
+}
+
+// Remove removes an existing repository
+func Remove(repoName string) (string, error) {
+	if err := validateRepoName(repoName); err != nil {
+		return "", err
+	}
+	repoPath := path.Join(BaseDir, repoName)
+	if err := validateRepoPath(repoPath); err != nil {
+		return "", err
+	}
+	if err := os.RemoveAll(repoPath); err != nil {
+		return "", err
+	}
+	return repoPath, nil
 }
 
 // AddPaths adds the given paths from the given repository
@@ -81,6 +99,8 @@ func removePath(repoPath, targetPath string) error {
 	intPath := ToInternalPath(repoPath, targetPath)
 	return os.RemoveAll(intPath)
 }
+
+type syncFunc func(string, string) error
 
 // syncRepository synchronizes all given paths within `repoPath`
 func syncRepository(repoPath string, paths []string, updateRepository syncFunc) error {
