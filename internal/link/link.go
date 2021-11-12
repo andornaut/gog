@@ -122,7 +122,7 @@ func File(repoPath, intPath string) error {
 		return nil
 	}
 	if extFileInfo.IsDir() {
-		printError(intPath, fmt.Errorf("Path expected to be a file, but is a directory: %s", extPath))
+		printError(intPath, fmt.Errorf("path expected to be a file, but is a directory: %s", extPath))
 		return nil
 	}
 
