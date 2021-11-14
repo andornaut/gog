@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 
 	"github.com/andornaut/gog/internal/copy"
+	"github.com/andornaut/gog/internal/git"
 	"github.com/andornaut/gog/internal/repository"
 )
 
@@ -47,5 +48,5 @@ func UnlinkFile(repoPath, intPath string) error {
 		return err
 	}
 	printUnLinked(intPath, extPath)
-	return nil
+	return git.Run(repoPath, "rm", "-qf", intPath)
 }

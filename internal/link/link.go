@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/andornaut/gog/internal/git"
 	"github.com/andornaut/gog/internal/repository"
 )
 
@@ -109,6 +110,7 @@ func File(repoPath, intPath string) error {
 	if err == nil {
 		// Success
 		printLinked(intPath, extPath)
+		addToGit(repoPath, intPath, extPath)
 		return nil
 	}
 	if !os.IsExist(err) {
@@ -122,7 +124,7 @@ func File(repoPath, intPath string) error {
 		return nil
 	}
 	if extFileInfo.IsDir() {
-		printError(intPath, fmt.Errorf("path expected to be a file, but is a directory: %s", extPath))
+		printError(intPath, fmt.Errorf("path is expected to be a file, but is a directory: %s", extPath))
 		return nil
 	}
 
@@ -139,6 +141,7 @@ func File(repoPath, intPath string) error {
 
 	if actualExtPath == intPath {
 		// Already linked
+		addToGit(repoPath, intPath, extPath)
 		return nil
 	}
 
@@ -154,13 +157,19 @@ func File(repoPath, intPath string) error {
 			return nil
 		}
 	}
-
 	if err = os.Symlink(intPath, extPath); err != nil {
 		printError(intPath, err)
 		return nil
 	}
 	printLinked(intPath, extPath)
+	addToGit(repoPath, intPath, extPath)
 	return nil
+}
+
+func addToGit(repoPath, intPath, extPath string) {
+	if err := git.Run(repoPath, "add", intPath); err != nil {
+		printError(intPath, err)
+	}
 }
 
 func backup(p string) bool {
