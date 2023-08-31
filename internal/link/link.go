@@ -167,7 +167,7 @@ func File(repoPath, intPath string) error {
 }
 
 func addToGit(repoPath, intPath, extPath string) {
-	if err := git.Run(repoPath, "add", intPath); err != nil {
+	if err := git.Run(repoPath, "add", "--force", intPath); err != nil {
 		printError(intPath, err)
 	}
 }
