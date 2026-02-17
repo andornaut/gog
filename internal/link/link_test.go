@@ -172,22 +172,22 @@ func TestFileHandlesBrokenSymlink(t *testing.T) {
 
 	// Create a test file in the repo
 	intPath := filepath.Join(repoPath, "$HOME", ".bashrc")
-	if err := os.MkdirAll(filepath.Dir(intPath), 0755); err != nil {
-		t.Fatalf("Failed to create dir: %v", err)
+	if mkdirErr := os.MkdirAll(filepath.Dir(intPath), 0755); mkdirErr != nil {
+		t.Fatalf("Failed to create dir: %v", mkdirErr)
 	}
-	if err := os.WriteFile(intPath, []byte("test content"), 0644); err != nil {
-		t.Fatalf("Failed to create test file: %v", err)
+	if writeErr := os.WriteFile(intPath, []byte("test content"), 0644); writeErr != nil {
+		t.Fatalf("Failed to create test file: %v", writeErr)
 	}
 
 	extPath := repository.ToExternalPath(repoPath, intPath)
 
 	// Create broken symlink at external path
-	if err := os.MkdirAll(filepath.Dir(extPath), 0755); err != nil {
-		t.Fatalf("Failed to create ext dir: %v", err)
+	if mkdirErr := os.MkdirAll(filepath.Dir(extPath), 0755); mkdirErr != nil {
+		t.Fatalf("Failed to create ext dir: %v", mkdirErr)
 	}
 	brokenTarget := filepath.Join(repoPath, "nonexistent")
-	if err := os.Symlink(brokenTarget, extPath); err != nil {
-		t.Fatalf("Failed to create broken symlink: %v", err)
+	if symlinkErr := os.Symlink(brokenTarget, extPath); symlinkErr != nil {
+		t.Fatalf("Failed to create broken symlink: %v", symlinkErr)
 	}
 
 	// Create symlink (should replace broken symlink without backup)
@@ -230,21 +230,21 @@ func TestFileSkipsAlreadyLinked(t *testing.T) {
 
 	// Create a test file in the repo
 	intPath := filepath.Join(repoPath, "$HOME", ".bashrc")
-	if err := os.MkdirAll(filepath.Dir(intPath), 0755); err != nil {
-		t.Fatalf("Failed to create dir: %v", err)
+	if mkdirErr := os.MkdirAll(filepath.Dir(intPath), 0755); mkdirErr != nil {
+		t.Fatalf("Failed to create dir: %v", mkdirErr)
 	}
-	if err := os.WriteFile(intPath, []byte("test content"), 0644); err != nil {
-		t.Fatalf("Failed to create test file: %v", err)
+	if writeErr := os.WriteFile(intPath, []byte("test content"), 0644); writeErr != nil {
+		t.Fatalf("Failed to create test file: %v", writeErr)
 	}
 
 	extPath := repository.ToExternalPath(repoPath, intPath)
 
 	// Create correct symlink
-	if err := os.MkdirAll(filepath.Dir(extPath), 0755); err != nil {
-		t.Fatalf("Failed to create ext dir: %v", err)
+	if mkdirErr := os.MkdirAll(filepath.Dir(extPath), 0755); mkdirErr != nil {
+		t.Fatalf("Failed to create ext dir: %v", mkdirErr)
 	}
-	if err := os.Symlink(intPath, extPath); err != nil {
-		t.Fatalf("Failed to create initial symlink: %v", err)
+	if symlinkErr := os.Symlink(intPath, extPath); symlinkErr != nil {
+		t.Fatalf("Failed to create initial symlink: %v", symlinkErr)
 	}
 
 	// Get initial stat info
@@ -277,11 +277,7 @@ func TestFileSkipsIgnoredFiles(t *testing.T) {
 	defer func() { ignoreFilesRegex = originalRegex }()
 
 	// Set ignore pattern to skip .swp files
-	var err error
-	ignoreFilesRegex, err = regexp.Compile(`\.swp$`)
-	if err != nil {
-		t.Fatalf("Failed to compile test regex: %v", err)
-	}
+	ignoreFilesRegex = regexp.MustCompile(`\.swp$`)
 
 	repoPath, cleanup := setupTestRepo(t)
 	defer cleanup()
