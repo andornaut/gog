@@ -2,11 +2,11 @@ package repository
 
 import (
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 )
 
 var (
@@ -26,13 +26,13 @@ func GetDefault() (string, error) {
 
 // List returns a list of repositories
 func List() ([]string, error) {
-	entries, err := ioutil.ReadDir(BaseDir)
+	entries, err := os.ReadDir(BaseDir)
 	if err != nil {
 		return nil, err
 	}
 	repoNames := []string{}
-	for _, fileInfo := range entries {
-		repoName := fileInfo.Name()
+	for _, entry := range entries {
+		repoName := entry.Name()
 		if err := validateRepoName(repoName); err != nil {
 			continue
 		}
@@ -56,13 +56,45 @@ func RootPath(name string) (string, error) {
 		return "", err
 	}
 	p := path.Join(BaseDir, name)
+
+	// First check if exact match exists
+	if err := validateRepoPath(p); err == nil {
+		return p, nil
+	}
+
+	// Fall back to glob matching only if exact match doesn't exist
 	globPaths, err := filepath.Glob(p + "*")
 	if err != nil {
 		return "", err
 	}
-	if globPaths != nil {
-		p = globPaths[0]
+
+	// Validate that we have exactly one match and it's in the correct directory
+	if len(globPaths) == 0 {
+		return "", fmt.Errorf("repository not found: %s", name)
 	}
+
+	// Filter to only paths that are within BaseDir and start with the expected name
+	var validPaths []string
+	for _, globPath := range globPaths {
+		// Ensure path is within BaseDir (prevent directory traversal)
+		if !strings.HasPrefix(globPath, BaseDir+string(filepath.Separator)) {
+			continue
+		}
+		// Ensure the basename starts with the repository name
+		basename := filepath.Base(globPath)
+		if strings.HasPrefix(basename, name) {
+			validPaths = append(validPaths, globPath)
+		}
+	}
+
+	if len(validPaths) == 0 {
+		return "", fmt.Errorf("repository not found: %s", name)
+	}
+	if len(validPaths) > 1 {
+		return "", fmt.Errorf("ambiguous repository name %s matches multiple repositories", name)
+	}
+
+	p = validPaths[0]
 	if err := validateRepoPath(p); err != nil {
 		return "", err
 	}
@@ -70,14 +102,14 @@ func RootPath(name string) (string, error) {
 }
 
 func getFirst() (string, error) {
-	entries, err := ioutil.ReadDir(BaseDir)
+	entries, err := os.ReadDir(BaseDir)
 	if err != nil {
 		return "", err
 	}
 
-	for _, fileInfo := range entries {
-		if fileInfo.IsDir() {
-			return path.Join(BaseDir, fileInfo.Name()), nil
+	for _, entry := range entries {
+		if entry.IsDir() {
+			return path.Join(BaseDir, entry.Name()), nil
 		}
 	}
 	return "", fmt.Errorf("run `gog repository add` to add a repository")
