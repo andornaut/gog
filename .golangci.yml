@@ -1,0 +1,37 @@
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - gofmt
+    - gosec
+    - revive
+    - misspell
+    - unconvert
+    - goconst
+    - exportloopref
+    - bodyclose
+    - gocritic
+
+linters-settings:
+  govet:
+    check-shadowing: true
+  revive:
+    rules:
+      - name: exported
+        disabled: true
+  gosec:
+    excludes:
+      - G115 # false positives with int64 and uint64
+
+issues:
+  exclude-use-default: false
+  max-issues-per-linter: 0
+  max-same-issues: 0
