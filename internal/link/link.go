@@ -146,9 +146,9 @@ func File(repoPath, intPath string) error {
 	}
 
 	if shouldBackup {
-		ok, err := backup(extPath)
+		ok, backupErr := backup(extPath)
 		if !ok {
-			printError(intPath, fmt.Errorf("backup failed, skipping: %w", err))
+			printError(intPath, fmt.Errorf("backup failed, skipping: %w", backupErr))
 			return nil
 		}
 	} else {

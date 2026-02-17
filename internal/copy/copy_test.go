@@ -49,8 +49,8 @@ func TestFilePreservesPermissions(t *testing.T) {
 
 	// Create source file with specific permissions
 	srcPath := filepath.Join(tmpDir, "source.txt")
-	if err := os.WriteFile(srcPath, []byte("test"), 0600); err != nil {
-		t.Fatalf("Failed to create source file: %v", err)
+	if writeErr := os.WriteFile(srcPath, []byte("test"), 0600); writeErr != nil {
+		t.Fatalf("Failed to create source file: %v", writeErr)
 	}
 
 	// Copy file
@@ -148,8 +148,8 @@ func TestDirCopiesRecursively(t *testing.T) {
 
 	// Create files in structure
 	files := map[string]string{
-		"file1.txt":        "content 1",
-		"subdir/file2.txt": "content 2",
+		"file1.txt":               "content 1",
+		"subdir/file2.txt":        "content 2",
 		"subdir/nested/file3.txt": "content 3",
 	}
 
@@ -267,8 +267,8 @@ func TestDirPreservesPermissions(t *testing.T) {
 
 	// Create source directory with specific permissions
 	srcDir := filepath.Join(tmpDir, "src")
-	if err := os.Mkdir(srcDir, 0700); err != nil {
-		t.Fatalf("Failed to create source dir: %v", err)
+	if mkdirErr := os.Mkdir(srcDir, 0700); mkdirErr != nil {
+		t.Fatalf("Failed to create source dir: %v", mkdirErr)
 	}
 
 	// Copy directory
@@ -304,21 +304,21 @@ func TestDirHandlesSymlinks(t *testing.T) {
 
 	// Create source directory
 	srcDir := filepath.Join(tmpDir, "src")
-	if err := os.MkdirAll(srcDir, 0755); err != nil {
-		t.Fatalf("Failed to create source dir: %v", err)
+	if mkdirErr := os.MkdirAll(srcDir, 0755); mkdirErr != nil {
+		t.Fatalf("Failed to create source dir: %v", mkdirErr)
 	}
 
 	// Create target file for symlink
 	targetFile := filepath.Join(tmpDir, "target.txt")
 	testContent := []byte("symlink target content")
-	if err := os.WriteFile(targetFile, testContent, 0644); err != nil {
-		t.Fatalf("Failed to create target file: %v", err)
+	if writeErr := os.WriteFile(targetFile, testContent, 0644); writeErr != nil {
+		t.Fatalf("Failed to create target file: %v", writeErr)
 	}
 
 	// Create symlink in source directory
 	symlinkPath := filepath.Join(srcDir, "link.txt")
-	if err := os.Symlink(targetFile, symlinkPath); err != nil {
-		t.Fatalf("Failed to create symlink: %v", err)
+	if symlinkErr := os.Symlink(targetFile, symlinkPath); symlinkErr != nil {
+		t.Fatalf("Failed to create symlink: %v", symlinkErr)
 	}
 
 	// Copy directory

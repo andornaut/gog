@@ -247,9 +247,9 @@ func TestUnlinkDirProcessesAllFiles(t *testing.T) {
 
 	// Create multiple files
 	files := map[string]string{
-		"file1.txt":               "content 1",
-		"file2.txt":               "content 2",
-		"subdir/file3.txt":        "content 3",
+		"file1.txt":        "content 1",
+		"file2.txt":        "content 2",
+		"subdir/file3.txt": "content 3",
 	}
 
 	for name, content := range files {

@@ -41,7 +41,11 @@ func File(src, dst string) (err error) {
 	if err != nil {
 		return
 	}
-	defer in.Close()
+	defer func() {
+		if e := in.Close(); e != nil && err == nil {
+			err = e
+		}
+	}()
 
 	out, err := os.Create(dst)
 	if err != nil {

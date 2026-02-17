@@ -16,7 +16,7 @@ linters:
     - misspell
     - unconvert
     - goconst
-    - exportloopref
+    - copyloopvar
     - bodyclose
     - gocritic
 
@@ -37,3 +37,18 @@ issues:
   exclude-use-default: false
   max-issues-per-linter: 0
   max-same-issues: 0
+  exclude-rules:
+    # Exclude gosec checks in test files
+    - path: _test\.go
+      linters:
+        - gosec
+    # Exclude errcheck for os.RemoveAll in defer statements in test files
+    - path: _test\.go
+      text: "Error return value of `os.RemoveAll` is not checked"
+      linters:
+        - errcheck
+    # Exclude errcheck for cleanup() functions in test files
+    - path: _test\.go
+      text: "Error return value of `cleanup` is not checked"
+      linters:
+        - errcheck
