@@ -9,9 +9,13 @@ import (
 	"github.com/andornaut/gog/internal/git"
 )
 
+var (
+	// validRepoName is the regex pattern for valid repository names
+	validRepoName = regexp.MustCompile(`^[\w-_]+$`)
+)
+
 // validateRepoName returns an error if the repo name is invalid
 func validateRepoName(name string) error {
-	validRepoName := regexp.MustCompile(`^[\w-_]+$`)
 	if !validRepoName.MatchString(name) {
 		return fmt.Errorf("invalid repository name %q (must contain only letters, numbers, dashes, and underscores)", name)
 	}

@@ -29,7 +29,7 @@ func List() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	repoNames := []string{}
+	repoNames := make([]string, 0, len(entries))
 	for _, entry := range entries {
 		repoName := entry.Name()
 		if err := validateRepoName(repoName); err != nil {
