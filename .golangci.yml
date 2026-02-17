@@ -11,6 +11,8 @@ linters:
     - staticcheck
     - unused
     - gofmt
+    - goimports
+    - gci
     - gosec
     - revive
     - misspell
@@ -21,6 +23,11 @@ linters:
     - gocritic
 
 linters-settings:
+  gci:
+    sections:
+      - standard # Standard library
+      - default  # Third-party packages
+      - prefix(github.com/andornaut/gog) # Local packages
   govet:
     enable-all: true
     disable:
