@@ -1,63 +1,68 @@
+version: "2"
 run:
-  timeout: 5m
   tests: true
-
 linters:
   enable:
-    - errcheck
-    - gosimple
-    - govet
-    - ineffassign
-    - staticcheck
-    - unused
-    - unparam
-    - gofmt
-    - goimports
-    - gci
-    - gosec
-    - revive
-    - misspell
-    - unconvert
-    - goconst
-    - copyloopvar
     - bodyclose
+    - copyloopvar
+    - goconst
     - gocritic
-
-linters-settings:
-  gci:
-    sections:
-      - standard # Standard library
-      - default  # Third-party packages
-      - prefix(github.com/andornaut/gog) # Local packages
-  govet:
-    enable-all: true
-    disable:
-      - fieldalignment
-  revive:
+    - gosec
+    - misspell
+    - revive
+    - unconvert
+    - unparam
+  settings:
+    gosec:
+      excludes:
+        - G204 # subprocess launched with variable - git commands
+        - G301 # directory permissions 0755 are standard and appropriate
+        - G304 # file operations with user paths are the tool's purpose
+        - G703 # path traversal - validating user paths is the tool's purpose
+        - G706 # log injection - logging environment variables
+    govet:
+      disable:
+        - fieldalignment
+      enable-all: true
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+  exclusions:
+    generated: lax
     rules:
-      - name: exported
-        disabled: true
-  gosec:
-    excludes:
-      - G301 # directory permissions 0755 are standard and appropriate
-      - G304 # file operations with user paths are the tool's purpose
-
+      - linters:
+          - gosec
+        path: _test\.go
+      - linters:
+          - errcheck
+        path: _test\.go
+        text: Error return value of `os.RemoveAll` is not checked
+      - linters:
+          - errcheck
+        path: _test\.go
+        text: Error return value of `cleanup` is not checked
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
 issues:
-  exclude-use-default: false
   max-issues-per-linter: 0
   max-same-issues: 0
-  exclude-rules:
-    # Exclude gosec checks in test files
-    - path: _test\.go
-      linters:
-        - gosec
-    # Exclude errcheck for os.RemoveAll in defer statements in test files
-    - path: _test\.go
-      text: "Error return value of `os.RemoveAll` is not checked"
-      linters:
-        - errcheck
-    # Exclude errcheck for cleanup() functions in test files
-    - path: _test\.go
-      text: "Error return value of `cleanup` is not checked"
-      linters:
-        - errcheck
+formatters:
+  enable:
+    - gci
+    - gofmt
+    - goimports
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/andornaut/gog)
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
