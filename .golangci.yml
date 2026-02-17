@@ -19,10 +19,13 @@ linters:
     - exportloopref
     - bodyclose
     - gocritic
+    - shadow
 
 linters-settings:
   govet:
-    check-shadowing: true
+    enable-all: true
+    disable:
+      - fieldalignment
   revive:
     rules:
       - name: exported
