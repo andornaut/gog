@@ -1,7 +1,6 @@
 package link
 
 import (
-	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -73,14 +72,15 @@ func Dir(repoPath, intPath string) error {
 		if info.IsDir() {
 			extPath := repository.ToExternalPath(repoPath, p)
 			if isSymlink(extPath) {
-				if ok := backup(extPath); !ok {
-					printError(p, errors.New("backup of existing file failed. Skipping"))
+				ok, err := backup(extPath)
+				if !ok {
+					printError(p, fmt.Errorf("backup failed, skipping directory: %w", err))
 					return filepath.SkipDir
 				}
 			}
 
 			if err := os.MkdirAll(extPath, 0755); err != nil {
-				printError(p, err)
+				printError(p, fmt.Errorf("failed to create directory %s: %w", extPath, err))
 				return filepath.SkipDir
 			}
 			return nil
@@ -115,16 +115,16 @@ func File(repoPath, intPath string) error {
 	}
 	if !os.IsExist(err) {
 		// We cannot recover from an error other than extPath already existing, in which case we can back it up.
-		return err
+		return fmt.Errorf("failed to create symlink from %s to %s: %w", extPath, intPath, err)
 	}
 
 	extFileInfo, err := os.Lstat(extPath)
 	if err != nil {
-		printError(intPath, err)
+		printError(intPath, fmt.Errorf("failed to stat %s: %w", extPath, err))
 		return nil
 	}
 	if extFileInfo.IsDir() {
-		printError(intPath, fmt.Errorf("path is expected to be a file, but is a directory: %s", extPath))
+		printError(intPath, fmt.Errorf("cannot create symlink: %s exists and is a directory", extPath))
 		return nil
 	}
 
@@ -133,7 +133,7 @@ func File(repoPath, intPath string) error {
 	if err != nil {
 		// Can only recover from an error due to a broken symbolic link
 		if !os.IsNotExist(err) {
-			printError(intPath, err)
+			printError(intPath, fmt.Errorf("failed to resolve symlink %s: %w", extPath, err))
 			return nil
 		}
 		shouldBackup = false
@@ -146,19 +146,20 @@ func File(repoPath, intPath string) error {
 	}
 
 	if shouldBackup {
-		if ok := backup(extPath); !ok {
-			printError(intPath, errors.New("backup of existing file failed. Skipping"))
+		ok, err := backup(extPath)
+		if !ok {
+			printError(intPath, fmt.Errorf("backup failed, skipping: %w", err))
 			return nil
 		}
 	} else {
 		// Either extPath is a broken symbolic link or backups are disabled
 		if err = os.Remove(extPath); err != nil {
-			printError(intPath, err)
+			printError(intPath, fmt.Errorf("failed to remove %s: %w", extPath, err))
 			return nil
 		}
 	}
 	if err = os.Symlink(intPath, extPath); err != nil {
-		printError(intPath, err)
+		printError(intPath, fmt.Errorf("failed to create symlink from %s to %s: %w", extPath, intPath, err))
 		return nil
 	}
 	printLinked(intPath, extPath)
@@ -168,18 +169,18 @@ func File(repoPath, intPath string) error {
 
 func addToGit(repoPath, intPath, extPath string) {
 	if err := git.Run(repoPath, "add", "--force", intPath); err != nil {
-		printError(intPath, err)
+		printError(intPath, fmt.Errorf("failed to add %s to git: %w", intPath, err))
 	}
 }
 
-func backup(p string) bool {
+func backup(p string) (bool, error) {
 	backupPath := backupPath(p)
 	if err := os.Rename(p, backupPath); err != nil {
 		// It's better to attempt to rename and fail if
 		// os.Rename will overwrite existing files, but not existing directories
-		return false
+		return false, fmt.Errorf("failed to rename %s to %s: %w", p, backupPath, err)
 	}
-	return true
+	return true, nil
 }
 
 func backupPath(p string) string {
