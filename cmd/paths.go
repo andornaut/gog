@@ -11,7 +11,7 @@ import (
 )
 
 func cleanPaths(paths []string) []string {
-	cleanedPaths := []string{}
+	cleanedPaths := make([]string, 0, len(paths))
 	for _, p := range paths {
 		if strings.TrimSpace(p) == "" {
 			continue
