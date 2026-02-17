@@ -32,6 +32,8 @@ linters-settings:
   gosec:
     excludes:
       - G115 # false positives with int64 and uint64
+      - G301 # directory permissions 0755 are appropriate for this tool
+      - G304 # file inclusion via variable is expected for file management tool
 
 issues:
   exclude-use-default: false

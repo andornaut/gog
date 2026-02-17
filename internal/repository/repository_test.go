@@ -23,8 +23,8 @@ func TestRootPathAmbiguousMatch(t *testing.T) {
 	// Create multiple repositories with similar names
 	for _, suffix := range []string{"-v1", "-v2"} {
 		repoPath := filepath.Join(BaseDir, "myrepo"+suffix)
-		if err := os.MkdirAll(filepath.Join(repoPath, ".git"), 0755); err != nil {
-			t.Fatalf("Failed to create test repo: %v", err)
+		if mkdirErr := os.MkdirAll(filepath.Join(repoPath, ".git"), 0755); mkdirErr != nil {
+			t.Fatalf("Failed to create test repo: %v", mkdirErr)
 		}
 	}
 
@@ -53,8 +53,8 @@ func TestRootPathDirectoryTraversal(t *testing.T) {
 
 	// Create a directory outside BaseDir
 	outsideDir := filepath.Join(filepath.Dir(tmpDir), "outside-gog")
-	if err := os.MkdirAll(filepath.Join(outsideDir, ".git"), 0755); err != nil {
-		t.Fatalf("Failed to create outside dir: %v", err)
+	if mkdirErr := os.MkdirAll(filepath.Join(outsideDir, ".git"), 0755); mkdirErr != nil {
+		t.Fatalf("Failed to create outside dir: %v", mkdirErr)
 	}
 	defer os.RemoveAll(outsideDir)
 

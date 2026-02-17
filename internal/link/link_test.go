@@ -66,11 +66,11 @@ func TestFileCreatesSymlink(t *testing.T) {
 
 	// Create a test file in the repo (using $HOME path format)
 	intPath := filepath.Join(repoPath, "$HOME", ".bashrc")
-	if err := os.MkdirAll(filepath.Dir(intPath), 0755); err != nil {
-		t.Fatalf("Failed to create dir: %v", err)
+	if mkdirErr := os.MkdirAll(filepath.Dir(intPath), 0755); mkdirErr != nil {
+		t.Fatalf("Failed to create dir: %v", mkdirErr)
 	}
-	if err := os.WriteFile(intPath, []byte("test content"), 0644); err != nil {
-		t.Fatalf("Failed to create test file: %v", err)
+	if writeErr := os.WriteFile(intPath, []byte("test content"), 0644); writeErr != nil {
+		t.Fatalf("Failed to create test file: %v", writeErr)
 	}
 
 	extPath := repository.ToExternalPath(repoPath, intPath)
@@ -114,22 +114,22 @@ func TestFileBacksUpExistingFile(t *testing.T) {
 
 	// Create a test file in the repo
 	intPath := filepath.Join(repoPath, "$HOME", ".bashrc")
-	if err := os.MkdirAll(filepath.Dir(intPath), 0755); err != nil {
-		t.Fatalf("Failed to create dir: %v", err)
+	if mkdirErr := os.MkdirAll(filepath.Dir(intPath), 0755); mkdirErr != nil {
+		t.Fatalf("Failed to create dir: %v", mkdirErr)
 	}
-	if err := os.WriteFile(intPath, []byte("new content"), 0644); err != nil {
-		t.Fatalf("Failed to create test file: %v", err)
+	if writeErr := os.WriteFile(intPath, []byte("new content"), 0644); writeErr != nil {
+		t.Fatalf("Failed to create test file: %v", writeErr)
 	}
 
 	extPath := repository.ToExternalPath(repoPath, intPath)
 
 	// Create existing file at external path
-	if err := os.MkdirAll(filepath.Dir(extPath), 0755); err != nil {
-		t.Fatalf("Failed to create ext dir: %v", err)
+	if mkdirErr := os.MkdirAll(filepath.Dir(extPath), 0755); mkdirErr != nil {
+		t.Fatalf("Failed to create ext dir: %v", mkdirErr)
 	}
 	existingContent := []byte("existing content")
-	if err := os.WriteFile(extPath, existingContent, 0644); err != nil {
-		t.Fatalf("Failed to create existing file: %v", err)
+	if writeErr := os.WriteFile(extPath, existingContent, 0644); writeErr != nil {
+		t.Fatalf("Failed to create existing file: %v", writeErr)
 	}
 
 	// Create symlink (should backup existing file)
@@ -294,18 +294,18 @@ func TestFileSkipsIgnoredFiles(t *testing.T) {
 
 	// Create a .swp file in the repo (should be ignored)
 	intPath := filepath.Join(repoPath, "$HOME", ".bashrc.swp")
-	if err := os.MkdirAll(filepath.Dir(intPath), 0755); err != nil {
-		t.Fatalf("Failed to create dir: %v", err)
+	if mkdirErr := os.MkdirAll(filepath.Dir(intPath), 0755); mkdirErr != nil {
+		t.Fatalf("Failed to create dir: %v", mkdirErr)
 	}
-	if err := os.WriteFile(intPath, []byte("test content"), 0644); err != nil {
-		t.Fatalf("Failed to create test file: %v", err)
+	if writeErr := os.WriteFile(intPath, []byte("test content"), 0644); writeErr != nil {
+		t.Fatalf("Failed to create test file: %v", writeErr)
 	}
 
 	extPath := repository.ToExternalPath(repoPath, intPath)
 
 	// Create parent directory
-	if err := os.MkdirAll(filepath.Dir(extPath), 0755); err != nil {
-		t.Fatalf("Failed to create ext dir: %v", err)
+	if mkdirErr := os.MkdirAll(filepath.Dir(extPath), 0755); mkdirErr != nil {
+		t.Fatalf("Failed to create ext dir: %v", mkdirErr)
 	}
 
 	// Attempt to create symlink (should be skipped)
