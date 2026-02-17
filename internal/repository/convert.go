@@ -30,3 +30,11 @@ func ToExternalPath(repoPath, p string) string {
 	}
 	return p
 }
+
+// SetHomeDirForTest sets homeDir for testing and returns the original value.
+// This should only be used in tests to mock the home directory.
+func SetHomeDirForTest(dir string) string {
+	original := homeDir
+	homeDir = dir
+	return original
+}
