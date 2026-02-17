@@ -110,7 +110,7 @@ func File(repoPath, intPath string) error {
 	if err == nil {
 		// Success
 		printLinked(intPath, extPath)
-		addToGit(repoPath, intPath, extPath)
+		addToGit(repoPath, intPath)
 		return nil
 	}
 	if !os.IsExist(err) {
@@ -141,7 +141,7 @@ func File(repoPath, intPath string) error {
 
 	if actualExtPath == intPath {
 		// Already linked
-		addToGit(repoPath, intPath, extPath)
+		addToGit(repoPath, intPath)
 		return nil
 	}
 
@@ -163,11 +163,11 @@ func File(repoPath, intPath string) error {
 		return nil
 	}
 	printLinked(intPath, extPath)
-	addToGit(repoPath, intPath, extPath)
+	addToGit(repoPath, intPath)
 	return nil
 }
 
-func addToGit(repoPath, intPath, extPath string) {
+func addToGit(repoPath, intPath string) {
 	if err := git.Run(repoPath, "add", "--force", intPath); err != nil {
 		printError(intPath, fmt.Errorf("failed to add %s to git: %w", intPath, err))
 	}

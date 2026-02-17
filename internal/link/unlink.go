@@ -47,6 +47,6 @@ func UnlinkFile(repoPath, intPath string) error {
 	if err := copy.File(intPath, extPath); err != nil {
 		return err
 	}
-	printUnLinked(intPath, extPath)
+	printUnLinked(intPath)
 	return git.Run(repoPath, "rm", "-qf", intPath)
 }
