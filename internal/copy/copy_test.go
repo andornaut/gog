@@ -17,8 +17,8 @@ func TestFileCopiesToDestination(t *testing.T) {
 	// Create source file
 	srcPath := filepath.Join(tmpDir, "source.txt")
 	testContent := []byte("test content for copy")
-	if err := os.WriteFile(srcPath, testContent, 0644); err != nil {
-		t.Fatalf("Failed to create source file: %v", err)
+	if writeErr := os.WriteFile(srcPath, testContent, 0644); writeErr != nil {
+		t.Fatalf("Failed to create source file: %v", writeErr)
 	}
 
 	// Copy file
@@ -87,15 +87,15 @@ func TestFileOverwritesExisting(t *testing.T) {
 	// Create source file
 	srcPath := filepath.Join(tmpDir, "source.txt")
 	newContent := []byte("new content")
-	if err := os.WriteFile(srcPath, newContent, 0644); err != nil {
-		t.Fatalf("Failed to create source file: %v", err)
+	if writeErr := os.WriteFile(srcPath, newContent, 0644); writeErr != nil {
+		t.Fatalf("Failed to create source file: %v", writeErr)
 	}
 
 	// Create existing destination file
 	dstPath := filepath.Join(tmpDir, "dest.txt")
 	oldContent := []byte("old content")
-	if err := os.WriteFile(dstPath, oldContent, 0644); err != nil {
-		t.Fatalf("Failed to create destination file: %v", err)
+	if writeErr := os.WriteFile(dstPath, oldContent, 0644); writeErr != nil {
+		t.Fatalf("Failed to create destination file: %v", writeErr)
 	}
 
 	// Copy file (should overwrite)
@@ -142,8 +142,8 @@ func TestDirCopiesRecursively(t *testing.T) {
 
 	// Create source directory structure
 	srcDir := filepath.Join(tmpDir, "src")
-	if err := os.MkdirAll(srcDir, 0755); err != nil {
-		t.Fatalf("Failed to create source dir: %v", err)
+	if mkdirErr := os.MkdirAll(srcDir, 0755); mkdirErr != nil {
+		t.Fatalf("Failed to create source dir: %v", mkdirErr)
 	}
 
 	// Create files in structure
@@ -155,11 +155,11 @@ func TestDirCopiesRecursively(t *testing.T) {
 
 	for name, content := range files {
 		path := filepath.Join(srcDir, name)
-		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-			t.Fatalf("Failed to create dir: %v", err)
+		if mkdirErr := os.MkdirAll(filepath.Dir(path), 0755); mkdirErr != nil {
+			t.Fatalf("Failed to create dir: %v", mkdirErr)
 		}
-		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-			t.Fatalf("Failed to create file %s: %v", name, err)
+		if writeErr := os.WriteFile(path, []byte(content), 0644); writeErr != nil {
+			t.Fatalf("Failed to create file %s: %v", name, writeErr)
 		}
 	}
 
@@ -195,19 +195,19 @@ func TestDirSkipsFunctionWorks(t *testing.T) {
 
 	// Create source directory with files
 	srcDir := filepath.Join(tmpDir, "src")
-	if err := os.MkdirAll(srcDir, 0755); err != nil {
-		t.Fatalf("Failed to create source dir: %v", err)
+	if mkdirErr := os.MkdirAll(srcDir, 0755); mkdirErr != nil {
+		t.Fatalf("Failed to create source dir: %v", mkdirErr)
 	}
 
 	// Create files
 	keepFile := filepath.Join(srcDir, "keep.txt")
 	skipFile := filepath.Join(srcDir, "skip.txt")
 
-	if err := os.WriteFile(keepFile, []byte("keep"), 0644); err != nil {
-		t.Fatalf("Failed to create keep file: %v", err)
+	if writeErr := os.WriteFile(keepFile, []byte("keep"), 0644); writeErr != nil {
+		t.Fatalf("Failed to create keep file: %v", writeErr)
 	}
-	if err := os.WriteFile(skipFile, []byte("skip"), 0644); err != nil {
-		t.Fatalf("Failed to create skip file: %v", err)
+	if writeErr := os.WriteFile(skipFile, []byte("skip"), 0644); writeErr != nil {
+		t.Fatalf("Failed to create skip file: %v", writeErr)
 	}
 
 	// Copy directory with skip function
@@ -244,8 +244,8 @@ func TestDirFailsForNonDirectory(t *testing.T) {
 
 	// Create a regular file
 	srcFile := filepath.Join(tmpDir, "file.txt")
-	if err := os.WriteFile(srcFile, []byte("test"), 0644); err != nil {
-		t.Fatalf("Failed to create file: %v", err)
+	if writeErr := os.WriteFile(srcFile, []byte("test"), 0644); writeErr != nil {
+		t.Fatalf("Failed to create file: %v", writeErr)
 	}
 
 	dstDir := filepath.Join(tmpDir, "dst")
