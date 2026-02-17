@@ -16,11 +16,12 @@ func cleanPaths(paths []string) []string {
 		if strings.TrimSpace(p) == "" {
 			continue
 		}
-		p, err := normalizePath(p)
+		normalized, err := normalizePath(p)
 		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: skipping invalid path %q: %v\n", p, err)
 			continue
 		}
-		cleanedPaths = append(cleanedPaths, p)
+		cleanedPaths = append(cleanedPaths, normalized)
 	}
 	return cleanedPaths
 }
@@ -29,7 +30,7 @@ func normalizePath(p string) (string, error) {
 	if !path.IsAbs(p) {
 		cwd, err := os.Getwd()
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("failed to get current directory: %w", err)
 		}
 		p = path.Join(cwd, p)
 	}
