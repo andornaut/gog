@@ -247,11 +247,18 @@ func TestFileSkipsAlreadyLinked(t *testing.T) {
 		t.Fatalf("Failed to create initial symlink: %v", symlinkErr)
 	}
 
-	// Get initial stat info
+	// Get initial symlink target
+	initialTarget, err := os.Readlink(extPath)
+	if err != nil {
+		t.Fatalf("Failed to read symlink: %v", err)
+	}
+
+	// Get initial modification time
 	initialInfo, err := os.Lstat(extPath)
 	if err != nil {
 		t.Fatalf("Failed to stat symlink: %v", err)
 	}
+	initialModTime := initialInfo.ModTime()
 
 	// Call File() again (should be no-op)
 	err = File(repoPath, intPath)
@@ -259,14 +266,24 @@ func TestFileSkipsAlreadyLinked(t *testing.T) {
 		t.Fatalf("File() failed: %v", err)
 	}
 
-	// Verify symlink wasn't modified (same inode, modtime, etc)
+	// Verify symlink target hasn't changed
+	finalTarget, err := os.Readlink(extPath)
+	if err != nil {
+		t.Fatalf("Failed to read symlink after: %v", err)
+	}
+
+	if finalTarget != initialTarget {
+		t.Errorf("Symlink target changed from %q to %q", initialTarget, finalTarget)
+	}
+
+	// Verify symlink wasn't recreated (check modification time hasn't changed)
 	finalInfo, err := os.Lstat(extPath)
 	if err != nil {
 		t.Fatalf("Failed to stat symlink after: %v", err)
 	}
 
-	if !os.SameFile(initialInfo, finalInfo) {
-		t.Error("Symlink should not be modified when already correct")
+	if !finalInfo.ModTime().Equal(initialModTime) {
+		t.Errorf("Symlink was recreated (modtime changed from %v to %v)", initialModTime, finalInfo.ModTime())
 	}
 }
 
