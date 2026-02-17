@@ -5,7 +5,7 @@ DISTDIR   := dist
 TARGET    := gog
 PLATFORMS := darwin freebsd linux
 
-.PHONY: $(PLATFORMS) $(TARGET) all clean install release test uninstall
+.PHONY: $(PLATFORMS) $(TARGET) all clean coverage coverage-html install lint release test uninstall
 
 all: $(TARGET)
 
@@ -18,6 +18,7 @@ $(TARGET):
 clean:
 	go clean
 	rm -f $(DISTDIR)/$(TARGET)*
+	rm -f coverage.out coverage.html
 
 install: $(TARGET)
 	sudo mkdir -p "$(DESTDIR)$(BINPREFIX)"
@@ -25,9 +26,18 @@ install: $(TARGET)
 
 release: clean $(PLATFORMS)
 
-# TODO switch to go test ./... after upgrading to Go>=1.9
 test:
-	go test -v $(PKGS)
+	go test -v -race -coverprofile=coverage.out ./...
+
+coverage: test
+	go tool cover -func=coverage.out
+
+coverage-html: test
+	go tool cover -html=coverage.out -o coverage.html
+	@echo "Coverage report generated: coverage.html"
+
+lint:
+	golangci-lint run
 
 uninstall:
 	rm -f "$(DESTDIR)$(BINPREFIX)/$(TARGET)"
