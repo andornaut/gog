@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -65,7 +64,7 @@ func Dir(repoPath, intPath string) error {
 		switch p {
 		case repoPath:
 			return nil
-		case path.Join(repoPath, ".git"):
+		case filepath.Join(repoPath, ".git"):
 			return filepath.SkipDir
 		}
 
@@ -97,11 +96,11 @@ func File(repoPath, intPath string) error {
 		return nil
 	}
 	switch intPath {
-	case path.Join(repoPath, ".gitignore"):
+	case filepath.Join(repoPath, ".gitignore"):
 		return nil
-	case path.Join(repoPath, "LICENSE"):
+	case filepath.Join(repoPath, "LICENSE"):
 		return nil
-	case path.Join(repoPath, "README.md"):
+	case filepath.Join(repoPath, "README.md"):
 		return nil
 	}
 
@@ -124,7 +123,7 @@ func File(repoPath, intPath string) error {
 		return nil
 	}
 	if extFileInfo.IsDir() {
-		printError(intPath, fmt.Errorf("cannot create symlink: %s exists and is a directory", extPath))
+		printError(intPath, fmt.Errorf("cannot create symlink: %s exists and is a directory (remove the directory or use a different location)", extPath))
 		return nil
 	}
 
@@ -190,7 +189,7 @@ func backup(p string) (bool, error) {
 func backupPath(p string) string {
 	dirname, basename := filepath.Split(p)
 	basename = strings.TrimPrefix(basename, ".")
-	return path.Join(dirname, fmt.Sprintf(".%s.gog", basename))
+	return filepath.Join(dirname, fmt.Sprintf(".%s.gog", basename))
 }
 
 func isSymlink(p string) bool {

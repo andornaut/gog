@@ -32,7 +32,7 @@ func normalizePath(p string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("failed to get current directory: %w", err)
 		}
-		p = path.Join(cwd, p)
+		p = filepath.Join(cwd, p)
 	}
 
 	return filepath.Clean(p), nil

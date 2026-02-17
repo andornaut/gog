@@ -3,7 +3,6 @@ package repository
 import (
 	"fmt"
 	"os"
-	"path"
 	"path/filepath"
 
 	"github.com/andornaut/gog/internal/copy"
@@ -16,7 +15,7 @@ func Add(repoName, repoURL string) (string, error) {
 		return "", err
 	}
 
-	repoPath := path.Join(BaseDir, repoName)
+	repoPath := filepath.Join(BaseDir, repoName)
 	if err := validateRepoPath(repoPath); err == nil {
 		return "", fmt.Errorf("repository already exists: %s", repoPath)
 	}
@@ -42,7 +41,7 @@ func Remove(repoName string) (string, error) {
 	if err := validateRepoName(repoName); err != nil {
 		return "", err
 	}
-	repoPath := path.Join(BaseDir, repoName)
+	repoPath := filepath.Join(BaseDir, repoName)
 	if err := validateRepoPath(repoPath); err != nil {
 		return "", err
 	}
