@@ -13,7 +13,7 @@ import (
 func validateRepoName(name string) error {
 	validRepoName := regexp.MustCompile(`^[\w-_]+$`)
 	if !validRepoName.MatchString(name) {
-		return fmt.Errorf("invalid repository name: %s", name)
+		return fmt.Errorf("invalid repository name %q (must contain only letters, numbers, dashes, and underscores)", name)
 	}
 	return nil
 }
@@ -27,14 +27,17 @@ func validateRepoPath(p string) error {
 		return fmt.Errorf("repository path must be a directory: %s", p)
 	}
 	if !git.Is(p) {
-		return fmt.Errorf("repository must be initialized as a git repository")
+		return fmt.Errorf("repository must be initialized as a git repository (run 'git init' in %s)", p)
 	}
 	return nil
 }
 
 func validateTargetPath(p string) error {
-	if shouldSkip(p, "") {
-		return fmt.Errorf("invalid target path: %s", p)
+	if strings.HasPrefix(p, BaseDir) {
+		return fmt.Errorf("invalid target path %q (cannot add gog's own directory)", p)
+	}
+	if strings.HasSuffix(p, ".gog") {
+		return fmt.Errorf("invalid target path %q (cannot add .gog backup files)", p)
 	}
 	return nil
 }

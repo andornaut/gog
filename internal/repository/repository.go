@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 )
@@ -36,7 +35,7 @@ func List() ([]string, error) {
 		if err := validateRepoName(repoName); err != nil {
 			continue
 		}
-		repoPath := path.Join(BaseDir, repoName)
+		repoPath := filepath.Join(BaseDir, repoName)
 		if err := validateRepoPath(repoPath); err != nil {
 			continue
 		}
@@ -55,7 +54,7 @@ func RootPath(name string) (string, error) {
 	if err := validateRepoName(name); err != nil {
 		return "", err
 	}
-	p := path.Join(BaseDir, name)
+	p := filepath.Join(BaseDir, name)
 
 	// First check if exact match exists
 	if err := validateRepoPath(p); err == nil {
@@ -91,7 +90,7 @@ func RootPath(name string) (string, error) {
 		return "", fmt.Errorf("repository not found: %s", name)
 	}
 	if len(validPaths) > 1 {
-		return "", fmt.Errorf("ambiguous repository name %s matches multiple repositories", name)
+		return "", fmt.Errorf("ambiguous repository name %q matches multiple repositories (use a more specific name)", name)
 	}
 
 	p = validPaths[0]
@@ -109,7 +108,7 @@ func getFirst() (string, error) {
 
 	for _, entry := range entries {
 		if entry.IsDir() {
-			return path.Join(BaseDir, entry.Name()), nil
+			return filepath.Join(BaseDir, entry.Name()), nil
 		}
 	}
 	return "", fmt.Errorf("run `gog repository add` to add a repository")
@@ -123,10 +122,10 @@ func getBaseDir(homeDir string) string {
 
 	dataDir := os.Getenv("XDG_DATA_HOME")
 	if dataDir != "" {
-		return path.Join(dataDir, "gog")
+		return filepath.Join(dataDir, "gog")
 	}
 
-	return path.Join(homeDir, ".local/share/gog")
+	return filepath.Join(homeDir, ".local/share/gog")
 }
 
 func init() {

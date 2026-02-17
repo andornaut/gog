@@ -2,7 +2,6 @@ package repositorycmd
 
 import (
 	"fmt"
-	"path"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
@@ -73,7 +72,7 @@ var list = &cobra.Command{
 		}
 		for _, msg := range names {
 			if isPath {
-				msg = path.Join(repository.BaseDir, msg)
+				msg = filepath.Join(repository.BaseDir, msg)
 			}
 			fmt.Println(msg)
 		}
