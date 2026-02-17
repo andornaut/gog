@@ -5,8 +5,9 @@ import (
 	"path"
 	"path/filepath"
 
-	"github.com/andornaut/gog/internal/repository"
 	"github.com/spf13/cobra"
+
+	"github.com/andornaut/gog/internal/repository"
 )
 
 // Cmd implements ./gog repository

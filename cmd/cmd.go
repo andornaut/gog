@@ -1,11 +1,12 @@
 package cmd
 
 import (
+	"github.com/spf13/cobra"
+
 	"github.com/andornaut/gog/cmd/repositorycmd"
 	"github.com/andornaut/gog/internal/git"
 	"github.com/andornaut/gog/internal/link"
 	"github.com/andornaut/gog/internal/repository"
-	"github.com/spf13/cobra"
 )
 
 var repositoryFlag string

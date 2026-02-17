@@ -14,7 +14,7 @@ func printLinked(intPath string, extPath string) {
 	fmt.Printf("%s -> %s\n", extPath, escapeHomeVar(intPath))
 }
 
-func printUnLinked(intPath string, extPath string) {
+func printUnLinked(intPath string) {
 	fmt.Printf("Removed: %s\n", escapeHomeVar(intPath))
 }
 

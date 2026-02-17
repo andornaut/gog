@@ -10,6 +10,7 @@ linters:
     - ineffassign
     - staticcheck
     - unused
+    - unparam
     - gofmt
     - goimports
     - gci
