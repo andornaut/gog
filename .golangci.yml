@@ -29,7 +29,6 @@ linters:
         - name: exported
           disabled: true
   exclusions:
-    generated: lax
     rules:
       - linters:
           - gosec
@@ -42,10 +41,6 @@ linters:
           - errcheck
         path: _test\.go
         text: Error return value of `cleanup` is not checked
-    paths:
-      - third_party$
-      - builtin$
-      - examples$
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
@@ -60,9 +55,3 @@ formatters:
         - standard
         - default
         - prefix(github.com/andornaut/gog)
-  exclusions:
-    generated: lax
-    paths:
-      - third_party$
-      - builtin$
-      - examples$
