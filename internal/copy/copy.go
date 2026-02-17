@@ -28,7 +28,6 @@ package copy
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 )
@@ -104,7 +103,7 @@ func Dir(src string, dst string, skipFunc SkipFunc) (err error) {
 		return
 	}
 
-	entries, err := ioutil.ReadDir(src)
+	entries, err := os.ReadDir(src)
 	if err != nil {
 		return
 	}
@@ -113,10 +112,16 @@ func Dir(src string, dst string, skipFunc SkipFunc) (err error) {
 		srcPath := filepath.Join(src, entry.Name())
 		dstPath := filepath.Join(dst, entry.Name())
 
-		if entry.Mode()&os.ModeSymlink != 0 {
+		// Get file info for mode checking
+		entryInfo, err := entry.Info()
+		if err != nil {
+			return err
+		}
+
+		if entryInfo.Mode()&os.ModeSymlink != 0 {
 			srcPath, err = filepath.EvalSymlinks(srcPath)
 			if err != nil {
-				return
+				return err
 			}
 		}
 		if skipFunc(srcPath, dstPath) {
@@ -126,12 +131,12 @@ func Dir(src string, dst string, skipFunc SkipFunc) (err error) {
 		if entry.IsDir() {
 			err = Dir(srcPath, dstPath, skipFunc)
 			if err != nil {
-				return
+				return err
 			}
 		} else {
 			err = File(srcPath, dstPath)
 			if err != nil {
-				return
+				return err
 			}
 		}
 	}
