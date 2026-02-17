@@ -129,20 +129,24 @@ func File(repoPath, intPath string) error {
 	}
 
 	shouldBackup := !backupDisabled
-	actualExtPath, err := filepath.EvalSymlinks(extPath)
-	if err != nil {
+
+	// Check if symlink already points to the correct target
+	linkTarget, err := os.Readlink(extPath)
+	if err == nil && linkTarget == intPath {
+		// Already linked to the correct location - no need to recreate
+		addToGit(repoPath, intPath)
+		return nil
+	}
+
+	// Try to resolve the symlink to check if it's broken
+	_, evalErr := filepath.EvalSymlinks(extPath)
+	if evalErr != nil {
 		// Can only recover from an error due to a broken symbolic link
-		if !os.IsNotExist(err) {
-			printError(intPath, fmt.Errorf("failed to resolve symlink %s: %w", extPath, err))
+		if !os.IsNotExist(evalErr) {
+			printError(intPath, fmt.Errorf("failed to resolve symlink %s: %w", extPath, evalErr))
 			return nil
 		}
 		shouldBackup = false
-	}
-
-	if actualExtPath == intPath {
-		// Already linked
-		addToGit(repoPath, intPath)
-		return nil
 	}
 
 	if shouldBackup {
