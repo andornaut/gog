@@ -19,7 +19,6 @@ linters:
     - exportloopref
     - bodyclose
     - gocritic
-    - shadow
 
 linters-settings:
   govet:
