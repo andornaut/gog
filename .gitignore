@@ -1,2 +1,4 @@
 dist/
 gog
+coverage.out
+coverage.html
