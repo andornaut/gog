@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -13,6 +12,9 @@ import (
 	"github.com/andornaut/gog/internal/repository"
 )
 
+// resolveGitPaths converts symlinked paths to repo-relative paths so that
+// git commands operate on the underlying files within the repository rather
+// than on the symlinks outside it.
 func resolveGitPaths(repoPath string, args []string) []string {
 	resolved := make([]string, len(args))
 	for i, arg := range args {
@@ -30,12 +32,8 @@ func resolveGitPaths(repoPath string, args []string) []string {
 			resolved[i] = arg
 			continue
 		}
-		if strings.HasPrefix(realPath, repoPath+string(os.PathSeparator)) || realPath == repoPath {
-			rel, err := filepath.Rel(repoPath, realPath)
-			if err != nil {
-				resolved[i] = arg
-				continue
-			}
+		rel, err := filepath.Rel(repoPath, realPath)
+		if err == nil && !strings.HasPrefix(rel, "..") {
 			resolved[i] = rel
 			continue
 		}
