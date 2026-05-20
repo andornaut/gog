@@ -1,6 +1,10 @@
 package cmd
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
+
 	"github.com/spf13/cobra"
 
 	"github.com/andornaut/gog/cmd/repositorycmd"
@@ -8,6 +12,37 @@ import (
 	"github.com/andornaut/gog/internal/link"
 	"github.com/andornaut/gog/internal/repository"
 )
+
+func resolveGitPaths(repoPath string, args []string) []string {
+	resolved := make([]string, len(args))
+	for i, arg := range args {
+		if strings.HasPrefix(arg, "-") {
+			resolved[i] = arg
+			continue
+		}
+		absPath, err := filepath.Abs(arg)
+		if err != nil {
+			resolved[i] = arg
+			continue
+		}
+		realPath, err := filepath.EvalSymlinks(absPath)
+		if err != nil {
+			resolved[i] = arg
+			continue
+		}
+		if strings.HasPrefix(realPath, repoPath+string(os.PathSeparator)) || realPath == repoPath {
+			rel, err := filepath.Rel(repoPath, realPath)
+			if err != nil {
+				resolved[i] = arg
+				continue
+			}
+			resolved[i] = rel
+			continue
+		}
+		resolved[i] = arg
+	}
+	return resolved
+}
 
 var repositoryFlag string
 
@@ -54,7 +89,7 @@ var git_ = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return git.Run(repoPath, args...)
+		return git.Run(repoPath, resolveGitPaths(repoPath, args)...)
 	},
 }
 
