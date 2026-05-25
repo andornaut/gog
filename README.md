@@ -76,7 +76,7 @@ Flags:
   -h, --help                help for gog
   -r, --repository string   name of repository
 
-Use "gog [command] --help" for more information about a command..
+Use "gog [command] --help" for more information about a command.
 ```
 
 `gog repository --help`

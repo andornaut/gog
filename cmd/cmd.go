@@ -119,7 +119,10 @@ var Cmd = &cobra.Command{
 }
 
 func init() {
-	// Cannot add --repository as a persistent flag, because this breaks passthrough to `git`
+	// -r is registered on each subcommand AND on the root (not as a persistent flag)
+	// so that both `gog -r NAME <cmd>` and `gog <cmd> -r NAME` work. It is not
+	// persistent because that would inherit it to `git`, which has its own -r flag
+	// and uses DisableFlagParsing to pass arguments through.
 	add.Flags().StringVarP(&repositoryFlag, "repository", "r", "", "name of repository")
 	apply.Flags().StringVarP(&repositoryFlag, "repository", "r", "", "name of repository")
 	remove.Flags().StringVarP(&repositoryFlag, "repository", "r", "", "name of repository")
