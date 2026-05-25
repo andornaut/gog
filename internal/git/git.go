@@ -5,12 +5,12 @@ import (
 	"os/exec"
 )
 
-// GitClone clones a git repostory
+// Clone clones a git repository
 func Clone(baseDir, repoPath string, repoURL string) error {
 	return Run(baseDir, "clone", repoURL, repoPath)
 }
 
-// GitInit initializes a git repository
+// Init initializes a git repository
 func Init(baseDir, repoPath string) error {
 	return Run(baseDir, "init", repoPath)
 }
@@ -23,7 +23,7 @@ func Is(baseDir string) bool {
 	return err == nil
 }
 
-// GitRun runs a git command in a repository
+// Run runs a git command in a repository
 func Run(baseDir string, arguments ...string) error {
 	cmd := exec.Command("git", arguments...)
 	cmd.Stdin = os.Stdin

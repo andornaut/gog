@@ -72,14 +72,9 @@ func RootPath(name string) (string, error) {
 		return "", fmt.Errorf("repository not found: %s", name)
 	}
 
-	// Filter to only paths that are within BaseDir and start with the expected name
+	// Filter to basenames that start with the requested name
 	var validPaths []string
 	for _, globPath := range globPaths {
-		// Ensure path is within BaseDir (prevent directory traversal)
-		if !strings.HasPrefix(globPath, BaseDir+string(filepath.Separator)) {
-			continue
-		}
-		// Ensure the basename starts with the repository name
 		basename := filepath.Base(globPath)
 		if strings.HasPrefix(basename, name) {
 			validPaths = append(validPaths, globPath)
