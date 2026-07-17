@@ -3,6 +3,7 @@ package copy
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -337,5 +338,77 @@ func TestDirHandlesSymlinks(t *testing.T) {
 
 	if string(content) != string(testContent) {
 		t.Errorf("Symlink content not copied correctly: got %q, want %q", content, testContent)
+	}
+}
+
+func TestDirHandlesSymlinkToDirectory(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "gog-copy-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Create source directory
+	srcDir := filepath.Join(tmpDir, "src")
+	if mkdirErr := os.MkdirAll(srcDir, 0755); mkdirErr != nil {
+		t.Fatalf("Failed to create source dir: %v", mkdirErr)
+	}
+
+	// Create target directory containing a file
+	targetDir := filepath.Join(tmpDir, "targetdir")
+	if mkdirErr := os.MkdirAll(targetDir, 0755); mkdirErr != nil {
+		t.Fatalf("Failed to create target dir: %v", mkdirErr)
+	}
+	testContent := []byte("file in symlinked directory")
+	if writeErr := os.WriteFile(filepath.Join(targetDir, "file.txt"), testContent, 0644); writeErr != nil {
+		t.Fatalf("Failed to create file in target dir: %v", writeErr)
+	}
+
+	// Create symlink to the directory in the source directory
+	symlinkPath := filepath.Join(srcDir, "linkdir")
+	if symlinkErr := os.Symlink(targetDir, symlinkPath); symlinkErr != nil {
+		t.Fatalf("Failed to create symlink: %v", symlinkErr)
+	}
+
+	// Copy directory
+	dstDir := filepath.Join(tmpDir, "dst")
+	err = Dir(srcDir, dstDir, func(src, dst string) bool { return false })
+	if err != nil {
+		t.Fatalf("Dir() failed: %v", err)
+	}
+
+	// Verify the symlinked directory was copied as a directory
+	content, err := os.ReadFile(filepath.Join(dstDir, "linkdir", "file.txt"))
+	if err != nil {
+		t.Fatalf("Failed to read copied file: %v", err)
+	}
+	if string(content) != string(testContent) {
+		t.Errorf("Symlinked directory content not copied correctly: got %q, want %q", content, testContent)
+	}
+}
+
+func TestDirRejectsSymlinkCycle(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "gog-copy-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Create a source directory containing a symlink to itself
+	srcDir := filepath.Join(tmpDir, "src")
+	if mkdirErr := os.MkdirAll(srcDir, 0755); mkdirErr != nil {
+		t.Fatalf("Failed to create source dir: %v", mkdirErr)
+	}
+	if symlinkErr := os.Symlink(srcDir, filepath.Join(srcDir, "loop")); symlinkErr != nil {
+		t.Fatalf("Failed to create symlink: %v", symlinkErr)
+	}
+
+	dstDir := filepath.Join(tmpDir, "dst")
+	err = Dir(srcDir, dstDir, func(src, dst string) bool { return false })
+	if err == nil {
+		t.Fatal("Dir() should fail on a symlink cycle")
+	}
+	if !strings.Contains(err.Error(), "cycle") {
+		t.Errorf("Error should mention the cycle, got: %v", err)
 	}
 }

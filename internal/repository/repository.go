@@ -96,31 +96,30 @@ func RootPath(name string) (string, error) {
 }
 
 func getFirst() (string, error) {
-	entries, err := os.ReadDir(BaseDir)
+	repoNames, err := List()
 	if err != nil {
 		return "", err
 	}
-
-	for _, entry := range entries {
-		if entry.IsDir() {
-			return filepath.Join(BaseDir, entry.Name()), nil
-		}
+	if len(repoNames) == 0 {
+		return "", fmt.Errorf("no valid git repositories found in %s (run `gog repository add` to add one)", BaseDir)
 	}
-	return "", fmt.Errorf("run `gog repository add` to add a repository")
+	return filepath.Join(BaseDir, repoNames[0]), nil
 }
 
-func getBaseDir(homeDir string) string {
+// getBaseDir returns an absolute, cleaned base directory. Environment
+// variables are normalized because trailing slashes or relative paths would
+// break path-boundary comparisons and git checks.
+func getBaseDir(homeDir string) (string, error) {
 	b := os.Getenv("GOG_HOME")
-	if b != "" {
-		return b
+	if b == "" {
+		dataDir := os.Getenv("XDG_DATA_HOME")
+		if dataDir != "" {
+			b = filepath.Join(dataDir, "gog")
+		} else {
+			b = filepath.Join(homeDir, ".local/share/gog")
+		}
 	}
-
-	dataDir := os.Getenv("XDG_DATA_HOME")
-	if dataDir != "" {
-		return filepath.Join(dataDir, "gog")
-	}
-
-	return filepath.Join(homeDir, ".local/share/gog")
+	return filepath.Abs(b)
 }
 
 func init() {
@@ -130,8 +129,14 @@ func init() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	// Normalize so that path-boundary comparisons work when $HOME has a
+	// trailing slash
+	homeDir = filepath.Clean(homeDir)
 
-	BaseDir = getBaseDir(homeDir)
+	BaseDir, err = getBaseDir(homeDir)
+	if err != nil {
+		log.Fatal(err)
+	}
 	if err = os.MkdirAll(BaseDir, 0755); err != nil {
 		log.Fatal(err)
 	}

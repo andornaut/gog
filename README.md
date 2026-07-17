@@ -127,24 +127,24 @@ Flags:
 
 ### Notes
 
-#### `${HOME}` Variable Substitution
+#### `$HOME` Variable Substitution
 
 **gog** automatically handles home directory portability:
 
-- When you run `gog add` on a file in your home directory (e.g., `~/.config/foorc`), gog stores it in the repository with a `${HOME}` prefix instead of your actual home path (e.g., `/home/alice`)
+- When you run `gog add` on a file in your home directory (e.g., `~/.config/foorc`), gog stores it in the repository with a literal `$HOME` path component instead of your actual home path (e.g., `/home/alice`)
 - This makes your dotfiles repository portable across different users and systems
-- When you run `gog apply` on another machine, `${HOME}` is automatically expanded to that system's home directory
+- When you run `gog apply` on another machine, `$HOME` is automatically expanded to that system's home directory
 
 **Example:**
 
 ```bash
 # On your machine (/home/alice)
 gog add ~/.bashrc
-# Stored in repository as: ${HOME}/.bashrc
+# Stored in repository as: $HOME/.bashrc
 
 # On another machine (/home/bob)
 gog apply
-# Creates symlink: /home/bob/.bashrc -> /home/bob/.local/share/gog/dotfiles/${HOME}/.bashrc
+# Creates symlink: /home/bob/.bashrc -> /home/bob/.local/share/gog/dotfiles/$HOME/.bashrc
 ```
 
 This ensures your dotfiles work seamlessly across different users, machines, and even operating systems.
@@ -152,8 +152,8 @@ This ensures your dotfiles work seamlessly across different users, machines, and
 #### `gog add`
 
 If any of the path arguments to `gog add` begin with the current user's home
-directory, then this prefix is replaced with an escaped `\${HOME}` path
-component, and then the `${HOME}` variable is expanded when `gog apply` is run.
+directory, then this prefix is replaced with a literal `$HOME` path
+component, which is expanded to the home directory when `gog apply` is run.
 
 #### `gog apply`
 

@@ -52,7 +52,7 @@ func File(src, dst string) (err error) {
 		return
 	}
 	defer func() {
-		if e := out.Close(); e != nil {
+		if e := out.Close(); e != nil && err == nil {
 			err = e
 		}
 	}()
@@ -84,10 +84,27 @@ func File(src, dst string) (err error) {
 type SkipFunc func(string, string) bool
 
 // Dir recursively copies a directory tree. Source directory must exist.
-// Symlinks are skipped.
-func Dir(src string, dst string, skipFunc SkipFunc) (err error) {
+// Symlinks are followed; a symlink that points to one of its own ancestor
+// directories is a cycle and returns an error.
+func Dir(src string, dst string, skipFunc SkipFunc) error {
+	return copyDir(src, dst, skipFunc, map[string]bool{})
+}
+
+// copyDir tracks the resolved paths of the directories on the current
+// recursion path in `ancestors` in order to detect symlink cycles
+func copyDir(src string, dst string, skipFunc SkipFunc, ancestors map[string]bool) (err error) {
 	src = filepath.Clean(src)
 	dst = filepath.Clean(dst)
+
+	resolvedSrc, err := filepath.EvalSymlinks(src)
+	if err != nil {
+		return err
+	}
+	if ancestors[resolvedSrc] {
+		return fmt.Errorf("copy: symlink cycle detected at %s", src)
+	}
+	ancestors[resolvedSrc] = true
+	defer delete(ancestors, resolvedSrc)
 
 	si, err := os.Stat(src)
 	if err != nil {
@@ -127,13 +144,19 @@ func Dir(src string, dst string, skipFunc SkipFunc) (err error) {
 			if err != nil {
 				return err
 			}
+			// Re-stat the resolved target so that a symlink to a directory
+			// is copied as a directory rather than opened as a file
+			entryInfo, err = os.Stat(srcPath)
+			if err != nil {
+				return err
+			}
 		}
 		if skipFunc(srcPath, dstPath) {
 			continue
 		}
 
-		if entry.IsDir() {
-			err = Dir(srcPath, dstPath, skipFunc)
+		if entryInfo.IsDir() {
+			err = copyDir(srcPath, dstPath, skipFunc, ancestors)
 			if err != nil {
 				return err
 			}
