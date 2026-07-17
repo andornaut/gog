@@ -4,14 +4,19 @@ import (
 	"testing"
 )
 
+const (
+	testHomeDir  = "/home/testuser"
+	testRepoPath = testHomeDir + "/.local/share/gog/testrepo"
+)
+
 // TestToExternalPathRejectsArbitraryEnvVars tests critical security fix:
 // ensures that only $HOME is expanded, not arbitrary environment variables
 func TestToExternalPathRejectsArbitraryEnvVars(t *testing.T) {
 	originalHomeDir := homeDir
 	defer func() { homeDir = originalHomeDir }()
 
-	homeDir = "/home/testuser"
-	repoPath := "/home/testuser/.local/share/gog/testrepo"
+	homeDir = testHomeDir
+	repoPath := testRepoPath
 
 	tests := []struct {
 		name     string
@@ -45,13 +50,65 @@ func TestToExternalPathRejectsArbitraryEnvVars(t *testing.T) {
 	}
 }
 
+// TestToInternalPathMatchesHomeOnPathBoundary ensures that a sibling of the
+// home directory (e.g. /home/testuserother) is not treated as being within it
+func TestToInternalPathMatchesHomeOnPathBoundary(t *testing.T) {
+	originalHomeDir := homeDir
+	defer func() { homeDir = originalHomeDir }()
+
+	homeDir = testHomeDir
+	repoPath := testRepoPath
+
+	tests := []struct {
+		name     string
+		p        string
+		expected string
+	}{
+		{
+			name:     "path within home is converted",
+			p:        "/home/testuser/.bashrc",
+			expected: repoPath + "/$HOME/.bashrc",
+		},
+		{
+			name:     "sibling of home is not converted",
+			p:        "/home/testuserother/.bashrc",
+			expected: repoPath + "/home/testuserother/.bashrc",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ToInternalPath(repoPath, tt.p)
+			if result != tt.expected {
+				t.Errorf("got %q, want %q", result, tt.expected)
+			}
+		})
+	}
+}
+
+// TestToExternalPathMatchesHomeVarOnPathBoundary ensures that a path
+// component that merely starts with $HOME (e.g. $HOMEWORK) is not expanded
+func TestToExternalPathMatchesHomeVarOnPathBoundary(t *testing.T) {
+	originalHomeDir := homeDir
+	defer func() { homeDir = originalHomeDir }()
+
+	homeDir = testHomeDir
+	repoPath := testRepoPath
+
+	result := ToExternalPath(repoPath, repoPath+"/$HOMEWORK/file")
+	expected := "/$HOMEWORK/file"
+	if result != expected {
+		t.Errorf("got %q, want %q", result, expected)
+	}
+}
+
 // TestPathConversionRoundTrip verifies path conversion is reversible
 func TestPathConversionRoundTrip(t *testing.T) {
 	originalHomeDir := homeDir
 	defer func() { homeDir = originalHomeDir }()
 
-	homeDir = "/home/testuser"
-	repoPath := "/home/testuser/.local/share/gog/testrepo"
+	homeDir = testHomeDir
+	repoPath := testRepoPath
 
 	testPaths := []string{
 		"/home/testuser/.bashrc",

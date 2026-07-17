@@ -10,8 +10,9 @@ import (
 )
 
 var (
-	// validRepoName is the regex pattern for valid repository names
-	validRepoName = regexp.MustCompile(`^[\w-_]+$`)
+	// validRepoName is the regex pattern for valid repository names.
+	// \w already includes underscores.
+	validRepoName = regexp.MustCompile(`^[\w-]+$`)
 )
 
 // validateRepoName returns an error if the repo name is invalid
@@ -37,7 +38,7 @@ func validateRepoPath(p string) error {
 }
 
 func validateTargetPath(p string) error {
-	if strings.HasPrefix(p, BaseDir) {
+	if hasPathPrefix(BaseDir, p) {
 		return fmt.Errorf("invalid target path %q (cannot add gog's own directory)", p)
 	}
 	if strings.HasSuffix(p, ".gog") {
@@ -47,5 +48,5 @@ func validateTargetPath(p string) error {
 }
 
 func shouldSkip(extPath, _ string) bool {
-	return strings.HasPrefix(extPath, BaseDir) || strings.HasSuffix(extPath, ".gog")
+	return hasPathPrefix(BaseDir, extPath) || strings.HasSuffix(extPath, ".gog")
 }

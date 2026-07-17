@@ -56,7 +56,8 @@ func syncLinks(repoPath string, paths []string, updateDir, updateFile syncFunc) 
 // Dir recursively creates symbolic links from a repository directory's files
 // to the root filesystem
 func Dir(repoPath, intPath string) error {
-	return filepath.Walk(intPath, func(p string, info os.FileInfo, err error) error {
+	var linked []string
+	walkErr := filepath.Walk(intPath, func(p string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -71,37 +72,55 @@ func Dir(repoPath, intPath string) error {
 		if info.IsDir() {
 			extPath := repository.ToExternalPath(repoPath, p)
 			if isSymlink(extPath) {
-				ok, err := backup(extPath)
+				ok, backupErr := backup(extPath)
 				if !ok {
-					printError(p, fmt.Errorf("backup failed, skipping directory: %w", err))
+					printError(p, fmt.Errorf("backup failed, skipping directory: %w", backupErr))
 					return filepath.SkipDir
 				}
 			}
 
-			if err := os.MkdirAll(extPath, 0755); err != nil {
-				printError(p, fmt.Errorf("failed to create directory %s: %w", extPath, err))
+			if mkdirErr := os.MkdirAll(extPath, 0755); mkdirErr != nil {
+				printError(p, fmt.Errorf("failed to create directory %s: %w", extPath, mkdirErr))
 				return filepath.SkipDir
 			}
 			return nil
 		}
-		return File(repoPath, p)
+		shouldAdd, linkErr := linkFile(repoPath, p)
+		if shouldAdd {
+			linked = append(linked, p)
+		}
+		return linkErr
 	})
+	// Add the files that were linked, even if the walk failed part-way through
+	addToGit(repoPath, linked...)
+	return walkErr
 }
 
 // File creates a symbolic link from a repository file to the root filesystem.
 // File declares an `error` return type to match the signature of `Dir`, but
 // usually print an error message and return nil.
 func File(repoPath, intPath string) error {
+	shouldAdd, err := linkFile(repoPath, intPath)
+	if shouldAdd {
+		addToGit(repoPath, intPath)
+	}
+	return err
+}
+
+// linkFile creates a symbolic link from a repository file to the root
+// filesystem. It returns true if the file is linked and should be added to
+// git. It usually prints an error message and returns (false, nil) on failure.
+func linkFile(repoPath, intPath string) (bool, error) {
 	if ignoreFilesRegex.MatchString(strings.TrimPrefix(intPath, repoPath+"/")) {
-		return nil
+		return false, nil
 	}
 	switch intPath {
 	case filepath.Join(repoPath, ".gitignore"):
-		return nil
+		return false, nil
 	case filepath.Join(repoPath, "LICENSE"):
-		return nil
+		return false, nil
 	case filepath.Join(repoPath, "README.md"):
-		return nil
+		return false, nil
 	}
 
 	extPath := repository.ToExternalPath(repoPath, intPath)
@@ -109,22 +128,21 @@ func File(repoPath, intPath string) error {
 	if err == nil {
 		// Success
 		printLinked(intPath, extPath)
-		addToGit(repoPath, intPath)
-		return nil
+		return true, nil
 	}
 	if !os.IsExist(err) {
 		// We cannot recover from an error other than extPath already existing, in which case we can back it up.
-		return fmt.Errorf("failed to create symlink from %s to %s: %w", extPath, intPath, err)
+		return false, fmt.Errorf("failed to create symlink from %s to %s: %w", extPath, intPath, err)
 	}
 
 	extFileInfo, err := os.Lstat(extPath)
 	if err != nil {
 		printError(intPath, fmt.Errorf("failed to stat %s: %w", extPath, err))
-		return nil
+		return false, nil
 	}
 	if extFileInfo.IsDir() {
 		printError(intPath, fmt.Errorf("cannot create symlink: %s exists and is a directory (remove the directory or use a different location)", extPath))
-		return nil
+		return false, nil
 	}
 
 	shouldBackup := !backupDisabled
@@ -133,8 +151,7 @@ func File(repoPath, intPath string) error {
 	linkTarget, err := os.Readlink(extPath)
 	if err == nil && linkTarget == intPath {
 		// Already linked to the correct location - no need to recreate
-		addToGit(repoPath, intPath)
-		return nil
+		return true, nil
 	}
 
 	// Try to resolve the symlink to check if it's broken
@@ -143,7 +160,7 @@ func File(repoPath, intPath string) error {
 		// Can only recover from an error due to a broken symbolic link
 		if !os.IsNotExist(evalErr) {
 			printError(intPath, fmt.Errorf("failed to resolve symlink %s: %w", extPath, evalErr))
-			return nil
+			return false, nil
 		}
 		shouldBackup = false
 	}
@@ -152,27 +169,42 @@ func File(repoPath, intPath string) error {
 		ok, backupErr := backup(extPath)
 		if !ok {
 			printError(intPath, fmt.Errorf("backup failed, skipping: %w", backupErr))
-			return nil
+			return false, nil
 		}
 	} else {
 		// Either extPath is a broken symbolic link or backups are disabled
 		if err = os.Remove(extPath); err != nil {
 			printError(intPath, fmt.Errorf("failed to remove %s: %w", extPath, err))
-			return nil
+			return false, nil
 		}
 	}
 	if err = os.Symlink(intPath, extPath); err != nil {
 		printError(intPath, fmt.Errorf("failed to create symlink from %s to %s: %w", extPath, intPath, err))
-		return nil
+		return false, nil
 	}
 	printLinked(intPath, extPath)
-	addToGit(repoPath, intPath)
-	return nil
+	return true, nil
 }
 
-func addToGit(repoPath, intPath string) {
-	if err := git.Run(repoPath, "add", "--force", intPath); err != nil {
-		printError(intPath, fmt.Errorf("failed to add %s to git: %w", intPath, err))
+// maxGitAddBatch bounds the number of paths passed to a single git
+// invocation in order to stay well under the operating system's argv limit
+const maxGitAddBatch = 1000
+
+// addToGit adds the given paths to git in batched invocations. If a batch
+// fails, its paths are retried individually so that one bad path does not
+// prevent the others from being added.
+func addToGit(repoPath string, intPaths ...string) {
+	for start := 0; start < len(intPaths); start += maxGitAddBatch {
+		batch := intPaths[start:min(start+maxGitAddBatch, len(intPaths))]
+		args := append([]string{"add", "--force"}, batch...)
+		if err := git.Run(repoPath, args...); err == nil {
+			continue
+		}
+		for _, p := range batch {
+			if err := git.Run(repoPath, "add", "--force", p); err != nil {
+				printError(p, fmt.Errorf("failed to add %s to git: %w", p, err))
+			}
+		}
 	}
 }
 
