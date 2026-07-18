@@ -45,9 +45,14 @@ func TestResolveExistingPrefix(t *testing.T) {
 	}
 
 	// A non-existent path under a symlinked, existing prefix resolves the
-	// prefix and keeps the remainder
+	// prefix and keeps the remainder. realDir itself may contain symlink
+	// components (e.g. /var on macOS), so resolve it for the comparison.
+	resolvedReal, err := filepath.EvalSymlinks(realDir)
+	if err != nil {
+		t.Fatalf("Failed to resolve real dir: %v", err)
+	}
 	got := Resolve(filepath.Join(linkDir, "child", "grandchild"))
-	want := filepath.Join(realDir, "child", "grandchild")
+	want := filepath.Join(resolvedReal, "child", "grandchild")
 	if got != want {
 		t.Errorf("Resolve() = %q, want %q", got, want)
 	}
