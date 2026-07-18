@@ -40,12 +40,13 @@ func Run(baseDir string, arguments ...string) error {
 	return cmd.Run()
 }
 
-// gitLocationEnv lists the environment variables that bind git to a specific
-// repository, index, object store, or pathspec prefix. It mirrors git's own
-// repository-local environment set. gog runs git against the repository at
-// cmd.Dir, so these are removed to avoid inheriting a location from an
-// enclosing git invocation such as a git hook, which exports several of them.
-var gitLocationEnv = map[string]bool{
+// gitScrubbedEnv lists the environment variables that bind git to a specific
+// repository, index, object store, pathspec prefix, or configuration source.
+// It mirrors git's own repository-local and config-selection environment. gog
+// runs git against the repository at cmd.Dir, so these are removed to avoid
+// inheriting a location or configuration from an enclosing git invocation such
+// as a git hook, which exports several of them.
+var gitScrubbedEnv = map[string]bool{
 	"GIT_DIR":                          true,
 	"GIT_WORK_TREE":                    true,
 	"GIT_INDEX_FILE":                   true,
@@ -59,19 +60,43 @@ var gitLocationEnv = map[string]bool{
 	"GIT_NO_REPLACE_OBJECTS":           true,
 	"GIT_REPLACE_REF_BASE":             true,
 	"GIT_SHALLOW_FILE":                 true,
+	"GIT_CONFIG_GLOBAL":                true,
+	"GIT_CONFIG_SYSTEM":                true,
+	"GIT_CONFIG_NOSYSTEM":              true,
+	"GIT_CONFIG_COUNT":                 true,
 }
 
+// gitScrubbedPrefixes lists the prefixes of the numbered configuration
+// variables (GIT_CONFIG_KEY_<n> / GIT_CONFIG_VALUE_<n>) that inject config
+// values into every git invocation. GIT_CONFIG_COUNT alone would disable them,
+// but the key/value pairs are dropped as well so none can leak through.
+var gitScrubbedPrefixes = []string{"GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_"}
+
 // commandEnv returns the process environment without the variables that would
-// redirect git away from the repository at cmd.Dir
+// redirect git away from the repository at cmd.Dir or override its configuration
 func commandEnv() []string {
 	env := os.Environ()
 	filtered := make([]string, 0, len(env))
 	for _, kv := range env {
 		name, _, _ := strings.Cut(kv, "=")
-		if gitLocationEnv[name] {
+		if shouldScrub(name) {
 			continue
 		}
 		filtered = append(filtered, kv)
 	}
 	return filtered
+}
+
+// shouldScrub reports whether an environment variable must be removed before
+// running git, covering both the fixed names and the numbered config variables
+func shouldScrub(name string) bool {
+	if gitScrubbedEnv[name] {
+		return true
+	}
+	for _, prefix := range gitScrubbedPrefixes {
+		if strings.HasPrefix(name, prefix) {
+			return true
+		}
+	}
+	return false
 }
