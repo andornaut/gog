@@ -40,11 +40,11 @@ func Run(baseDir string, arguments ...string) error {
 	return cmd.Run()
 }
 
-// gitLocationEnv lists the environment variables that redirect git to a
-// different repository, index, or object store. gog runs git against the
-// repository at cmd.Dir, so these are removed to avoid inheriting a location
-// from an enclosing git invocation such as a git hook, which exports several
-// of them.
+// gitLocationEnv lists the environment variables that bind git to a specific
+// repository, index, object store, or pathspec prefix. It mirrors git's own
+// repository-local environment set. gog runs git against the repository at
+// cmd.Dir, so these are removed to avoid inheriting a location from an
+// enclosing git invocation such as a git hook, which exports several of them.
 var gitLocationEnv = map[string]bool{
 	"GIT_DIR":                          true,
 	"GIT_WORK_TREE":                    true,
@@ -53,6 +53,12 @@ var gitLocationEnv = map[string]bool{
 	"GIT_ALTERNATE_OBJECT_DIRECTORIES": true,
 	"GIT_COMMON_DIR":                   true,
 	"GIT_NAMESPACE":                    true,
+	"GIT_PREFIX":                       true,
+	"GIT_SUPER_PREFIX":                 true,
+	"GIT_GRAFT_FILE":                   true,
+	"GIT_NO_REPLACE_OBJECTS":           true,
+	"GIT_REPLACE_REF_BASE":             true,
+	"GIT_SHALLOW_FILE":                 true,
 }
 
 // commandEnv returns the process environment without the variables that would

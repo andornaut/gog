@@ -15,9 +15,13 @@ func Within(base, p string) bool {
 }
 
 // Resolve returns p with its longest existing ancestor resolved through
-// symlinks and the non-existent remainder appended. This canonicalizes a path
-// that does not yet exist so that it can be compared against fully resolved
-// paths.
+// symlinks and the non-existent remainder appended, so that a path that does
+// not yet exist can be compared against fully resolved paths.
+//
+// Only the existing prefix is canonical: the appended remainder is kept
+// literally, so callers must ensure it does not yet exist as a symlink.
+// A broken or looping symlink within the resolved prefix is also left
+// literal rather than reported as an error.
 func Resolve(p string) string {
 	p = filepath.Clean(p)
 	if resolved, err := filepath.EvalSymlinks(p); err == nil {
