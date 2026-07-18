@@ -412,3 +412,62 @@ func TestDirRejectsSymlinkCycle(t *testing.T) {
 		t.Errorf("Error should mention the cycle, got: %v", err)
 	}
 }
+
+func TestDirRejectsAncestorSymlinkBeforeCopying(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "gog-copy-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// sibling would be copied in full if the cycle were only detected on re-entry
+	if writeErr := os.WriteFile(filepath.Join(tmpDir, "sibling.txt"), []byte("x"), 0644); writeErr != nil {
+		t.Fatalf("Failed to create sibling file: %v", writeErr)
+	}
+	srcDir := filepath.Join(tmpDir, "src")
+	if mkdirErr := os.MkdirAll(srcDir, 0755); mkdirErr != nil {
+		t.Fatalf("Failed to create source dir: %v", mkdirErr)
+	}
+	// Symlink to an ancestor of the source directory
+	if symlinkErr := os.Symlink(tmpDir, filepath.Join(srcDir, "up")); symlinkErr != nil {
+		t.Fatalf("Failed to create symlink: %v", symlinkErr)
+	}
+
+	dstDir := filepath.Join(tmpDir, "dst")
+	err = Dir(srcDir, dstDir, func(src, dst string) bool { return false })
+	if err == nil {
+		t.Fatal("Dir() should fail on a symlink to an ancestor")
+	}
+	if !strings.Contains(err.Error(), "cycle") {
+		t.Errorf("Error should mention the cycle, got: %v", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(dstDir, "up", "sibling.txt")); statErr == nil {
+		t.Error("The ancestor's contents should not have been copied before the cycle was detected")
+	}
+}
+
+func TestDirRejectsSourceInsideDestination(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "gog-copy-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	srcDir := filepath.Join(tmpDir, "src")
+	dstDir := filepath.Join(tmpDir, "dst")
+	if mkdirErr := os.MkdirAll(srcDir, 0755); mkdirErr != nil {
+		t.Fatalf("Failed to create source dir: %v", mkdirErr)
+	}
+	// Symlink into the destination tree
+	if symlinkErr := os.Symlink(dstDir, filepath.Join(srcDir, "link")); symlinkErr != nil {
+		t.Fatalf("Failed to create symlink: %v", symlinkErr)
+	}
+
+	err = Dir(srcDir, dstDir, func(src, dst string) bool { return false })
+	if err == nil {
+		t.Fatal("Dir() should fail when a source entry resolves inside the destination")
+	}
+	if !strings.Contains(err.Error(), "destination") {
+		t.Errorf("Error should mention the destination, got: %v", err)
+	}
+}

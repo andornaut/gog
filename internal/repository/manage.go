@@ -15,9 +15,16 @@ func Add(repoName, repoURL string) (string, error) {
 		return "", err
 	}
 
+	// Reject any existing non-empty path, git repository or not, so that an
+	// existing data directory is never converted into a repository. An empty
+	// directory (e.g. left over from a failed clone) may be reused.
 	repoPath := filepath.Join(BaseDir, repoName)
-	if err := validateRepoPath(repoPath); err == nil {
-		return "", fmt.Errorf("repository already exists: %s", repoPath)
+	entries, err := os.ReadDir(repoPath)
+	switch {
+	case err == nil && len(entries) > 0:
+		return "", fmt.Errorf("repository path already exists: %s", repoPath)
+	case err != nil && !os.IsNotExist(err):
+		return "", fmt.Errorf("invalid repository path %s: %w", repoPath, err)
 	}
 
 	if err := os.MkdirAll(repoPath, 0755); err != nil {

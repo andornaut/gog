@@ -102,6 +102,25 @@ func TestToExternalPathMatchesHomeVarOnPathBoundary(t *testing.T) {
 	}
 }
 
+// TestPathConversionRootHome ensures a root home directory ("/") still maps
+// paths under $HOME and round-trips without producing double slashes
+func TestPathConversionRootHome(t *testing.T) {
+	originalHomeDir := homeDir
+	defer func() { homeDir = originalHomeDir }()
+
+	homeDir = "/"
+	repoPath := "/data/gog/testrepo"
+
+	internal := ToInternalPath(repoPath, "/etc/foo")
+	if internal != repoPath+"/$HOME/etc/foo" {
+		t.Errorf("ToInternalPath() = %q, want %q", internal, repoPath+"/$HOME/etc/foo")
+	}
+	external := ToExternalPath(repoPath, internal)
+	if external != "/etc/foo" {
+		t.Errorf("ToExternalPath() = %q, want %q", external, "/etc/foo")
+	}
+}
+
 // TestPathConversionRoundTrip verifies path conversion is reversible
 func TestPathConversionRoundTrip(t *testing.T) {
 	originalHomeDir := homeDir
