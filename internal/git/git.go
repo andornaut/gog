@@ -40,14 +40,29 @@ func Run(baseDir string, arguments ...string) error {
 	return cmd.Run()
 }
 
-// commandEnv returns the process environment without GIT_DIR and
-// GIT_WORK_TREE, which would redirect git away from the repository at
-// cmd.Dir (e.g. when gog is invoked from a git hook)
+// gitLocationEnv lists the environment variables that redirect git to a
+// different repository, index, or object store. gog runs git against the
+// repository at cmd.Dir, so these are removed to avoid inheriting a location
+// from an enclosing git invocation such as a git hook, which exports several
+// of them.
+var gitLocationEnv = map[string]bool{
+	"GIT_DIR":                          true,
+	"GIT_WORK_TREE":                    true,
+	"GIT_INDEX_FILE":                   true,
+	"GIT_OBJECT_DIRECTORY":             true,
+	"GIT_ALTERNATE_OBJECT_DIRECTORIES": true,
+	"GIT_COMMON_DIR":                   true,
+	"GIT_NAMESPACE":                    true,
+}
+
+// commandEnv returns the process environment without the variables that would
+// redirect git away from the repository at cmd.Dir
 func commandEnv() []string {
 	env := os.Environ()
 	filtered := make([]string, 0, len(env))
 	for _, kv := range env {
-		if strings.HasPrefix(kv, "GIT_DIR=") || strings.HasPrefix(kv, "GIT_WORK_TREE=") {
+		name, _, _ := strings.Cut(kv, "=")
+		if gitLocationEnv[name] {
 			continue
 		}
 		filtered = append(filtered, kv)

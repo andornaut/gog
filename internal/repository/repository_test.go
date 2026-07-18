@@ -133,8 +133,8 @@ func TestAddRejectsExistingNonEmptyDirectory(t *testing.T) {
 	}
 	if _, addErr := Add("data", ""); addErr == nil {
 		t.Error("Add should reject an existing non-empty directory")
-	} else if !strings.Contains(addErr.Error(), "already exists") {
-		t.Errorf("Error should mention that the path already exists, got: %v", addErr)
+	} else if !strings.Contains(addErr.Error(), "not a gog repository") {
+		t.Errorf("Error should identify the path as not a gog repository, got: %v", addErr)
 	}
 
 	// Existing empty directory may be reused

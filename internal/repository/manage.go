@@ -22,7 +22,12 @@ func Add(repoName, repoURL string) (string, error) {
 	entries, err := os.ReadDir(repoPath)
 	switch {
 	case err == nil && len(entries) > 0:
-		return "", fmt.Errorf("repository path already exists: %s", repoPath)
+		// Distinguish an already-configured repository from an unrelated
+		// directory so the user is not told to remove real data
+		if git.Is(repoPath) {
+			return "", fmt.Errorf("repository already exists: %s", repoPath)
+		}
+		return "", fmt.Errorf("path already exists and is not a gog repository: %s (remove it or choose another name)", repoPath)
 	case err != nil && !os.IsNotExist(err):
 		return "", fmt.Errorf("invalid repository path %s: %w", repoPath, err)
 	}
