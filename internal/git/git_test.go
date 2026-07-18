@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -57,5 +58,40 @@ func TestIs(t *testing.T) {
 	}
 	if !Is(repoPath) {
 		t.Error("Is() should return true for a repository root when GIT_DIR is set")
+	}
+}
+
+// TestCommandEnvScrubsLocationVars ensures the repository-local git
+// environment variables are removed while unrelated variables are kept
+func TestCommandEnvScrubsLocationVars(t *testing.T) {
+	t.Setenv("GIT_DIR", "/somewhere/.git")
+	t.Setenv("GIT_INDEX_FILE", "/somewhere/index")
+	t.Setenv("GIT_PREFIX", "sub/")
+	t.Setenv("GIT_SSH_COMMAND", "ssh -v")
+	t.Setenv("PATH", os.Getenv("PATH"))
+
+	scrubbed := map[string]bool{}
+	kept := map[string]bool{}
+	for _, kv := range commandEnv() {
+		name, _, _ := strings.Cut(kv, "=")
+		kept[name] = true
+	}
+	for name := range gitLocationEnv {
+		if !kept[name] {
+			scrubbed[name] = true
+		}
+	}
+
+	for _, name := range []string{"GIT_DIR", "GIT_INDEX_FILE", "GIT_PREFIX"} {
+		if !scrubbed[name] {
+			t.Errorf("commandEnv() should remove %s", name)
+		}
+	}
+	// Transport and identity variables must be preserved so clone/push work
+	if !kept["GIT_SSH_COMMAND"] {
+		t.Error("commandEnv() should keep GIT_SSH_COMMAND")
+	}
+	if !kept["PATH"] {
+		t.Error("commandEnv() should keep PATH")
 	}
 }
