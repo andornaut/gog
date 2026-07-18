@@ -30,7 +30,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
+
+	"github.com/andornaut/gog/internal/paths"
 )
 
 // File copies the contents of the file named by src to the file named
@@ -84,22 +85,18 @@ func File(src, dst string) (err error) {
 // processing a directory entry
 type SkipFunc func(string, string) bool
 
-// isWithin returns true if p equals base or is contained within it,
-// matching on a path boundary
-func isWithin(base, p string) bool {
-	return p == base || strings.HasPrefix(p, strings.TrimSuffix(base, "/")+"/")
-}
-
 // Dir recursively copies a directory tree. Source directory must exist.
 // Symlinks are followed; a symlink that points to one of its own ancestor
 // directories is a cycle and returns an error.
 func Dir(src string, dst string, skipFunc SkipFunc) error {
-	return copyDir(src, dst, filepath.Clean(dst), skipFunc, map[string]bool{})
+	// dstRoot is resolved so it can be compared against fully resolved
+	// sources; dst itself may not exist yet, so its existing prefix is resolved
+	return copyDir(src, dst, paths.Resolve(dst), skipFunc, map[string]bool{})
 }
 
 // copyDir tracks the resolved paths of the directories on the current
 // recursion path in `ancestors` in order to detect symlink cycles, and the
-// top-level destination in `dstRoot` in order to detect sources that
+// resolved top-level destination in `dstRoot` in order to detect sources that
 // resolve into the tree being written
 func copyDir(src, dst, dstRoot string, skipFunc SkipFunc, ancestors map[string]bool) (err error) {
 	src = filepath.Clean(src)
@@ -109,18 +106,15 @@ func copyDir(src, dst, dstRoot string, skipFunc SkipFunc, ancestors map[string]b
 	if err != nil {
 		return err
 	}
-	if ancestors[resolvedSrc] {
-		return fmt.Errorf("copy: symlink cycle detected at %s", src)
-	}
-	// A source that contains a directory already being copied is a cycle;
-	// failing before descending avoids copying the ancestor's entire tree first
+	// A source that is or contains a directory already on the recursion path
+	// is a cycle; failing before descending avoids copying its tree first
 	for ancestor := range ancestors {
-		if isWithin(resolvedSrc, ancestor) {
-			return fmt.Errorf("copy: symlink cycle detected at %s (resolves to ancestor %s)", src, resolvedSrc)
+		if paths.Within(resolvedSrc, ancestor) {
+			return fmt.Errorf("copy: symlink cycle detected at %s (resolves to %s)", src, resolvedSrc)
 		}
 	}
 	// A source inside the destination would be re-copied into itself endlessly
-	if isWithin(dstRoot, resolvedSrc) {
+	if paths.Within(dstRoot, resolvedSrc) {
 		return fmt.Errorf("copy: source %s resolves inside the destination %s", src, dstRoot)
 	}
 	ancestors[resolvedSrc] = true

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/andornaut/gog/internal/git"
+	"github.com/andornaut/gog/internal/paths"
 )
 
 var (
@@ -38,7 +39,7 @@ func validateRepoPath(p string) error {
 }
 
 func validateTargetPath(p string) error {
-	if hasPathPrefix(BaseDir, p) {
+	if paths.Within(BaseDir, p) {
 		return fmt.Errorf("invalid target path %q (cannot add gog's own directory)", p)
 	}
 	if strings.HasSuffix(p, ".gog") {
@@ -48,5 +49,5 @@ func validateTargetPath(p string) error {
 }
 
 func shouldSkip(extPath, _ string) bool {
-	return hasPathPrefix(BaseDir, extPath) || strings.HasSuffix(extPath, ".gog")
+	return paths.Within(BaseDir, extPath) || strings.HasSuffix(extPath, ".gog")
 }

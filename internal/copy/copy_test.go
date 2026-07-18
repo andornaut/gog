@@ -471,3 +471,40 @@ func TestDirRejectsSourceInsideDestination(t *testing.T) {
 		t.Errorf("Error should mention the destination, got: %v", err)
 	}
 }
+
+// TestDirRejectsSourceInsideSymlinkedDestination ensures the destination
+// overlap check holds when the destination is addressed through a symlinked
+// path component (e.g. a relocated ~/.local, or /var on macOS)
+func TestDirRejectsSourceInsideSymlinkedDestination(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "gog-copy-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// realParent holds the destination; linkParent addresses it via a symlink
+	realParent := filepath.Join(tmpDir, "realparent")
+	if mkdirErr := os.MkdirAll(realParent, 0755); mkdirErr != nil {
+		t.Fatalf("Failed to create real parent: %v", mkdirErr)
+	}
+	if symlinkErr := os.Symlink(realParent, filepath.Join(tmpDir, "linkparent")); symlinkErr != nil {
+		t.Fatalf("Failed to create parent symlink: %v", symlinkErr)
+	}
+
+	srcDir := filepath.Join(tmpDir, "src")
+	if mkdirErr := os.MkdirAll(srcDir, 0755); mkdirErr != nil {
+		t.Fatalf("Failed to create source dir: %v", mkdirErr)
+	}
+	dstDir := filepath.Join(tmpDir, "linkparent", "dst")
+	if symlinkErr := os.Symlink(dstDir, filepath.Join(srcDir, "into")); symlinkErr != nil {
+		t.Fatalf("Failed to create symlink: %v", symlinkErr)
+	}
+
+	err = Dir(srcDir, dstDir, func(src, dst string) bool { return false })
+	if err == nil {
+		t.Fatal("Dir() should fail when a source resolves inside a symlink-addressed destination")
+	}
+	if !strings.Contains(err.Error(), "destination") {
+		t.Errorf("Error should mention the destination, got: %v", err)
+	}
+}
