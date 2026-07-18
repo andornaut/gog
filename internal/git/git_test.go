@@ -61,29 +61,33 @@ func TestIs(t *testing.T) {
 	}
 }
 
-// TestCommandEnvScrubsLocationVars ensures the repository-local git
-// environment variables are removed while unrelated variables are kept
-func TestCommandEnvScrubsLocationVars(t *testing.T) {
+// TestCommandEnvScrubsInheritedGitVars ensures the repository-local and
+// config-selection git environment variables are removed while unrelated
+// variables are kept
+func TestCommandEnvScrubsInheritedGitVars(t *testing.T) {
 	t.Setenv("GIT_DIR", "/somewhere/.git")
 	t.Setenv("GIT_INDEX_FILE", "/somewhere/index")
 	t.Setenv("GIT_PREFIX", "sub/")
+	t.Setenv("GIT_CONFIG_GLOBAL", "/somewhere/gitconfig")
+	t.Setenv("GIT_CONFIG_COUNT", "1")
+	t.Setenv("GIT_CONFIG_KEY_0", "core.hooksPath")
+	t.Setenv("GIT_CONFIG_VALUE_0", "/tmp/hooks")
 	t.Setenv("GIT_SSH_COMMAND", "ssh -v")
 	t.Setenv("PATH", os.Getenv("PATH"))
 
-	scrubbed := map[string]bool{}
 	kept := map[string]bool{}
 	for _, kv := range commandEnv() {
 		name, _, _ := strings.Cut(kv, "=")
 		kept[name] = true
 	}
-	for name := range gitLocationEnv {
-		if !kept[name] {
-			scrubbed[name] = true
-		}
-	}
 
-	for _, name := range []string{"GIT_DIR", "GIT_INDEX_FILE", "GIT_PREFIX"} {
-		if !scrubbed[name] {
+	// Location, config-selection, and numbered config vars must be removed
+	for _, name := range []string{
+		"GIT_DIR", "GIT_INDEX_FILE", "GIT_PREFIX",
+		"GIT_CONFIG_GLOBAL", "GIT_CONFIG_COUNT",
+		"GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0",
+	} {
+		if kept[name] {
 			t.Errorf("commandEnv() should remove %s", name)
 		}
 	}
