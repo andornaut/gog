@@ -40,4 +40,22 @@ func TestIs(t *testing.T) {
 	if Is(plainPath) {
 		t.Error("Is() should return false for a directory that is not a git repository")
 	}
+
+	barePath := filepath.Join(tmpDir, "bare.git")
+	cmd = exec.Command("git", "init", "-q", "--bare", barePath)
+	if runErr := cmd.Run(); runErr != nil {
+		t.Fatalf("Failed to initialize bare git repo: %v", runErr)
+	}
+	if Is(barePath) {
+		t.Error("Is() should return false for a bare repository (no work tree to link from)")
+	}
+
+	// GIT_DIR must not leak into git invocations (e.g. when run from a git hook)
+	t.Setenv("GIT_DIR", filepath.Join(repoPath, ".git"))
+	if Is(plainPath) {
+		t.Error("Is() should return false for a non-repository directory when GIT_DIR is set")
+	}
+	if !Is(repoPath) {
+		t.Error("Is() should return true for a repository root when GIT_DIR is set")
+	}
 }

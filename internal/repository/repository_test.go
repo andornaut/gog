@@ -109,6 +109,48 @@ func TestGetFirstSkipsInvalidRepositories(t *testing.T) {
 	}
 }
 
+// TestAddRejectsExistingNonEmptyDirectory ensures Add never runs git init
+// over an existing directory that has content, while an empty directory
+// (e.g. left over from a failed clone) may be reused
+func TestAddRejectsExistingNonEmptyDirectory(t *testing.T) {
+	originalBaseDir := BaseDir
+	defer func() { BaseDir = originalBaseDir }()
+
+	tmpDir, err := os.MkdirTemp("", "gog-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+	BaseDir = tmpDir
+
+	// Existing directory with content must be rejected
+	dataDir := filepath.Join(BaseDir, "data")
+	if mkdirErr := os.MkdirAll(dataDir, 0755); mkdirErr != nil {
+		t.Fatalf("Failed to create data dir: %v", mkdirErr)
+	}
+	if writeErr := os.WriteFile(filepath.Join(dataDir, "file.txt"), []byte("x"), 0644); writeErr != nil {
+		t.Fatalf("Failed to create file: %v", writeErr)
+	}
+	if _, addErr := Add("data", ""); addErr == nil {
+		t.Error("Add should reject an existing non-empty directory")
+	} else if !strings.Contains(addErr.Error(), "already exists") {
+		t.Errorf("Error should mention that the path already exists, got: %v", addErr)
+	}
+
+	// Existing empty directory may be reused
+	emptyDir := filepath.Join(BaseDir, "empty")
+	if mkdirErr := os.MkdirAll(emptyDir, 0755); mkdirErr != nil {
+		t.Fatalf("Failed to create empty dir: %v", mkdirErr)
+	}
+	repoPath, addErr := Add("empty", "")
+	if addErr != nil {
+		t.Fatalf("Add should reuse an existing empty directory: %v", addErr)
+	}
+	if repoPath != emptyDir {
+		t.Errorf("Add() = %q, want %q", repoPath, emptyDir)
+	}
+}
+
 // TestGetBaseDirNormalizesPath ensures GOG_HOME values with trailing slashes
 // or relative paths are normalized to clean absolute paths
 func TestGetBaseDirNormalizesPath(t *testing.T) {
