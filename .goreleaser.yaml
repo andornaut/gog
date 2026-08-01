@@ -16,6 +16,11 @@ builds:
     goarch:
       - amd64
       - arm64
+    # macOS is Apple Silicon only: the last Intel Mac was discontinued in 2023
+    # and macOS 26 is the final release supporting Intel.
+    ignore:
+      - goos: darwin
+        goarch: amd64
     main: ./main.go
     binary: gog
 
