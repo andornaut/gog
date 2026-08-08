@@ -20,6 +20,22 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    # The platforms .goreleaser.yaml builds for a tag. macOS is Apple Silicon
+    # only, for the reason given there. CGO_ENABLED=0 makes every one of these a
+    # cross-compile the runner can do on its own.
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            asset_arch: x86_64
+          - goos: linux
+            goarch: arm64
+            asset_arch: arm64
+          - goos: darwin
+            goarch: arm64
+            asset_arch: arm64
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v7.0.1
@@ -32,12 +48,25 @@ jobs:
 
       - name: Build
         run: go build -o gog ./main.go
+        env:
+          CGO_ENABLED: 0
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+
+      # Named and laid out like the archives goreleaser publishes for a tag, so
+      # what installs a tagged release installs a dev one by changing the URL
+      # and nothing else. An asset whose name does not carry its platform is one
+      # a consumer has to be told about out of band.
+      - name: Archive
+        run: |
+          tar -czf gog_${{ matrix.goos }}_${{ matrix.asset_arch }}.tar.gz \
+              gog LICENSE README.md
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v7
         with:
-          name: gog
-          path: gog
+          name: gog_${{ matrix.goos }}_${{ matrix.asset_arch }}
+          path: gog_${{ matrix.goos }}_${{ matrix.asset_arch }}.tar.gz
 
   goreleaser:
     needs: build
@@ -85,11 +114,17 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Download build artifact
+      - name: Download build artifacts
         uses: actions/download-artifact@v8
         with:
-          name: gog
           path: artifacts
+          merge-multiple: true
+
+      # As goreleaser does for a tag. The consumer can then verify what it
+      # fetched, which matters more here than there: `dev` is a moving tag, so a
+      # download that straddles a re-cut would otherwise go unnoticed.
+      - name: Write checksums
+        run: cd artifacts && sha256sum *.tar.gz > checksums.txt
 
       - name: Create dev release
         uses: softprops/action-gh-release@v3.0.2
@@ -100,4 +135,4 @@ jobs:
           name: dev
           body: Latest build from main branch
           make_latest: "false"
-          files: artifacts/gog
+          files: artifacts/*
