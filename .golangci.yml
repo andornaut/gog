@@ -29,18 +29,16 @@ linters:
         - name: exported
           disabled: true
   exclusions:
+    generated: lax
     rules:
+      # Tests get a shorter leash: cleanup errors and repeated fixture literals
+      # are both normal.
       - linters:
+          - errcheck
+          - goconst
           - gosec
+          - unparam
         path: _test\.go
-      - linters:
-          - errcheck
-        path: _test\.go
-        text: Error return value of `os.RemoveAll` is not checked
-      - linters:
-          - errcheck
-        path: _test\.go
-        text: Error return value of `cleanup` is not checked
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
@@ -55,3 +53,5 @@ formatters:
         - standard
         - default
         - prefix(github.com/andornaut/gog)
+  exclusions:
+    generated: lax
