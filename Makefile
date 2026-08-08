@@ -5,9 +5,11 @@ DISTDIR   := dist
 TARGET    := gog
 PLATFORMS := darwin freebsd linux
 
-.PHONY: $(PLATFORMS) $(TARGET) all clean coverage coverage-html install lint release test uninstall
+.PHONY: $(PLATFORMS) $(TARGET) all build clean coverage coverage-html fmt install lint release test uninstall
 
 all: $(TARGET)
+
+build: $(TARGET)
 
 $(PLATFORMS):
 	GOARCH=amd64 GOOS=$@ go build -o "$(DISTDIR)/$(TARGET)-$@-amd64"
@@ -18,7 +20,7 @@ $(TARGET):
 clean:
 	go clean
 	rm -f $(DISTDIR)/$(TARGET)*
-	rm -f coverage.out coverage.html
+	rm -f coverage.txt coverage.html
 
 install: $(TARGET)
 	sudo mkdir -p "$(DESTDIR)$(BINPREFIX)"
@@ -27,14 +29,17 @@ install: $(TARGET)
 release: clean $(PLATFORMS)
 
 test:
-	go test -v -race -coverprofile=coverage.out ./...
+	go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
 
 coverage: test
-	go tool cover -func=coverage.out
+	go tool cover -func=coverage.txt
 
 coverage-html: test
-	go tool cover -html=coverage.out -o coverage.html
+	go tool cover -html=coverage.txt -o coverage.html
 	@echo "Coverage report generated: coverage.html"
+
+fmt:
+	golangci-lint fmt
 
 lint:
 	golangci-lint run
