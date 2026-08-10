@@ -73,6 +73,11 @@ jobs:
   # blocks every pull request forever. This job reports under one stable name,
   # so branch protection has a single check to require no matter how the matrix
   # grows.
+  #
+  # `always()` and not `!cancelled()`, which looks tidier and is a hole: a
+  # cancelled run would skip this job, and GitHub counts a skipped required
+  # check as passing, so an unverified commit becomes mergeable. Failing closed
+  # costs a red check on runs that were cancelled anyway.
   build:
     needs: build-platform
     if: always()
