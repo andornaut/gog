@@ -17,7 +17,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
+  build-platform:
     runs-on: ubuntu-latest
 
     # The platforms .goreleaser.yaml builds for a tag. macOS is Apple Silicon
@@ -68,6 +68,20 @@ jobs:
           name: gog_${{ matrix.goos }}_${{ matrix.asset_arch }}
           path: gog_${{ matrix.goos }}_${{ matrix.asset_arch }}.tar.gz
 
+  # A matrix leg reports as `build-platform (linux, amd64, x86_64)`, a name that
+  # changes whenever the matrix does — and a required check that stops reporting
+  # blocks every pull request forever. This job reports under one stable name,
+  # so branch protection has a single check to require no matter how the matrix
+  # grows.
+  build:
+    needs: build-platform
+    if: always()
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check that every platform built
+        run: '[ "${{ needs.build-platform.result }}" = success ]'
+
   goreleaser:
     needs: build
     runs-on: ubuntu-latest
@@ -107,13 +121,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7.0.1
 
-      - name: Delete previous dev release
-        run: |
-          gh release delete dev --yes || true
-          git push --delete origin refs/tags/dev || true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Download build artifacts
         uses: actions/download-artifact@v8
         with:
@@ -125,6 +132,16 @@ jobs:
       # download that straddles a re-cut would otherwise go unnoticed.
       - name: Write checksums
         run: cd artifacts && sha256sum *.tar.gz > checksums.txt
+
+      # Last, once the assets that replace it are on disk. Deleting first opens
+      # a window where a failure above — an empty artifact glob, a flaky
+      # download — leaves no `dev` release at all until the next push to main.
+      - name: Delete previous dev release
+        run: |
+          gh release delete dev --yes || true
+          git push --delete origin refs/tags/dev || true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create dev release
         uses: softprops/action-gh-release@v3.0.2
