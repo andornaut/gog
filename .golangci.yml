@@ -45,7 +45,7 @@ linters:
       - linters:
           - errcheck
         path: _test\.go
-        text: Error return value of `(os\.RemoveAll|cleanup)` is not checked
+        text: Error return value of `os\.RemoveAll` is not checked
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
