@@ -85,28 +85,30 @@ func File(src, dst string) (err error) {
 // processing a directory entry
 type SkipFunc func(string, string) bool
 
-// Dir recursively copies a directory tree. Source directory must exist.
-// Symlinks are followed as long as they resolve within the source tree; a
-// symlink that escapes the source directory or points to one of its own
-// ancestor directories returns an error.
+// Dir recursively copies a directory tree. The source directory must exist.
+//
+// A symbolic link within the tree is reported and skipped rather than
+// followed. Copying a link's target would store the contents while discarding
+// the link itself, and a broken link has no contents to store at all. Because
+// no link is followed, the tree cannot contain a cycle or reach outside
+// itself.
+//
+// A destination directory is created only once there is something to put in
+// it, so a source directory that is empty - or that holds nothing but skipped
+// entries - leaves no trace at the destination.
 func Dir(src string, dst string, skipFunc SkipFunc) error {
-	// srcRoot is resolved so escaping symlinks can be detected against a
-	// canonical boundary; dstRoot is resolved so it can be compared against
-	// fully resolved sources. dst itself may not exist yet, so its existing
-	// prefix is resolved.
-	srcRoot, err := filepath.EvalSymlinks(src)
-	if err != nil {
-		return err
-	}
-	return copyDir(src, dst, srcRoot, paths.Resolve(dst), skipFunc, map[string]bool{})
+	// dst may not exist yet, so only its existing prefix can be resolved
+	return copyDir(src, dst, paths.Resolve(dst), skipFunc, func() error {
+		return os.MkdirAll(filepath.Dir(dst), 0755)
+	})
 }
 
-// copyDir tracks the resolved paths of the directories on the current
-// recursion path in `ancestors` in order to detect symlink cycles, the
-// resolved top-level source in `srcRoot` in order to reject symlinks that
-// escape the tree being copied, and the resolved top-level destination in
-// `dstRoot` in order to detect sources that resolve into the tree being written
-func copyDir(src, dst, srcRoot, dstRoot string, skipFunc SkipFunc, ancestors map[string]bool) (err error) {
+// copyDir copies a single level of the tree. `dstRoot` is the resolved
+// top-level destination, retained in order to reject a source that lives
+// inside the tree being written. `ensureParent` creates this directory's
+// parent and is only called once there is something to copy, so that a
+// directory with nothing to hold is never created.
+func copyDir(src, dst, dstRoot string, skipFunc SkipFunc, ensureParent func() error) error {
 	src = filepath.Clean(src)
 	dst = filepath.Clean(dst)
 
@@ -114,19 +116,10 @@ func copyDir(src, dst, srcRoot, dstRoot string, skipFunc SkipFunc, ancestors map
 	if err != nil {
 		return err
 	}
-	// A source that is or contains a directory already on the recursion path
-	// is a cycle; failing before descending avoids copying its tree first
-	for ancestor := range ancestors {
-		if paths.Within(resolvedSrc, ancestor) {
-			return fmt.Errorf("copy: symlink cycle detected at %s (resolves to %s)", src, resolvedSrc)
-		}
-	}
-	// A source inside the destination would be re-copied into itself endlessly
+	// A source inside the destination would be re-copied into itself
 	if paths.Within(dstRoot, resolvedSrc) {
 		return fmt.Errorf("copy: source %s resolves inside the destination %s", src, dstRoot)
 	}
-	ancestors[resolvedSrc] = true
-	defer delete(ancestors, resolvedSrc)
 
 	si, err := os.Stat(src)
 	if err != nil {
@@ -136,71 +129,65 @@ func copyDir(src, dst, srcRoot, dstRoot string, skipFunc SkipFunc, ancestors map
 		return fmt.Errorf("copy: src must be a directory %s", src)
 	}
 
-	_, err = os.Stat(dst)
-	if err != nil && !os.IsNotExist(err) {
-		return
-	}
-
-	err = os.MkdirAll(dst, si.Mode())
-	if err != nil {
-		return
-	}
-
+	// The entries are listed before anything is written, so a destination
+	// nested inside this directory cannot be copied into itself
 	entries, err := os.ReadDir(src)
 	if err != nil {
-		return
+		return err
+	}
+
+	created := false
+	ensureDst := func() error {
+		if created {
+			return nil
+		}
+		if err := ensureParent(); err != nil {
+			return err
+		}
+		if err := os.Mkdir(dst, si.Mode()); err != nil && !os.IsExist(err) {
+			return err
+		}
+		created = true
+		return nil
 	}
 
 	for _, entry := range entries {
 		srcPath := filepath.Join(src, entry.Name())
 		dstPath := filepath.Join(dst, entry.Name())
 
-		// Get file info for mode checking
 		entryInfo, err := entry.Info()
 		if err != nil {
 			return err
 		}
 
-		isSymlink := entryInfo.Mode()&os.ModeSymlink != 0
-		linkPath := srcPath // original path, retained for diagnostics
-		if isSymlink {
-			srcPath, err = filepath.EvalSymlinks(srcPath)
-			if err != nil {
-				return err
-			}
+		if entryInfo.Mode()&os.ModeSymlink != 0 {
+			printSkippedLink(srcPath)
+			continue
 		}
-		// skipFunc is consulted before the escape check so that a caller can
-		// suppress an entry (skip means "pretend it is not here") rather than
-		// have an otherwise-skipped symlink abort the whole copy
 		if skipFunc(srcPath, dstPath) {
 			continue
 		}
-		if isSymlink {
-			// A symlink that resolves outside the source tree would pull in
-			// unrelated files; reject it rather than copying its target
-			if !paths.Within(srcRoot, srcPath) {
-				return fmt.Errorf("copy: symlink %s escapes the source directory %s (resolves to %s)", linkPath, srcRoot, srcPath)
-			}
-			// Re-stat the resolved target so that a symlink to a directory
-			// is copied as a directory rather than opened as a file
-			entryInfo, err = os.Stat(srcPath)
-			if err != nil {
-				return err
-			}
-		}
 
 		if entryInfo.IsDir() {
-			err = copyDir(srcPath, dstPath, srcRoot, dstRoot, skipFunc, ancestors)
-			if err != nil {
+			if err := copyDir(srcPath, dstPath, dstRoot, skipFunc, ensureDst); err != nil {
 				return err
 			}
-		} else {
-			err = File(srcPath, dstPath)
-			if err != nil {
-				return err
-			}
+			continue
+		}
+		if err := ensureDst(); err != nil {
+			return err
+		}
+		if err := File(srcPath, dstPath); err != nil {
+			return err
 		}
 	}
+	return nil
+}
 
-	return
+func printSkippedLink(p string) {
+	if target, err := os.Readlink(p); err == nil {
+		fmt.Fprintf(os.Stderr, "Warning: skipping symbolic link %s -> %s (add that path instead)\n", p, target)
+		return
+	}
+	fmt.Fprintf(os.Stderr, "Warning: skipping symbolic link %s\n", p)
 }

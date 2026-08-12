@@ -92,16 +92,22 @@ func resolveAddPath(targetPath string) (string, error) {
 		return "", err
 	}
 	extPath, err := filepath.EvalSymlinks(targetPath)
-	if err != nil {
-		return "", err
-	}
 	// A symbolic link that resolves into gog's own data directory is
 	// bookkeeping: the path is already linked, possibly by another repository,
 	// so it is followed. A link to anywhere else belongs to the user, and
 	// copying its target would store the contents while discarding the link
-	// itself, so the target is named and the link is left alone.
-	if isSymlink(targetPath) && !paths.Within(BaseDir, extPath) {
-		return "", fmt.Errorf("%q is a symbolic link to %s (add that path instead)", targetPath, extPath)
+	// itself, so the target is named and the link is left alone. This is
+	// decided before the resolution error is reported, so that a broken link
+	// is named as a link rather than as its missing target.
+	if isSymlink(targetPath) && (err != nil || !paths.Within(BaseDir, extPath)) {
+		target, readErr := os.Readlink(targetPath)
+		if readErr != nil {
+			return "", fmt.Errorf("%q is a symbolic link (add its target instead)", targetPath)
+		}
+		return "", fmt.Errorf("%q is a symbolic link to %s (add that path instead)", targetPath, target)
+	}
+	if err != nil {
+		return "", err
 	}
 	if _, err := os.Stat(extPath); err != nil {
 		return "", err

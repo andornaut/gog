@@ -266,10 +266,14 @@ func TestDirPreservesPermissions(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// Create source directory with specific permissions
+	// Create source directory with specific permissions. It needs a file
+	// because a directory with nothing to copy is not created.
 	srcDir := filepath.Join(tmpDir, "src")
 	if mkdirErr := os.Mkdir(srcDir, 0700); mkdirErr != nil {
 		t.Fatalf("Failed to create source dir: %v", mkdirErr)
+	}
+	if writeErr := os.WriteFile(filepath.Join(srcDir, "file.txt"), []byte("x"), 0644); writeErr != nil {
+		t.Fatalf("Failed to create file: %v", writeErr)
 	}
 
 	// Copy directory
@@ -295,15 +299,72 @@ func TestDirPreservesPermissions(t *testing.T) {
 	}
 }
 
-// TestDirHandlesSymlinks verifies symlinks are resolved and copied
-func TestDirHandlesSymlinks(t *testing.T) {
+// TestDirSkipsEmptyDirectories verifies that a directory with nothing to copy
+// into it is not created at the destination, so that an empty directory does
+// not become an untrackable entry in the repository
+func TestDirSkipsEmptyDirectories(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "gog-copy-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// Create source directory
+	srcDir := filepath.Join(tmpDir, "src")
+	if mkdirErr := os.MkdirAll(filepath.Join(srcDir, "empty", "alsoempty"), 0755); mkdirErr != nil {
+		t.Fatalf("Failed to create empty dirs: %v", mkdirErr)
+	}
+	if mkdirErr := os.MkdirAll(filepath.Join(srcDir, "full"), 0755); mkdirErr != nil {
+		t.Fatalf("Failed to create full dir: %v", mkdirErr)
+	}
+	if writeErr := os.WriteFile(filepath.Join(srcDir, "full", "file.txt"), []byte("x"), 0644); writeErr != nil {
+		t.Fatalf("Failed to create file: %v", writeErr)
+	}
+
+	dstDir := filepath.Join(tmpDir, "dst")
+	if err = Dir(srcDir, dstDir, func(src, dst string) bool { return false }); err != nil {
+		t.Fatalf("Dir() failed: %v", err)
+	}
+
+	if _, statErr := os.Stat(filepath.Join(dstDir, "full", "file.txt")); statErr != nil {
+		t.Errorf("The non-empty directory should have been copied: %v", statErr)
+	}
+	if _, statErr := os.Stat(filepath.Join(dstDir, "empty")); !os.IsNotExist(statErr) {
+		t.Error("An empty directory should not be created at the destination")
+	}
+}
+
+// TestDirSkipsEntirelyEmptySource verifies that copying a source that holds
+// nothing creates no destination at all
+func TestDirSkipsEntirelyEmptySource(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "gog-copy-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	srcDir := filepath.Join(tmpDir, "src")
+	if mkdirErr := os.Mkdir(srcDir, 0755); mkdirErr != nil {
+		t.Fatalf("Failed to create source dir: %v", mkdirErr)
+	}
+
+	dstDir := filepath.Join(tmpDir, "dst")
+	if err = Dir(srcDir, dstDir, func(src, dst string) bool { return false }); err != nil {
+		t.Fatalf("Dir() failed: %v", err)
+	}
+	if _, statErr := os.Stat(dstDir); !os.IsNotExist(statErr) {
+		t.Error("An empty source should not create a destination directory")
+	}
+}
+
+// TestDirSkipsSymlinkToFile verifies that a symlink is left behind rather than
+// replaced by a copy of its target's contents
+func TestDirSkipsSymlinkToFile(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "gog-copy-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
 	srcDir := filepath.Join(tmpDir, "src")
 	if mkdirErr := os.MkdirAll(srcDir, 0755); mkdirErr != nil {
 		t.Fatalf("Failed to create source dir: %v", mkdirErr)
@@ -311,151 +372,70 @@ func TestDirHandlesSymlinks(t *testing.T) {
 
 	// Create target file for symlink, within the source tree
 	targetFile := filepath.Join(srcDir, "target.txt")
-	testContent := []byte("symlink target content")
-	if writeErr := os.WriteFile(targetFile, testContent, 0644); writeErr != nil {
+	if writeErr := os.WriteFile(targetFile, []byte("symlink target content"), 0644); writeErr != nil {
 		t.Fatalf("Failed to create target file: %v", writeErr)
 	}
-
-	// Create symlink in source directory
-	symlinkPath := filepath.Join(srcDir, "link.txt")
-	if symlinkErr := os.Symlink(targetFile, symlinkPath); symlinkErr != nil {
+	if symlinkErr := os.Symlink(targetFile, filepath.Join(srcDir, "link.txt")); symlinkErr != nil {
 		t.Fatalf("Failed to create symlink: %v", symlinkErr)
 	}
 
-	// Copy directory
 	dstDir := filepath.Join(tmpDir, "dst")
-	err = Dir(srcDir, dstDir, func(src, dst string) bool { return false })
-	if err != nil {
+	if err = Dir(srcDir, dstDir, func(src, dst string) bool { return false }); err != nil {
 		t.Fatalf("Dir() failed: %v", err)
 	}
 
-	// Verify symlink was resolved and content copied
-	dstFile := filepath.Join(dstDir, "link.txt")
-	content, err := os.ReadFile(dstFile)
-	if err != nil {
-		t.Fatalf("Failed to read copied file: %v", err)
+	// The target itself is a regular file and is copied
+	if _, statErr := os.Stat(filepath.Join(dstDir, "target.txt")); statErr != nil {
+		t.Errorf("The symlink's target should have been copied: %v", statErr)
 	}
-
-	if string(content) != string(testContent) {
-		t.Errorf("Symlink content not copied correctly: got %q, want %q", content, testContent)
+	// The symlink is not, in either form
+	if _, statErr := os.Lstat(filepath.Join(dstDir, "link.txt")); !os.IsNotExist(statErr) {
+		t.Error("The symlink should not have been copied")
 	}
 }
 
-func TestDirHandlesSymlinkToDirectory(t *testing.T) {
+// TestDirSkipsSymlinkToDirectory verifies that a symlink to a directory is
+// skipped rather than copied as a directory
+func TestDirSkipsSymlinkToDirectory(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "gog-copy-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// Create source directory
 	srcDir := filepath.Join(tmpDir, "src")
-	if mkdirErr := os.MkdirAll(srcDir, 0755); mkdirErr != nil {
-		t.Fatalf("Failed to create source dir: %v", mkdirErr)
-	}
-
-	// Create target directory containing a file, within the source tree
 	targetDir := filepath.Join(srcDir, "targetdir")
 	if mkdirErr := os.MkdirAll(targetDir, 0755); mkdirErr != nil {
 		t.Fatalf("Failed to create target dir: %v", mkdirErr)
 	}
-	testContent := []byte("file in symlinked directory")
-	if writeErr := os.WriteFile(filepath.Join(targetDir, "file.txt"), testContent, 0644); writeErr != nil {
+	if writeErr := os.WriteFile(filepath.Join(targetDir, "file.txt"), []byte("x"), 0644); writeErr != nil {
 		t.Fatalf("Failed to create file in target dir: %v", writeErr)
 	}
-
-	// Create symlink to the directory in the source directory
-	symlinkPath := filepath.Join(srcDir, "linkdir")
-	if symlinkErr := os.Symlink(targetDir, symlinkPath); symlinkErr != nil {
+	if symlinkErr := os.Symlink(targetDir, filepath.Join(srcDir, "linkdir")); symlinkErr != nil {
 		t.Fatalf("Failed to create symlink: %v", symlinkErr)
 	}
 
-	// Copy directory
 	dstDir := filepath.Join(tmpDir, "dst")
-	err = Dir(srcDir, dstDir, func(src, dst string) bool { return false })
-	if err != nil {
+	if err = Dir(srcDir, dstDir, func(src, dst string) bool { return false }); err != nil {
 		t.Fatalf("Dir() failed: %v", err)
 	}
 
-	// Verify the symlinked directory was copied as a directory
-	content, err := os.ReadFile(filepath.Join(dstDir, "linkdir", "file.txt"))
-	if err != nil {
-		t.Fatalf("Failed to read copied file: %v", err)
+	if _, statErr := os.Stat(filepath.Join(dstDir, "targetdir", "file.txt")); statErr != nil {
+		t.Errorf("The real directory should have been copied: %v", statErr)
 	}
-	if string(content) != string(testContent) {
-		t.Errorf("Symlinked directory content not copied correctly: got %q, want %q", content, testContent)
+	if _, statErr := os.Lstat(filepath.Join(dstDir, "linkdir")); !os.IsNotExist(statErr) {
+		t.Error("The symlinked directory should not have been copied")
 	}
 }
 
-func TestDirRejectsSymlinkCycle(t *testing.T) {
+// TestDirSkipsBrokenSymlink verifies that a symlink whose target is missing is
+// skipped rather than failing the whole copy
+func TestDirSkipsBrokenSymlink(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "gog-copy-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tmpDir)
-
-	// Create a source directory containing a symlink to itself
-	srcDir := filepath.Join(tmpDir, "src")
-	if mkdirErr := os.MkdirAll(srcDir, 0755); mkdirErr != nil {
-		t.Fatalf("Failed to create source dir: %v", mkdirErr)
-	}
-	if symlinkErr := os.Symlink(srcDir, filepath.Join(srcDir, "loop")); symlinkErr != nil {
-		t.Fatalf("Failed to create symlink: %v", symlinkErr)
-	}
-
-	dstDir := filepath.Join(tmpDir, "dst")
-	err = Dir(srcDir, dstDir, func(src, dst string) bool { return false })
-	if err == nil {
-		t.Fatal("Dir() should fail on a symlink cycle")
-	}
-	if !strings.Contains(err.Error(), "cycle") {
-		t.Errorf("Error should mention the cycle, got: %v", err)
-	}
-}
-
-// TestDirRejectsAncestorSymlinkCycle ensures cycle detection fires for a
-// symlink that resolves to an ancestor still within the source tree, the case
-// that reaches the cycle check rather than the escape guard
-func TestDirRejectsAncestorSymlinkCycle(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "gog-copy-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	// src/a/b/loop -> src/a: the target is an ancestor but stays within src
-	deepDir := filepath.Join(tmpDir, "src", "a", "b")
-	if mkdirErr := os.MkdirAll(deepDir, 0755); mkdirErr != nil {
-		t.Fatalf("Failed to create source dirs: %v", mkdirErr)
-	}
-	if symlinkErr := os.Symlink(filepath.Join(tmpDir, "src", "a"), filepath.Join(deepDir, "loop")); symlinkErr != nil {
-		t.Fatalf("Failed to create symlink: %v", symlinkErr)
-	}
-
-	dstDir := filepath.Join(tmpDir, "dst")
-	err = Dir(filepath.Join(tmpDir, "src"), dstDir, func(src, dst string) bool { return false })
-	if err == nil {
-		t.Fatal("Dir() should fail on an ancestor symlink cycle")
-	}
-	if !strings.Contains(err.Error(), "cycle") {
-		t.Errorf("Error should mention the cycle, got: %v", err)
-	}
-}
-
-// TestDirSkipFuncSuppressesEscapingSymlink ensures a symlink that escapes the
-// source is skipped, not rejected, when skipFunc suppresses it, and the rest
-// of the copy still completes
-func TestDirSkipFuncSuppressesEscapingSymlink(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "gog-copy-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	outside := filepath.Join(tmpDir, "outside")
-	if mkdirErr := os.MkdirAll(outside, 0755); mkdirErr != nil {
-		t.Fatalf("Failed to create outside dir: %v", mkdirErr)
-	}
 
 	srcDir := filepath.Join(tmpDir, "src")
 	if mkdirErr := os.MkdirAll(srcDir, 0755); mkdirErr != nil {
@@ -464,32 +444,25 @@ func TestDirSkipFuncSuppressesEscapingSymlink(t *testing.T) {
 	if writeErr := os.WriteFile(filepath.Join(srcDir, "keep.txt"), []byte("keep"), 0644); writeErr != nil {
 		t.Fatalf("Failed to create file: %v", writeErr)
 	}
-	if symlinkErr := os.Symlink(outside, filepath.Join(srcDir, "escape")); symlinkErr != nil {
+	if symlinkErr := os.Symlink(filepath.Join(tmpDir, "gone"), filepath.Join(srcDir, "broken")); symlinkErr != nil {
 		t.Fatalf("Failed to create symlink: %v", symlinkErr)
 	}
 
-	// Skip the escaping symlink; the escape check must not fire for it
-	resolvedOutside, err := filepath.EvalSymlinks(outside)
-	if err != nil {
-		t.Fatalf("Failed to resolve outside dir: %v", err)
-	}
 	dstDir := filepath.Join(tmpDir, "dst")
-	err = Dir(srcDir, dstDir, func(src, dst string) bool { return src == resolvedOutside })
-	if err != nil {
-		t.Fatalf("Dir() should skip the escaping symlink, got: %v", err)
+	if err = Dir(srcDir, dstDir, func(src, dst string) bool { return false }); err != nil {
+		t.Fatalf("Dir() should skip a broken symlink, got: %v", err)
 	}
 	if _, statErr := os.Stat(filepath.Join(dstDir, "keep.txt")); statErr != nil {
-		t.Errorf("The non-escaping file should have been copied: %v", statErr)
+		t.Errorf("The rest of the directory should have been copied: %v", statErr)
 	}
-	if _, statErr := os.Stat(filepath.Join(dstDir, "escape")); statErr == nil {
-		t.Error("The skipped symlink should not have been copied")
+	if _, statErr := os.Lstat(filepath.Join(dstDir, "broken")); !os.IsNotExist(statErr) {
+		t.Error("The broken symlink should not have been copied")
 	}
 }
 
-// TestDirRejectsSourceInsideDestination ensures the destination-overlap check
-// fires when the destination is nested inside the source, which would
-// otherwise re-copy the tree into itself endlessly
-func TestDirRejectsSourceInsideDestination(t *testing.T) {
+// TestDirSkipsSelfReferentialSymlink verifies that a symlink pointing at its
+// own directory is skipped, so no cycle can be entered
+func TestDirSkipsSelfReferentialSymlink(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "gog-copy-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -500,54 +473,63 @@ func TestDirRejectsSourceInsideDestination(t *testing.T) {
 	if mkdirErr := os.MkdirAll(srcDir, 0755); mkdirErr != nil {
 		t.Fatalf("Failed to create source dir: %v", mkdirErr)
 	}
-	// Destination is a subdirectory of the source
-	dstDir := filepath.Join(srcDir, "nested")
-
-	err = Dir(srcDir, dstDir, func(src, dst string) bool { return false })
-	if err == nil {
-		t.Fatal("Dir() should fail when the destination is nested inside the source")
+	if writeErr := os.WriteFile(filepath.Join(srcDir, "keep.txt"), []byte("keep"), 0644); writeErr != nil {
+		t.Fatalf("Failed to create file: %v", writeErr)
 	}
-	if !strings.Contains(err.Error(), "destination") {
-		t.Errorf("Error should mention the destination, got: %v", err)
+	if symlinkErr := os.Symlink(srcDir, filepath.Join(srcDir, "loop")); symlinkErr != nil {
+		t.Fatalf("Failed to create symlink: %v", symlinkErr)
+	}
+
+	dstDir := filepath.Join(tmpDir, "dst")
+	if err = Dir(srcDir, dstDir, func(src, dst string) bool { return false }); err != nil {
+		t.Fatalf("Dir() should skip a self-referential symlink, got: %v", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(dstDir, "keep.txt")); statErr != nil {
+		t.Errorf("The rest of the directory should have been copied: %v", statErr)
+	}
+	if _, statErr := os.Lstat(filepath.Join(dstDir, "loop")); !os.IsNotExist(statErr) {
+		t.Error("The self-referential symlink should not have been copied")
 	}
 }
 
-// TestDirRejectsSourceInsideSymlinkedDestination ensures the destination
-// overlap check resolves symlinks: the destination is addressed through a
-// symlinked path component (e.g. a relocated ~/.local, or /var on macOS) but
-// resolves back inside the source, so the overlap must still be detected
-func TestDirRejectsSourceInsideSymlinkedDestination(t *testing.T) {
+// TestDirSkipsAncestorSymlink verifies that a symlink resolving to an ancestor
+// directory within the source is skipped rather than followed back up the tree
+func TestDirSkipsAncestorSymlink(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "gog-copy-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// realDir is the source; linkDir addresses it via a symlink so the
-	// destination path below is only seen to overlap once it is resolved
-	realDir := filepath.Join(tmpDir, "real")
-	if mkdirErr := os.MkdirAll(realDir, 0755); mkdirErr != nil {
-		t.Fatalf("Failed to create real dir: %v", mkdirErr)
+	// src/a/b/loop -> src/a: the target is an ancestor but stays within src
+	srcDir := filepath.Join(tmpDir, "src")
+	deepDir := filepath.Join(srcDir, "a", "b")
+	if mkdirErr := os.MkdirAll(deepDir, 0755); mkdirErr != nil {
+		t.Fatalf("Failed to create source dirs: %v", mkdirErr)
 	}
-	if symlinkErr := os.Symlink(realDir, filepath.Join(tmpDir, "link")); symlinkErr != nil {
+	if writeErr := os.WriteFile(filepath.Join(deepDir, "keep.txt"), []byte("keep"), 0644); writeErr != nil {
+		t.Fatalf("Failed to create file: %v", writeErr)
+	}
+	if symlinkErr := os.Symlink(filepath.Join(srcDir, "a"), filepath.Join(deepDir, "loop")); symlinkErr != nil {
 		t.Fatalf("Failed to create symlink: %v", symlinkErr)
 	}
 
-	// dst resolves to realDir/dst, i.e. inside the source
-	dstDir := filepath.Join(tmpDir, "link", "dst")
-	err = Dir(realDir, dstDir, func(src, dst string) bool { return false })
-	if err == nil {
-		t.Fatal("Dir() should fail when a symlink-addressed destination resolves inside the source")
+	dstDir := filepath.Join(tmpDir, "dst")
+	if err = Dir(srcDir, dstDir, func(src, dst string) bool { return false }); err != nil {
+		t.Fatalf("Dir() should skip an ancestor symlink, got: %v", err)
 	}
-	if !strings.Contains(err.Error(), "destination") {
-		t.Errorf("Error should mention the destination, got: %v", err)
+	if _, statErr := os.Stat(filepath.Join(dstDir, "a", "b", "keep.txt")); statErr != nil {
+		t.Errorf("The rest of the directory should have been copied: %v", statErr)
+	}
+	if _, statErr := os.Lstat(filepath.Join(dstDir, "a", "b", "loop")); !os.IsNotExist(statErr) {
+		t.Error("The ancestor symlink should not have been copied")
 	}
 }
 
-// TestDirRejectsSymlinkEscapingSource ensures a symlink whose target resolves
-// outside the directory being copied is rejected rather than silently pulling
-// in unrelated files
-func TestDirRejectsSymlinkEscapingSource(t *testing.T) {
+// TestDirSkipsSymlinkEscapingSource verifies that a symlink whose target
+// resolves outside the directory being copied is skipped, so that unrelated
+// files are never pulled in
+func TestDirSkipsSymlinkEscapingSource(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "gog-copy-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -567,20 +549,85 @@ func TestDirRejectsSymlinkEscapingSource(t *testing.T) {
 	if mkdirErr := os.MkdirAll(srcDir, 0755); mkdirErr != nil {
 		t.Fatalf("Failed to create source dir: %v", mkdirErr)
 	}
-	// Symlink that escapes the source tree
+	if writeErr := os.WriteFile(filepath.Join(srcDir, "keep.txt"), []byte("keep"), 0644); writeErr != nil {
+		t.Fatalf("Failed to create file: %v", writeErr)
+	}
 	if symlinkErr := os.Symlink(outside, filepath.Join(srcDir, "escape")); symlinkErr != nil {
 		t.Fatalf("Failed to create symlink: %v", symlinkErr)
 	}
 
 	dstDir := filepath.Join(tmpDir, "dst")
-	err = Dir(srcDir, dstDir, func(src, dst string) bool { return false })
-	if err == nil {
-		t.Fatal("Dir() should fail when a symlink escapes the source directory")
+	if err = Dir(srcDir, dstDir, func(src, dst string) bool { return false }); err != nil {
+		t.Fatalf("Dir() should skip an escaping symlink, got: %v", err)
 	}
-	if !strings.Contains(err.Error(), "escapes") {
-		t.Errorf("Error should mention the escape, got: %v", err)
+	if _, statErr := os.Stat(filepath.Join(dstDir, "keep.txt")); statErr != nil {
+		t.Errorf("The non-escaping file should have been copied: %v", statErr)
 	}
 	if _, statErr := os.Stat(filepath.Join(dstDir, "escape", "secret.txt")); statErr == nil {
 		t.Error("The escaping symlink's target should not have been copied")
+	}
+}
+
+// TestDirRejectsSourceInsideDestination ensures a source that lives inside the
+// destination is rejected, because it would be re-copied into itself
+func TestDirRejectsSourceInsideDestination(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "gog-copy-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// The source is a subdirectory of the destination
+	dstDir := filepath.Join(tmpDir, "dst")
+	srcDir := filepath.Join(dstDir, "inner")
+	if mkdirErr := os.MkdirAll(srcDir, 0755); mkdirErr != nil {
+		t.Fatalf("Failed to create source dir: %v", mkdirErr)
+	}
+	if writeErr := os.WriteFile(filepath.Join(srcDir, "file.txt"), []byte("x"), 0644); writeErr != nil {
+		t.Fatalf("Failed to create file: %v", writeErr)
+	}
+
+	err = Dir(srcDir, dstDir, func(src, dst string) bool { return false })
+	if err == nil {
+		t.Fatal("Dir() should fail when the source is nested inside the destination")
+	}
+	if !strings.Contains(err.Error(), "destination") {
+		t.Errorf("Error should mention the destination, got: %v", err)
+	}
+}
+
+// TestDirRejectsSourceInsideSymlinkedDestination ensures the overlap check
+// resolves symlinks: the destination is addressed through a symlinked path
+// component (e.g. a relocated ~/.local, or /var on macOS) but resolves to an
+// ancestor of the source, so the overlap must still be detected
+func TestDirRejectsSourceInsideSymlinkedDestination(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "gog-copy-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// linkDir addresses realDir through a symlink, so the destination is only
+	// seen to contain the source once it is resolved
+	realDir := filepath.Join(tmpDir, "real")
+	srcDir := filepath.Join(realDir, "inner")
+	if mkdirErr := os.MkdirAll(srcDir, 0755); mkdirErr != nil {
+		t.Fatalf("Failed to create source dir: %v", mkdirErr)
+	}
+	if writeErr := os.WriteFile(filepath.Join(srcDir, "file.txt"), []byte("x"), 0644); writeErr != nil {
+		t.Fatalf("Failed to create file: %v", writeErr)
+	}
+	if symlinkErr := os.Symlink(realDir, filepath.Join(tmpDir, "link")); symlinkErr != nil {
+		t.Fatalf("Failed to create symlink: %v", symlinkErr)
+	}
+
+	// dst resolves to realDir, i.e. an ancestor of the source
+	dstDir := filepath.Join(tmpDir, "link")
+	err = Dir(srcDir, dstDir, func(src, dst string) bool { return false })
+	if err == nil {
+		t.Fatal("Dir() should fail when a symlink-addressed destination contains the source")
+	}
+	if !strings.Contains(err.Error(), "destination") {
+		t.Errorf("Error should mention the destination, got: %v", err)
 	}
 }
