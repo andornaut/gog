@@ -9,6 +9,6 @@ import (
 // Execute starts the CLI
 func main() {
 	if err := cmd.Cmd.Execute(); err != nil {
-		os.Exit(1)
+		os.Exit(cmd.ExitCode(err))
 	}
 }

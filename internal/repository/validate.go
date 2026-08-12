@@ -41,10 +41,10 @@ func validateRepoPath(p string) error {
 
 func validateTargetPath(p string) error {
 	if paths.Within(BaseDir, p) {
-		return fmt.Errorf("invalid target path %q (cannot add gog's own directory)", p)
+		return fmt.Errorf("invalid target path %q (gog's own directory cannot be managed)", p)
 	}
 	if strings.HasSuffix(p, ".gog") {
-		return fmt.Errorf("invalid target path %q (cannot add .gog backup files)", p)
+		return fmt.Errorf("invalid target path %q (.gog backup files cannot be managed)", p)
 	}
 	return nil
 }

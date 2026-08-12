@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 
 	"github.com/andornaut/gog/internal/copy"
-	"github.com/andornaut/gog/internal/git"
 	"github.com/andornaut/gog/internal/repository"
 )
 
@@ -23,7 +22,11 @@ func UnlinkDir(repoPath, intPath string) error {
 	})
 }
 
-// UnlinkFile replaces a symbolic link with the file that it linked to
+// UnlinkFile replaces a symbolic link with the file that it linked to. It
+// reports success when there is no link to replace, because the caller removes
+// the repository's copy either way: whether the user still has gog's link, has
+// replaced it with a file of their own, or has deleted it, `gog remove` means
+// the same thing.
 func UnlinkFile(repoPath, intPath string) error {
 	extPath := repository.ToExternalPath(repoPath, intPath)
 
@@ -47,6 +50,6 @@ func UnlinkFile(repoPath, intPath string) error {
 	if err := copy.File(intPath, extPath); err != nil {
 		return err
 	}
-	printUnLinked(intPath)
-	return git.Run(repoPath, "rm", "-qf", intPath)
+	printRestored(extPath)
+	return nil
 }

@@ -138,6 +138,19 @@ func RemovePaths(repoPath string, targetPaths []string) error {
 	return syncRepository(repoPath, targetPaths, removePath)
 }
 
+// ValidateTargetPaths returns an error if any of the given paths is one gog
+// must not manage. `gog remove` checks the whole batch before it restores
+// anything, so that an unusable path fails the command outright instead of
+// leaving the paths before it half-restored.
+func ValidateTargetPaths(targetPaths []string) error {
+	for _, targetPath := range targetPaths {
+		if err := validateTargetPath(targetPath); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // resolveAddPath validates a path given to `gog add` and returns the path
 // whose contents will be copied into the repository
 func resolveAddPath(targetPath string) (string, error) {
@@ -208,6 +221,23 @@ func removePath(repoPath, targetPath string) error {
 		return err
 	}
 	intPath := ToInternalPath(repoPath, targetPath)
+	if _, err := os.Lstat(intPath); err != nil {
+		if os.IsNotExist(err) {
+			// The repository does not hold this path, so there is nothing to remove
+			return nil
+		}
+		return err
+	}
+	// Untracking is not conditional on the external file having been restored.
+	// It once lived alongside that restoration, so removing a path whose link
+	// the user had already replaced or deleted left the copy in the index, and
+	// the file came back on the next machine that applied the repository.
+	// --ignore-unmatch covers a path that was never staged.
+	if err := git.Run(repoPath, "rm", "-q", "-f", "-r", "--ignore-unmatch", intPath); err != nil {
+		return err
+	}
+	// `git rm` has already deleted what it tracked; this clears anything left,
+	// such as a file that was only ever copied in
 	return os.RemoveAll(intPath)
 }
 

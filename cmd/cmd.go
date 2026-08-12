@@ -1,6 +1,9 @@
 package cmd
 
 import (
+	"errors"
+	"fmt"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -40,6 +43,29 @@ func resolveGitPaths(repoPath string, args []string) []string {
 		resolved[i] = arg
 	}
 	return resolved
+}
+
+// exitCodeError carries a git command's exit status so that `gog git` can exit
+// with the status git itself returned, rather than collapsing every failure to
+// 1. git has already reported the failure on its own stderr, so this message
+// is never printed.
+type exitCodeError struct {
+	code int
+}
+
+func (e *exitCodeError) Error() string {
+	return fmt.Sprintf("git exited with status %d", e.code)
+}
+
+// ExitCode returns the status that gog should exit with for the given error.
+// Only `gog git` reports a status of its own; every other failure is gog's and
+// exits 1.
+func ExitCode(err error) int {
+	var e *exitCodeError
+	if errors.As(err, &e) {
+		return e.code
+	}
+	return 1
 }
 
 var repositoryFlag string
@@ -87,7 +113,15 @@ var git_ = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return git.Run(repoPath, resolveGitPaths(repoPath, args)...)
+		err = git.Run(repoPath, resolveGitPaths(repoPath, args)...)
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			// git has already explained itself on stderr, so restating the
+			// wait status here would only add noise above it
+			c.SilenceErrors = true
+			return &exitCodeError{code: exitErr.ExitCode()}
+		}
+		return err
 	},
 }
 
@@ -103,6 +137,11 @@ var remove = &cobra.Command{
 		}
 
 		paths := cleanPaths(args)
+		// Checked before anything is restored, so that an unusable path does
+		// not leave the paths before it half-removed
+		if err := repository.ValidateTargetPaths(paths); err != nil {
+			return err
+		}
 		if err := link.Unlink(repoPath, paths); err != nil {
 			return err
 		}
