@@ -7,6 +7,7 @@ import (
 
 	"github.com/andornaut/gog/internal/copy"
 	"github.com/andornaut/gog/internal/git"
+	"github.com/andornaut/gog/internal/paths"
 )
 
 // Add adds a new repository
@@ -48,13 +49,16 @@ func Add(repoName, repoURL string) (string, error) {
 	return repoPath, nil
 }
 
-// Remove removes an existing repository
+// Remove removes an existing repository. The name is resolved the same way as
+// --repository, so a unique prefix is accepted. It is validated first because
+// RootPath treats an empty name as a request for the default repository, which
+// must never be deleted by omission.
 func Remove(repoName string) (string, error) {
 	if err := validateRepoName(repoName); err != nil {
 		return "", err
 	}
-	repoPath := filepath.Join(BaseDir, repoName)
-	if err := validateRepoPath(repoPath); err != nil {
+	repoPath, err := RootPath(repoName)
+	if err != nil {
 		return "", err
 	}
 	if err := os.RemoveAll(repoPath); err != nil {
@@ -63,21 +67,58 @@ func Remove(repoName string) (string, error) {
 	return repoPath, nil
 }
 
-// AddPaths adds the given paths from the given repository
-func AddPaths(repoPath string, paths []string) error {
-	return syncRepository(repoPath, paths, addPath)
+// AddPaths adds the given paths from the given repository. Every path is
+// checked before any is copied, so that one unusable path fails the command
+// outright instead of leaving the repository holding files that were never
+// linked or staged.
+func AddPaths(repoPath string, targetPaths []string) error {
+	for _, targetPath := range targetPaths {
+		if _, err := resolveAddPath(targetPath); err != nil {
+			return err
+		}
+	}
+	return syncRepository(repoPath, targetPaths, addPath)
 }
 
 // RemovePaths removes the given paths from the given repository
-func RemovePaths(repoPath string, paths []string) error {
-	return syncRepository(repoPath, paths, removePath)
+func RemovePaths(repoPath string, targetPaths []string) error {
+	return syncRepository(repoPath, targetPaths, removePath)
+}
+
+// resolveAddPath validates a path given to `gog add` and returns the path
+// whose contents will be copied into the repository
+func resolveAddPath(targetPath string) (string, error) {
+	if err := validateTargetPath(targetPath); err != nil {
+		return "", err
+	}
+	extPath, err := filepath.EvalSymlinks(targetPath)
+	if err != nil {
+		return "", err
+	}
+	// A symbolic link that resolves into gog's own data directory is
+	// bookkeeping: the path is already linked, possibly by another repository,
+	// so it is followed. A link to anywhere else belongs to the user, and
+	// copying its target would store the contents while discarding the link
+	// itself, so the target is named and the link is left alone.
+	if isSymlink(targetPath) && !paths.Within(BaseDir, extPath) {
+		return "", fmt.Errorf("%q is a symbolic link to %s (add that path instead)", targetPath, extPath)
+	}
+	if _, err := os.Stat(extPath); err != nil {
+		return "", err
+	}
+	return extPath, nil
+}
+
+func isSymlink(p string) bool {
+	fileInfo, err := os.Lstat(p)
+	if err != nil {
+		return false
+	}
+	return fileInfo.Mode()&os.ModeSymlink == os.ModeSymlink
 }
 
 func addPath(repoPath, targetPath string) error {
-	if err := validateTargetPath(targetPath); err != nil {
-		return err
-	}
-	extPath, err := filepath.EvalSymlinks(targetPath)
+	extPath, err := resolveAddPath(targetPath)
 	if err != nil {
 		return err
 	}
@@ -114,8 +155,8 @@ func removePath(repoPath, targetPath string) error {
 type syncFunc func(string, string) error
 
 // syncRepository synchronizes all given paths within `repoPath`
-func syncRepository(repoPath string, paths []string, updateRepository syncFunc) error {
-	for _, extPath := range paths {
+func syncRepository(repoPath string, targetPaths []string, updateRepository syncFunc) error {
+	for _, extPath := range targetPaths {
 		if err := updateRepository(repoPath, extPath); err != nil {
 			return err
 		}

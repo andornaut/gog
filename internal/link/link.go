@@ -1,7 +1,10 @@
 package link
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -9,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/andornaut/gog/internal/git"
+	"github.com/andornaut/gog/internal/paths"
 	"github.com/andornaut/gog/internal/repository"
 )
 
@@ -165,6 +169,13 @@ func linkFile(repoPath, intPath string) (bool, error) {
 		shouldBackup = false
 	}
 
+	// A backup preserves whatever the user had at extPath, so it is pointless
+	// when there is nothing of theirs left to preserve. Skipping it keeps a
+	// hidden duplicate from accumulating beside every linked file.
+	if shouldBackup && (isGogOwnedLink(extPath) || sameContents(extPath, intPath)) {
+		shouldBackup = false
+	}
+
 	if shouldBackup {
 		ok, backupErr := backup(extPath)
 		if !ok {
@@ -230,6 +241,76 @@ func isSymlink(p string) bool {
 		return false
 	}
 	return fileInfo.Mode()&os.ModeSymlink == os.ModeSymlink
+}
+
+// isGogOwnedLink reports whether p is a symbolic link that resolves into gog's
+// data directory. Such a link was created by gog itself - by a previous run or
+// by another repository that also tracks this path - so it is bookkeeping
+// rather than the user's data, and replacing it discards nothing.
+func isGogOwnedLink(p string) bool {
+	if !isSymlink(p) {
+		return false
+	}
+	resolved, err := filepath.EvalSymlinks(p)
+	if err != nil {
+		return false
+	}
+	return paths.Within(repository.BaseDir, resolved)
+}
+
+// sameContents reports whether both paths are regular files holding identical
+// bytes. `add` copies a file into the repository before linking it, so the two
+// are identical and backing the original up would only duplicate what the
+// repository already holds. Symbolic links are excluded because replacing one
+// discards the link itself, which no copy of the contents preserves. Anything
+// unreadable or uncertain reports false so that it is backed up rather than
+// silently removed.
+func sameContents(a, b string) bool {
+	aInfo, err := os.Lstat(a)
+	if err != nil || !aInfo.Mode().IsRegular() {
+		return false
+	}
+	bInfo, err := os.Lstat(b)
+	if err != nil || !bInfo.Mode().IsRegular() {
+		return false
+	}
+	if aInfo.Size() != bInfo.Size() {
+		return false
+	}
+	return equalContents(a, b)
+}
+
+func equalContents(a, b string) bool {
+	aFile, err := os.Open(a)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = aFile.Close() }()
+
+	bFile, err := os.Open(b)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = bFile.Close() }()
+
+	aBuf := make([]byte, 64*1024)
+	bBuf := make([]byte, 64*1024)
+	for {
+		aN, aErr := io.ReadFull(aFile, aBuf)
+		bN, bErr := io.ReadFull(bFile, bBuf)
+		if aN != bN || !bytes.Equal(aBuf[:aN], bBuf[:bN]) {
+			return false
+		}
+		if aErr != nil || bErr != nil {
+			// The sizes match, so both files must end together. Any other
+			// error leaves the comparison inconclusive.
+			return isEnd(aErr) && isEnd(bErr)
+		}
+	}
+}
+
+func isEnd(err error) bool {
+	return errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF)
 }
 
 func init() {

@@ -172,9 +172,9 @@ You can use environment variables to customize some settings.
 
 Environment variable | Description
 --- | ---
-GOG_DEFAULT_REPOSITORY_NAME | The repository to use when `--repository NAME` is not specified (default: the first directory in `${HOME}/.local/share/gog`)
+GOG_DEFAULT_REPOSITORY_NAME | The repository to use when `--repository NAME` is not specified (default: the first repository in gog's data directory)
 GOG_DO_NOT_CREATE_BACKUPS | Do not create .gog backup files
-GOG_HOME | The directory where gog stores its files (default: `${HOME}/.local/share/gog`)
+GOG_HOME | The directory where gog stores its files (default: `${XDG_DATA_HOME}/gog` if `XDG_DATA_HOME` is set, otherwise `${HOME}/.local/share/gog`)
 GOG_IGNORE_FILES_REGEX | Do not link repository-relative file paths that match this regular expression
 
 ### GOG_IGNORE_FILES_REGEX Examples

@@ -3,6 +3,7 @@ package repository
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -27,7 +28,7 @@ func validateRepoName(name string) error {
 func validateRepoPath(p string) error {
 	fileInfo, err := os.Stat(p)
 	if err != nil {
-		return fmt.Errorf("invalid repository path: %s", p)
+		return fmt.Errorf("repository not found: %s", filepath.Base(p))
 	}
 	if !fileInfo.IsDir() {
 		return fmt.Errorf("repository path must be a directory: %s", p)
