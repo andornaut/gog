@@ -149,6 +149,23 @@ gog apply
 
 This ensures your dotfiles work seamlessly across different users, machines, and even operating systems.
 
+#### File permissions
+
+Git records only whether a file is executable, so **gog cannot carry any other
+permission to another machine**. A file added as `0600` is recreated as `0644`
+by the clone, and a directory added as `0700` is recreated as `0755`.
+
+`gog add` warns whenever it stores a path whose permissions will be widened
+this way:
+
+```text
+Warning: /home/example/.netrc has mode 0600, which git does not record; it will be applied as 0644 on another machine
+```
+
+Track secrets such as `~/.ssh` keys or `~/.netrc` only if you are content for
+them to be world-readable wherever the repository is applied, or keep them out
+of the repository and manage them separately.
+
 #### `gog add`
 
 If any of the path arguments to `gog add` begin with the current user's home

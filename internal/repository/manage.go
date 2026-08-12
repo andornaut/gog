@@ -77,7 +77,60 @@ func AddPaths(repoPath string, targetPaths []string) error {
 			return err
 		}
 	}
-	return syncRepository(repoPath, targetPaths, addPath)
+	if err := syncRepository(repoPath, targetPaths, addPath); err != nil {
+		return err
+	}
+	warnUnrecordableModes(repoPath, targetPaths)
+	return nil
+}
+
+// warnUnrecordableModes reports paths whose permissions git will not carry to
+// another machine. Git records only the executable bit, so a path that
+// withholds access from group or other is recreated with that access granted:
+// a 0600 file becomes 0644 and a 0700 directory becomes 0755. Someone tracking
+// ~/.ssh or ~/.netrc would otherwise find their secrets world-readable on the
+// next machine, with nothing having reported it.
+func warnUnrecordableModes(repoPath string, targetPaths []string) {
+	for _, targetPath := range targetPaths {
+		intPath := ToInternalPath(repoPath, targetPath)
+		// Walk errors are ignored: the paths were just written, and a warning
+		// must never turn a successful add into a failure
+		_ = filepath.Walk(intPath, func(p string, info os.FileInfo, err error) error {
+			if err != nil {
+				return nil
+			}
+			recorded, widened := widenedMode(info.Mode())
+			if !widened {
+				return nil
+			}
+			fmt.Fprintf(os.Stderr,
+				"Warning: %s has mode %04o, which git does not record; it will be applied as %04o on another machine\n",
+				ToExternalPath(repoPath, p), info.Mode().Perm(), recorded)
+			return nil
+		})
+	}
+}
+
+// widenedMode returns the permissions a path will be given on another machine
+// and whether that grants access the current mode withholds. A mode that is
+// more permissive than the recorded one is merely tightened elsewhere, which
+// costs nothing; one that is more restrictive is silently widened, which
+// exposes the contents.
+func widenedMode(mode os.FileMode) (os.FileMode, bool) {
+	perm := mode.Perm()
+	if mode.IsDir() {
+		// Git does not track directories at all, so they are created by
+		// whoever needs them, which for gog means 0755
+		return 0755, perm&0755 != 0755
+	}
+	if !mode.IsRegular() {
+		return perm, false
+	}
+	recorded := os.FileMode(0644)
+	if perm&0111 != 0 {
+		recorded = 0755
+	}
+	return recorded, perm&recorded != recorded
 }
 
 // RemovePaths removes the given paths from the given repository

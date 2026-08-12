@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -21,14 +20,33 @@ var (
 	ignoreFilesRegex = regexp.MustCompile("a^") // Do not match anything by default
 )
 
-// Unlink unlinks the given paths
-func Unlink(repoPath string, paths []string) error {
-	return syncLinks(repoPath, paths, UnlinkDir, UnlinkFile)
+// ErrIncomplete reports that some paths could not be linked. Each failure is
+// printed as it happens; this is returned so that the command exits non-zero
+// rather than appearing to have succeeded.
+var ErrIncomplete = errors.New("some paths could not be linked")
+
+// reportFailures returns err if it is set, otherwise ErrIncomplete if anything
+// was reported since `before`
+func reportFailures(before int, err error) error {
+	if err != nil {
+		return err
+	}
+	if failures > before {
+		return ErrIncomplete
+	}
+	return nil
 }
 
-// Link unlinks the given paths
+// Unlink unlinks the given paths
+func Unlink(repoPath string, paths []string) error {
+	before := failures
+	return reportFailures(before, syncLinks(repoPath, paths, UnlinkDir, UnlinkFile))
+}
+
+// Link links the given paths
 func Link(repoPath string, paths []string) error {
-	return syncLinks(repoPath, paths, Dir, File)
+	before := failures
+	return reportFailures(before, syncLinks(repoPath, paths, Dir, File))
 }
 
 type syncFunc func(string, string) error
@@ -60,6 +78,7 @@ func syncLinks(repoPath string, paths []string, updateDir, updateFile syncFunc) 
 // Dir recursively creates symbolic links from a repository directory's files
 // to the root filesystem
 func Dir(repoPath, intPath string) error {
+	before := failures
 	var linked []string
 	walkErr := filepath.Walk(intPath, func(p string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -97,18 +116,19 @@ func Dir(repoPath, intPath string) error {
 	})
 	// Add the files that were linked, even if the walk failed part-way through
 	addToGit(repoPath, linked...)
-	return walkErr
+	return reportFailures(before, walkErr)
 }
 
 // File creates a symbolic link from a repository file to the root filesystem.
 // File declares an `error` return type to match the signature of `Dir`, but
 // usually print an error message and return nil.
 func File(repoPath, intPath string) error {
+	before := failures
 	shouldAdd, err := linkFile(repoPath, intPath)
 	if shouldAdd {
 		addToGit(repoPath, intPath)
 	}
-	return err
+	return reportFailures(before, err)
 }
 
 // linkFile creates a symbolic link from a repository file to the root
@@ -321,7 +341,8 @@ func init() {
 		var err error
 		ignoreFilesRegex, err = regexp.Compile(ignoreFilesStr)
 		if err != nil {
-			log.Fatalf("Invalid regular expression GOG_IGNORE_FILES_REGEX: %s\n", ignoreFilesStr)
+			fmt.Fprintf(os.Stderr, "Error: invalid GOG_IGNORE_FILES_REGEX %q: %v\n", ignoreFilesStr, err)
+			os.Exit(1)
 		}
 	}
 }

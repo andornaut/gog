@@ -1,6 +1,7 @@
 package link
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -367,7 +368,8 @@ func TestFileSkipsSpecialFiles(t *testing.T) {
 	}
 }
 
-// TestFileSkipsExistingDirectory verifies error when directory exists
+// TestFileSkipsExistingDirectory verifies that a directory in the way is left
+// alone and reported, rather than removed or silently ignored
 func TestFileSkipsExistingDirectory(t *testing.T) {
 	repoPath, cleanup := setupTestRepo(t)
 	defer cleanup()
@@ -398,10 +400,11 @@ func TestFileSkipsExistingDirectory(t *testing.T) {
 		t.Fatalf("Failed to create conflicting directory: %v", err)
 	}
 
-	// Attempt to create symlink (should print error and return nil)
+	// Attempt to create symlink. The conflict is reported and the run
+	// continues, but the caller must still learn that it was incomplete.
 	err = File(repoPath, intPath)
-	if err != nil {
-		t.Fatalf("File() should return nil for directory conflicts, got: %v", err)
+	if !errors.Is(err, ErrIncomplete) {
+		t.Fatalf("File() should report an incomplete run for a directory conflict, got: %v", err)
 	}
 
 	// Verify directory still exists (unchanged)
