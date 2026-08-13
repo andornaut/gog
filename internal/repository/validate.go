@@ -43,6 +43,9 @@ func validateTargetPath(p string) error {
 	if paths.Within(BaseDir, p) {
 		return fmt.Errorf("invalid target path %q (gog's own directory cannot be managed)", p)
 	}
+	// gog no longer creates .gog backups, but earlier versions left them in home
+	// directories, and a displaced copy of a file the repository already holds
+	// is not worth tracking
 	if strings.HasSuffix(p, ".gog") {
 		return fmt.Errorf("invalid target path %q (.gog backup files cannot be managed)", p)
 	}

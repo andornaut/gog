@@ -93,13 +93,9 @@ func TestFileCreatesSymlink(t *testing.T) {
 	}
 }
 
-// TestFileBacksUpExistingFile verifies backup creation when file exists
-func TestFileBacksUpExistingFile(t *testing.T) {
-	// Temporarily enable backups for this test
-	originalBackupDisabled := backupDisabled
-	backupDisabled = false
-	defer func() { backupDisabled = originalBackupDisabled }()
-
+// TestFileRefusesExistingFile verifies that a file the repository did not put
+// there is left alone and the failure is reported
+func TestFileRefusesExistingFile(t *testing.T) {
 	repoPath, cleanup := setupTestRepo(t)
 	defer cleanup()
 
@@ -133,26 +129,22 @@ func TestFileBacksUpExistingFile(t *testing.T) {
 		t.Fatalf("Failed to create existing file: %v", writeErr)
 	}
 
-	// Create symlink (should backup existing file)
+	// Link the file (should refuse, because extPath is the user's)
 	err = File(repoPath, intPath)
+	if !errors.Is(err, ErrIncomplete) {
+		t.Fatalf("File() = %v, want %v", err, ErrIncomplete)
+	}
+
+	// Verify the existing file is untouched
+	content, err := os.ReadFile(extPath)
 	if err != nil {
-		t.Fatalf("File() failed: %v", err)
+		t.Fatalf("Existing file not readable: %v", err)
 	}
-
-	// Verify backup was created
-	backupPath := backupPath(extPath)
-	backupContent, err := os.ReadFile(backupPath)
-	if err != nil {
-		t.Fatalf("Backup file not created: %v", err)
+	if string(content) != string(existingContent) {
+		t.Errorf("Existing file = %q, want %q", content, existingContent)
 	}
-
-	if string(backupContent) != string(existingContent) {
-		t.Errorf("Backup content = %q, want %q", backupContent, existingContent)
-	}
-
-	// Verify symlink was created
-	if _, err := os.Readlink(extPath); err != nil {
-		t.Errorf("Symlink not created after backup: %v", err)
+	if isSymlink(extPath) {
+		t.Error("Existing file should not have been replaced by a symlink")
 	}
 }
 
@@ -205,12 +197,6 @@ func TestFileHandlesBrokenSymlink(t *testing.T) {
 
 	if linkDest != intPath {
 		t.Errorf("Symlink points to %q, want %q", linkDest, intPath)
-	}
-
-	// Verify no backup was created (broken symlinks don't get backed up)
-	backupPath := backupPath(extPath)
-	if _, err := os.Stat(backupPath); !os.IsNotExist(err) {
-		t.Error("Backup should not be created for broken symlinks")
 	}
 }
 
@@ -414,36 +400,6 @@ func TestFileSkipsExistingDirectory(t *testing.T) {
 	}
 	if !info.IsDir() {
 		t.Error("Path should still be a directory")
-	}
-}
-
-// TestBackupPath verifies correct backup filename generation
-func TestBackupPath(t *testing.T) {
-	tests := []struct {
-		input    string
-		expected string
-	}{
-		{
-			input:    "/home/user/.bashrc",
-			expected: "/home/user/.bashrc.gog",
-		},
-		{
-			input:    "/home/user/config",
-			expected: "/home/user/.config.gog",
-		},
-		{
-			input:    "/etc/hosts",
-			expected: "/etc/.hosts.gog",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			result := backupPath(tt.input)
-			if result != tt.expected {
-				t.Errorf("backupPath(%q) = %q, want %q", tt.input, result, tt.expected)
-			}
-		})
 	}
 }
 

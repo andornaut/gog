@@ -43,6 +43,9 @@ func repoPath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	fmt.Println("Repository:", filepath.Base(repoPath))
+	// Reported on stderr so that stdout carries only what the command produces.
+	// `gog git` hands its stdout to git, whose output may be read by a script or
+	// redirected to a file.
+	fmt.Fprintln(os.Stderr, "Repository:", filepath.Base(repoPath))
 	return repoPath, nil
 }

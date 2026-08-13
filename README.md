@@ -48,8 +48,8 @@ gog repository add dotfiles https://example.com/user/dotfiles.git
 
 gog apply
 
-# Gog linked `~/.config/foorc` as above, while preserving any preexisting file at
-# that location as ~/.config/.foorc.gog`
+# Gog linked `~/.config/foorc` as above. Had a file of your own already been
+# there, gog would have reported it and left it alone, exiting non-zero.
 ls -l ~/.config/foorc | awk '{print $9,$10,$11}'
 > /home/example/.config/foorc -> /home/example/.local/share/gog/dotfiles/$HOME/.config/foorc
 ```
@@ -172,6 +172,55 @@ If any of the path arguments to `gog add` begin with the current user's home
 directory, then this prefix is replaced with a literal `$HOME` path
 component, which is expanded to the home directory when `gog apply` is run.
 
+#### `gog git`
+
+`gog git` runs git in the repository's directory and exits with git's own exit
+status.
+
+Because the files in your home directory are symbolic links, a path argument
+has to be rewritten to the file inside the repository that it points at. gog
+does this only where git is certain to read an argument as a path: after a `--`
+separator, and for the subcommands whose arguments are all paths (`add`,
+`check-ignore`, `clean`, `rm`, `stage`). Everywhere else the argument is passed
+through untouched, so a branch name, a remote, or a commit message that happens
+to match a managed file keeps its meaning.
+
+```bash
+# Both resolve to the repository's copy of ~/.bashrc
+gog git add ~/.bashrc
+gog git log -- ~/.bashrc
+
+# Records the message ".bashrc", even though ~/.bashrc is managed
+gog git commit -m .bashrc
+```
+
+Use `--` to limit any other subcommand to a path.
+
+gog prints the repository it selected (`Repository: dotfiles`) to standard
+error, so that standard output carries only what the command itself produced
+and `gog git` output can be piped or redirected.
+
+#### Files that are already there
+
+gog never deletes a file it did not put somewhere. When `gog apply` finds
+something of yours where a link belongs, it reports the path, leaves it alone,
+carries on with the rest of the repository, and exits non-zero:
+
+```text
+ERROR /home/example/.local/share/gog/dotfiles/$HOME/.bashrc /home/example/.bashrc already exists (move or remove it, then run the command again)
+Error: some paths could not be linked
+```
+
+Move or delete the file and apply again. Applying a repository to a machine
+that is already configured is therefore a two-step operation: the first run
+lists every conflict, and the second links what you cleared.
+
+A path is replaced without asking only when nothing of yours is lost: a broken
+symbolic link, a link into gog's own data directory (left by an earlier run or
+by another repository that tracks the same path), or a file whose contents the
+repository already holds, which is what `gog add` leaves behind after copying it
+in.
+
 #### `gog apply`
 
 `gog apply` operates on a single repository at a time, but you can apply
@@ -190,7 +239,6 @@ You can use environment variables to customize some settings.
 Environment variable | Description
 --- | ---
 GOG_DEFAULT_REPOSITORY_NAME | The repository to use when `--repository NAME` is not specified (default: the first repository in gog's data directory)
-GOG_DO_NOT_CREATE_BACKUPS | Do not create .gog backup files
 GOG_HOME | The directory where gog stores its files (default: `${XDG_DATA_HOME}/gog` if `XDG_DATA_HOME` is set, otherwise `${HOME}/.local/share/gog`)
 GOG_IGNORE_FILES_REGEX | Do not link repository-relative file paths that match this regular expression
 

@@ -15,34 +15,68 @@ import (
 	"github.com/andornaut/gog/internal/repository"
 )
 
-// resolveGitPaths converts symlinked paths to repo-relative paths so that
-// git commands operate on the underlying files within the repository rather
-// than on the symlinks outside it.
+// gitPathspecSubcommands lists the git subcommands whose every operand is a
+// pathspec. Their arguments can be resolved without a separator; anywhere else
+// an operand may be a revision, a branch, a remote, or the value of a flag.
+var gitPathspecSubcommands = map[string]bool{
+	"add":          true,
+	"check-ignore": true,
+	"clean":        true,
+	"rm":           true,
+	"stage":        true,
+}
+
+// resolveGitPaths converts symlinked paths to repo-relative paths so that git
+// commands operate on the underlying files within the repository rather than on
+// the symlinks outside it.
+//
+// Only the arguments git is certain to read as pathspecs are converted: those
+// after a standalone `--`, and the operands of the subcommands listed above.
+// Every other argument is passed through, because a name that happens to
+// resolve to a managed path is usually not a path at all: `commit -m .bashrc`
+// records the message `$HOME/.bashrc`, `branch wip` creates a branch named
+// after the file, and the subcommand itself is rewritten into something git
+// does not recognize.
 func resolveGitPaths(repoPath string, args []string) []string {
 	resolved := make([]string, len(args))
+	copy(resolved, args)
+
+	// The subcommand is the first argument only when no global flag precedes
+	// it. Otherwise it is not identified at all and nothing before `--` is
+	// converted, which errs towards passing arguments through unchanged.
+	takesPathspecs := len(args) > 0 && gitPathspecSubcommands[args[0]]
+	afterSeparator := false
 	for i, arg := range args {
-		if strings.HasPrefix(arg, "-") {
-			resolved[i] = arg
+		switch {
+		case afterSeparator:
+			// A pathspec may begin with a dash once the separator has been given
+		case arg == "--":
+			afterSeparator = true
+			continue
+		case i == 0 || !takesPathspecs || strings.HasPrefix(arg, "-"):
 			continue
 		}
-		absPath, err := filepath.Abs(arg)
-		if err != nil {
-			resolved[i] = arg
-			continue
-		}
-		realPath, err := filepath.EvalSymlinks(absPath)
-		if err != nil {
-			resolved[i] = arg
-			continue
-		}
-		rel, err := filepath.Rel(repoPath, realPath)
-		if err == nil && !strings.HasPrefix(rel, "..") {
-			resolved[i] = rel
-			continue
-		}
-		resolved[i] = arg
+		resolved[i] = resolveGitPath(repoPath, arg)
 	}
 	return resolved
+}
+
+// resolveGitPath returns a pathspec relative to the repository if it resolves
+// into the repository, and otherwise returns it unchanged
+func resolveGitPath(repoPath, arg string) string {
+	absPath, err := filepath.Abs(arg)
+	if err != nil {
+		return arg
+	}
+	realPath, err := filepath.EvalSymlinks(absPath)
+	if err != nil {
+		return arg
+	}
+	rel, err := filepath.Rel(repoPath, realPath)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return arg
+	}
+	return rel
 }
 
 // exitCodeError carries a git command's exit status so that `gog git` can exit

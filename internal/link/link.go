@@ -15,10 +15,8 @@ import (
 	"github.com/andornaut/gog/internal/repository"
 )
 
-var (
-	backupDisabled   = false
-	ignoreFilesRegex = regexp.MustCompile("a^") // Do not match anything by default
-)
+// ignoreFilesRegex does not match anything by default
+var ignoreFilesRegex = regexp.MustCompile("a^")
 
 // ErrIncomplete reports that some paths could not be linked. Each failure is
 // printed as it happens; this is returned so that the command exits non-zero
@@ -95,9 +93,14 @@ func Dir(repoPath, intPath string) error {
 		if info.IsDir() {
 			extPath := repository.ToExternalPath(repoPath, p)
 			if isSymlink(extPath) {
-				ok, backupErr := backup(extPath)
-				if !ok {
-					printError(p, fmt.Errorf("backup failed, skipping directory: %w", backupErr))
+				// Creating the directory would otherwise write through the link
+				// into whatever it points at
+				if ok, discardErr := discardable(extPath); !ok {
+					printError(p, refusal(extPath, discardErr))
+					return filepath.SkipDir
+				}
+				if rmErr := os.Remove(extPath); rmErr != nil {
+					printError(p, fmt.Errorf("failed to remove %s: %w", extPath, rmErr))
 					return filepath.SkipDir
 				}
 			}
@@ -155,7 +158,8 @@ func linkFile(repoPath, intPath string) (bool, error) {
 		return true, nil
 	}
 	if !os.IsExist(err) {
-		// We cannot recover from an error other than extPath already existing, in which case we can back it up.
+		// The only recoverable failure is extPath already existing, which is
+		// decided below
 		return false, fmt.Errorf("failed to create symlink from %s to %s: %w", extPath, intPath, err)
 	}
 
@@ -169,8 +173,6 @@ func linkFile(repoPath, intPath string) (bool, error) {
 		return false, nil
 	}
 
-	shouldBackup := !backupDisabled
-
 	// Check if symlink already points to the correct target
 	linkTarget, err := os.Readlink(extPath)
 	if err == nil && linkTarget == intPath {
@@ -178,36 +180,17 @@ func linkFile(repoPath, intPath string) (bool, error) {
 		return true, nil
 	}
 
-	// Try to resolve the symlink to check if it's broken
-	_, evalErr := filepath.EvalSymlinks(extPath)
-	if evalErr != nil {
-		// Can only recover from an error due to a broken symbolic link
-		if !os.IsNotExist(evalErr) {
-			printError(intPath, fmt.Errorf("failed to resolve symlink %s: %w", extPath, evalErr))
-			return false, nil
-		}
-		shouldBackup = false
+	ok, discardErr := discardable(extPath)
+	// `add` copies a path into the repository before linking it, so an
+	// identical file is the copy of what is about to be linked
+	if !ok && !sameContents(extPath, intPath) {
+		printError(intPath, refusal(extPath, discardErr))
+		return false, nil
 	}
 
-	// A backup preserves whatever the user had at extPath, so it is pointless
-	// when there is nothing of theirs left to preserve. Skipping it keeps a
-	// hidden duplicate from accumulating beside every linked file.
-	if shouldBackup && (isGogOwnedLink(extPath) || sameContents(extPath, intPath)) {
-		shouldBackup = false
-	}
-
-	if shouldBackup {
-		ok, backupErr := backup(extPath)
-		if !ok {
-			printError(intPath, fmt.Errorf("backup failed, skipping: %w", backupErr))
-			return false, nil
-		}
-	} else {
-		// Either extPath is a broken symbolic link or backups are disabled
-		if err = os.Remove(extPath); err != nil {
-			printError(intPath, fmt.Errorf("failed to remove %s: %w", extPath, err))
-			return false, nil
-		}
+	if err = os.Remove(extPath); err != nil {
+		printError(intPath, fmt.Errorf("failed to remove %s: %w", extPath, err))
+		return false, nil
 	}
 	if err = os.Symlink(intPath, extPath); err != nil {
 		printError(intPath, fmt.Errorf("failed to create symlink from %s to %s: %w", extPath, intPath, err))
@@ -239,20 +222,32 @@ func addToGit(repoPath string, intPaths ...string) {
 	}
 }
 
-func backup(p string) (bool, error) {
-	backupPath := backupPath(p)
-	if err := os.Rename(p, backupPath); err != nil {
-		// It's better to attempt to rename and fail if
-		// os.Rename will overwrite existing files, but not existing directories
-		return false, fmt.Errorf("failed to rename %s to %s: %w", p, backupPath, err)
+// discardable reports whether p holds nothing of the user's, so that it can be
+// removed to make way for what the repository holds. A broken link points at
+// nothing, and a link into gog's data directory is bookkeeping left by an
+// earlier run or by another repository that tracks the same path. Anything else
+// is the user's, and gog does not delete it: whatever it holds exists nowhere
+// else, unlike the repository's copy.
+//
+// The error explains why a link could not be resolved, and is only set when the
+// answer is false.
+func discardable(p string) (bool, error) {
+	if _, err := filepath.EvalSymlinks(p); err != nil {
+		if !os.IsNotExist(err) {
+			return false, err
+		}
+		return true, nil
 	}
-	return true, nil
+	return isGogOwnedLink(p), nil
 }
 
-func backupPath(p string) string {
-	dirname, basename := filepath.Split(p)
-	basename = strings.TrimPrefix(basename, ".")
-	return filepath.Join(dirname, fmt.Sprintf(".%s.gog", basename))
+// refusal reports that a path was left alone, naming the error that decided it
+// when there was one
+func refusal(p string, err error) error {
+	if err != nil {
+		return fmt.Errorf("cannot resolve %s, leaving it alone: %w", p, err)
+	}
+	return fmt.Errorf("%s already exists (move or remove it, then run the command again)", p)
 }
 
 func isSymlink(p string) bool {
@@ -334,8 +329,6 @@ func isEnd(err error) bool {
 }
 
 func init() {
-	_, backupDisabled = os.LookupEnv("GOG_DO_NOT_CREATE_BACKUPS")
-
 	ignoreFilesStr := os.Getenv("GOG_IGNORE_FILES_REGEX")
 	if ignoreFilesStr != "" {
 		var err error

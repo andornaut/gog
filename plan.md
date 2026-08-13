@@ -72,10 +72,10 @@ Two traps worth knowing:
 
 - `ls -l` hides dotfiles, and almost everything `gog` touches is a dotfile. Use
   `find` when checking whether something landed.
-- The container runs as **root**, so permission-denial scenarios prove nothing:
-  root bypasses the checks. Any test that depends on a directory being
-  unwritable must drop privileges first. This is why capability 3's
-  unwritable-directory case is still listed as uncovered below.
+- Run `id` before writing a permission scenario. Root bypasses the permission
+  checks, so under root those scenarios prove nothing and the test must drop
+  privileges first. The environment is not always the same one: capability 4
+  ran as an unprivileged user.
 
 ## What has been covered
 
@@ -106,10 +106,8 @@ Landed:
 
 - No backup is written when the displaced file's contents already match the
   repository's, or when it is a symbolic link into gog's own data directory.
-  `add` used to leave a byte-identical hidden duplicate beside every adopted
-  file, and the multi-repository loop in the README rewrote a `.gog` file for
-  every overlapping path on every run, overwriting the user's genuine pre-gog
-  backup with a pointer into whichever repository lost the race.
+  Both conditions outlived the backup mechanism itself: they are now what
+  decides whether a path may be replaced at all (capability 4).
 - `AddPaths` validates every path before copying any, so an unusable path no
   longer leaves earlier ones in the repository unlinked and unstaged.
 - A symbolic link given directly to `add` is refused and its target named. A
@@ -127,9 +125,9 @@ Landed:
 ### Capability 3 - `gog apply` (71 assertions across two scripts)
 
 The fresh-machine flow through a real bare remote, the repository-root skip
-list, idempotency, backups, `GOG_DO_NOT_CREATE_BACKUPS`,
-`GOG_IGNORE_FILES_REGEX`, directory and symlink conflicts, paths outside
-`$HOME`, and the multi-repository overlay.
+list, idempotency, `GOG_IGNORE_FILES_REGEX`, directory and symlink conflicts,
+paths outside `$HOME`, and the multi-repository overlay. The backup scenarios
+in these scripts were superseded by capability 4 and rewritten there.
 
 Landed:
 
@@ -144,26 +142,49 @@ Landed:
 - An unparseable `GOG_IGNORE_FILES_REGEX` still fails fast, but reports as
   `Error: ...` rather than a timestamped `log.Fatalf` line.
 
+### Capability 4 - `gog remove`, `gog git` and conflicts (159 assertions across three scripts)
+
+`remove` on a file, a directory, a nested file within an added directory, a
+path never added, a nonexistent path, a path held by another repository, a path
+the user replaced by hand or deleted, a path outside `$HOME`, relative paths,
+`-r` in both positions, the guard rails, batch validation, idempotency, and
+file modes. `gog git` for `status`, `commit`, `log`, `push`, a rejected push, an
+unknown remote, an unknown subcommand, stdin by pipe and by `-F -`, exit-code
+propagation, `--` handling, `resolveGitPaths` against paths inside and outside
+the repository, and the `GIT_*` scrubbing. Conflicts for a file, a user's own
+symbolic link, a broken link, a directory over a link, a partial run, the
+multi-repository overlay, and `add` linking its own copy.
+
+Nothing was wrong with `remove`: it restores contents, mode and location,
+untracks the repository's copy however the link is faring, leaves no empty
+directories behind, and validates the whole batch before restoring anything.
+`gog git` exits with git's own status (1, 128, 129) and does not restate the
+failure.
+
+Landed:
+
+- `gog git` converts an argument to a repository-relative path only where git
+  is certain to read one as a path: after a `--` separator, and for the
+  subcommands whose arguments are all paths (`add`, `check-ignore`, `clean`,
+  `rm`, `stage`). Every non-flag argument used to be converted if it happened to
+  resolve into the repository, so `commit -m .bashrc` recorded the message
+  `$HOME/.bashrc`, `branch wip` created a branch named after the file, and the
+  subcommand itself was rewritten when a managed file shared its name.
+  Documented in the README, and covered by the first unit tests in `cmd`.
+- The `Repository: NAME` banner is printed to standard error, so that standard
+  output carries only what the command produced. It preceded git's own output
+  on stdout, which corrupts anything piped, redirected or read by a script.
+- `.gog` backups are gone. `apply` used to rename whatever it found in the way
+  and link over it; it now reports the path, leaves it alone, carries on, and
+  exits non-zero. A path is replaced only when nothing of the user's is lost: a
+  broken link, a link into gog's data directory, or a file whose contents the
+  repository already holds, which is the file `add` copied in a moment earlier.
+  `backup`, `backupPath` and `GOG_DO_NOT_CREATE_BACKUPS` were removed with it;
+  `sameContents` and `isGogOwnedLink` now decide replacement instead of
+  suppressing a backup. The `.gog` guard rails in `validate.go` were kept, so
+  that backups left by earlier versions are not swept into a repository.
+
 ## What is left
-
-### Capability 4 - `gog remove` and `gog git`
-
-Not started. This is the next capability. Cover at least:
-
-- `gog remove` on a file, on a directory, on a path that was never added, on a
-  path added to a different repository, and on a path whose symlink the user
-  has already replaced by hand.
-- Whether `remove` restores the file's contents at its original location, and
-  what happens to the `.gog` backup that may still be sitting beside it.
-- `RemovePaths` mutates as it goes, exactly as `AddPaths` used to. Decide with
-  the owner whether it should validate the batch up front for symmetry.
-- `gog git` passthrough: `status`, `commit`, `push`, `log`, a command that
-  fails, a command that needs stdin, flags that collide with gog's own (`-r`),
-  and `--` handling.
-- `resolveGitPaths` in `cmd/cmd.go` rewrites symlinked arguments to
-  repository-relative paths. Exercise it with a path inside the repository, one
-  outside it, a relative path, a flag-looking argument, and a nonexistent path.
-- Whether `gog git` propagates git's exit code.
 
 ### Capability 5 - repository removal against live links
 
@@ -194,7 +215,9 @@ Do not settle these alone. They have been raised and are still unanswered.
    may hold unpushed commits, and it now accepts a fuzzy prefix. The owner had
    no preference when asked and the command was left as it was. Capability 5
    should produce the evidence to ask again with.
-2. **`RemovePaths` does not validate its batch up front**, unlike `AddPaths`.
+2. **`gog remove` says nothing when the repository does not hold the path.** A
+   path that was never added, or that belongs to another repository, exits 0
+   with no output, which is indistinguishable from a successful removal.
 3. **`internal/repository/repository.go` still calls `log.Fatal` twice in
    `init()`** (home directory lookup, data directory creation), in the same
    timestamped format that was just corrected in `internal/link`. Left alone
@@ -218,8 +241,7 @@ new_sandbox() {
   SANDBOX="${LAB_ROOT}/sandboxes/${name}"
   rm -rf "${SANDBOX}"; mkdir -p "${SANDBOX}/home" "${SANDBOX}/remotes" "${SANDBOX}/etc"
   export HOME="${SANDBOX}/home"
-  unset XDG_DATA_HOME GOG_HOME GOG_DEFAULT_REPOSITORY_NAME \
-        GOG_DO_NOT_CREATE_BACKUPS GOG_IGNORE_FILES_REGEX
+  unset XDG_DATA_HOME GOG_HOME GOG_DEFAULT_REPOSITORY_NAME GOG_IGNORE_FILES_REGEX
   # A real file: gog scrubs GIT_CONFIG_* from git's environment
   cat >"${HOME}/.gitconfig" <<'EOF'
 [user]
