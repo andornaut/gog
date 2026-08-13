@@ -75,9 +75,13 @@ gog apply
 | --- | --- | --- |
 | `-r, --repository NAME` | `add`, `apply`, `list`, `remove`, `git` | Repository to use. A unique prefix of the name is accepted |
 | `-s, --status` | `list` | Print what applying would do to each path |
-| `-p, --path` | `repository default`, `repository list` | Print paths instead of names |
-| `-f, --force` | `repository remove` | Delete even if the repository holds work that no remote has |
-| `-v, --version` | `gog` | Print the version |
+| `--path` | `repository default`, `repository list` | Print paths instead of names |
+| `--force` | `repository remove` | Delete even if the repository holds work that no remote has |
+| `--version` | `gog` | Print the version |
+
+A short flag means the same thing in every tool that has it, so `--path`,
+`--force` and `--version` are spelled out: `-p`, `-f` and `-v` each mean
+something else in `mrs`.
 
 Run `gog help <command>` for full usage.
 
@@ -126,7 +130,7 @@ world-readable wherever the repository is applied.
 ### Paths that are already there
 
 `gog apply` never deletes a file it did not put there. It reports the path,
-leaves it alone, carries on with the rest of the repository, and exits 1:
+leaves it alone, carries on with the rest of the repository, and fails:
 
 ```text
 Error: /home/example/.bashrc already exists (move or remove it, then run the command again)
@@ -213,10 +217,18 @@ Error: refusing to remove dotfiles: it holds 1 commit that no remote has and 2 u
 
 | Stream | Carries |
 | --- | --- |
-| stdout | What a command produced or changed: the `Linked:`, `Restored:`, `Skipped:`, `Added repository:` and `Removed repository:` lines, and everything `git`, `list`, `repository list` and `repository default` print |
-| stderr | The repository that was selected (`Repository: dotfiles`), `Warning:` and `Error:` |
+| stdout | What a caller consumes: everything `git`, `list`, `repository list` and `repository default` print |
+| stderr | What gog did and what went wrong: the `Repository:`, `Linked:`, `Restored:`, `Skipped:`, `Added repository:` and `Removed repository:` lines, and `Warning:` and `Error:` |
 
-Every failure of gog's exits 1. `gog git` exits with git's status.
+So `gog list | xargs` and `gog apply > log` each carry one kind of thing.
+
+| Code | Meaning |
+| --- | --- |
+| 0 | It worked |
+| 1 | It failed |
+| 2 | It was typed wrong: an unknown command or flag, or a missing or extra operand |
+
+`gog git` exits with git's status instead.
 
 ### Multiple repositories
 

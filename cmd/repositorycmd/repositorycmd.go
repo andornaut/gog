@@ -2,11 +2,13 @@ package repositorycmd
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
 
+	"github.com/andornaut/gog/internal/cli"
 	"github.com/andornaut/gog/internal/link"
 	"github.com/andornaut/gog/internal/repository"
 )
@@ -22,7 +24,7 @@ var Cmd = &cobra.Command{
 			// Naming a command that does not exist is a wrong invocation, so
 			// the usage that the root silenced for running commands is restored
 			c.SilenceUsage = false
-			return fmt.Errorf("unknown command %q for %q", args[0], c.CommandPath())
+			return cli.Usagef("unknown command %q for %q", args[0], c.CommandPath())
 		}
 		return c.Help()
 	},
@@ -58,7 +60,7 @@ var add = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		fmt.Printf("Added repository: %s\n", repoPath)
+		fmt.Fprintf(os.Stderr, "Added repository: %s\n", repoPath)
 		return nil
 	},
 }
@@ -136,7 +138,7 @@ var remove = &cobra.Command{
 		if err := repository.Remove(repoPath); err != nil {
 			return err
 		}
-		fmt.Printf("Removed repository: %s\n", repoPath)
+		fmt.Fprintf(os.Stderr, "Removed repository: %s\n", repoPath)
 		return nil
 	},
 }
@@ -146,15 +148,18 @@ var remove = &cobra.Command{
 func requireArgs(minArgs, maxArgs int, want string) cobra.PositionalArgs {
 	return func(c *cobra.Command, args []string) error {
 		if len(args) < minArgs || len(args) > maxArgs {
-			return fmt.Errorf("%s requires %s", c.CommandPath(), want)
+			return cli.Usagef("%s requires %s", c.CommandPath(), want)
 		}
 		return nil
 	}
 }
 
 func init() {
-	getDefault.Flags().BoolVarP(&isPath, "path", "p", false, "print the path instead of the name")
-	list.Flags().BoolVarP(&isPath, "path", "p", false, "print paths instead of names")
-	remove.Flags().BoolVarP(&isForced, "force", "f", false, "remove even if the repository holds work that no remote has")
+	// --path and --force are spelled out: -p is the password file and -f is
+	// --full in mrs, and a letter that means two things across the tools is a
+	// trap for the person typing, not for the parser.
+	getDefault.Flags().BoolVar(&isPath, "path", false, "print the path instead of the name")
+	list.Flags().BoolVar(&isPath, "path", false, "print paths instead of names")
+	remove.Flags().BoolVar(&isForced, "force", false, "remove even if the repository holds work that no remote has")
 	Cmd.AddCommand(add, remove, getDefault, list)
 }

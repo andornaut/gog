@@ -336,7 +336,7 @@ func removePath(repoPath, targetPath string) error {
 		if os.IsNotExist(err) {
 			// Reported rather than passed over in silence, because a path this
 			// repository never held looks exactly like one it just gave back
-			fmt.Printf("Skipped: %s (not tracked by %s)\n", targetPath, filepath.Base(repoPath))
+			fmt.Fprintf(os.Stderr, "Skipped: %s (not tracked by %s)\n", targetPath, filepath.Base(repoPath))
 			return nil
 		}
 		return err

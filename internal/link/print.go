@@ -19,12 +19,15 @@ func printError(err error) {
 	fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 }
 
+// Reported on stderr, with every other line gog writes about what it did.
+// stdout carries what a caller consumes: `list`, `repository list`,
+// `repository default` and git's own output.
 func printLinked(intPath string, extPath string) {
-	fmt.Printf("Linked: %s -> %s\n", extPath, escapeHomeVar(intPath))
+	fmt.Fprintf(os.Stderr, "Linked: %s -> %s\n", extPath, escapeHomeVar(intPath))
 }
 
 func printRestored(extPath string) {
-	fmt.Printf("Restored: %s\n", escapeHomeVar(extPath))
+	fmt.Fprintf(os.Stderr, "Restored: %s\n", escapeHomeVar(extPath))
 }
 
 func escapeHomeVar(p string) string {

@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/andornaut/gog/cmd/repositorycmd"
+	"github.com/andornaut/gog/internal/cli"
 	"github.com/andornaut/gog/internal/git"
 	"github.com/andornaut/gog/internal/link"
 	"github.com/andornaut/gog/internal/repository"
@@ -101,15 +102,25 @@ func (e *exitCodeError) Error() string {
 	return fmt.Sprintf("git exited with status %d", e.code)
 }
 
+// Exit codes. 2 is kept for a wrong invocation so that a script can tell a
+// command it typed wrong from one that ran and failed.
+const (
+	exitFailed = 1
+	exitUsage  = 2
+)
+
 // ExitCode returns the status that gog should exit with for the given error.
-// Only `gog git` reports a status of its own; every other failure is gog's and
-// exits 1.
+// Only `gog git` reports a status of its own.
 func ExitCode(err error) int {
 	var e *exitCodeError
 	if errors.As(err, &e) {
 		return e.code
 	}
-	return 1
+	var u cli.UsageError
+	if errors.As(err, &u) {
+		return exitUsage
+	}
+	return exitFailed
 }
 
 var (
@@ -263,8 +274,10 @@ var Cmd = &cobra.Command{
 	},
 	// A command with nothing to run never has its arguments validated: cobra
 	// prints help and reports success, so a mistyped command does nothing and
-	// says nothing. Reporting it here is what makes an unknown command a failure.
-	RunE: unknownCommand,
+	// says nothing. Validating here is what makes an unknown command a failure,
+	// and replacing cobra's own check is what makes it exit 2.
+	Args: unknownCommand,
+	RunE: func(c *cobra.Command, args []string) error { return c.Help() },
 }
 
 // takeRepositoryFlag consumes a leading -r/--repository option and returns the
@@ -296,13 +309,13 @@ func takeRepositoryFlag(args []string) ([]string, error) {
 	return args, nil
 }
 
-// unknownCommand reports an argument that names no subcommand, and prints help
-// when there is no argument at all
+// unknownCommand reports an argument that names no subcommand
 func unknownCommand(c *cobra.Command, args []string) error {
 	if len(args) > 0 {
-		return fmt.Errorf("unknown command %q for %q", args[0], c.CommandPath())
+		return cli.Usagef("unknown command %q for %q. Run \"%s --help\" for usage",
+			args[0], c.CommandPath(), c.CommandPath())
 	}
-	return c.Help()
+	return nil
 }
 
 // requirePaths validates the operands of the commands that take paths. Cobra's
@@ -310,7 +323,7 @@ func unknownCommand(c *cobra.Command, args []string) error {
 // command nor what it wanted.
 func requirePaths(c *cobra.Command, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("%s requires at least one path", c.CommandPath())
+		return cli.Usagef("%s requires at least one path", c.CommandPath())
 	}
 	return nil
 }
@@ -328,6 +341,11 @@ func init() {
 		}
 	}
 	list.Flags().BoolVarP(&isStatus, "status", "s", false, "print what applying would do to each path")
+	// A flag cobra could not parse is a wrong invocation, and exits 2 like one.
+	Cmd.SetFlagErrorFunc(func(c *cobra.Command, err error) error { return cli.Usage(err) })
+	// -v is --vault in mrs, so --version is spelled out here rather than
+	// answering to a letter that means something else in the tool beside it.
+	Cmd.Flags().Bool("version", false, "version for gog")
 	// `git` parses its own arguments, so cobra's help flag would be listed
 	// without being honored: --help reaches git like everything else
 	git_.Flags().BoolP("help", "h", false, "")

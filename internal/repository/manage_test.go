@@ -213,7 +213,7 @@ func TestRemovePathsReportsAPathItNeverHeld(t *testing.T) {
 	repoPath, homeDir := newSandbox(t)
 	target := filepath.Join(homeDir, ".never")
 
-	out := captureStdout(t, func() {
+	out := captureStderr(t, func() {
 		if err := RemovePaths(repoPath, []string{target}); err != nil {
 			t.Errorf("RemovePaths() = %v, want success", err)
 		}
@@ -226,18 +226,18 @@ func TestRemovePathsReportsAPathItNeverHeld(t *testing.T) {
 	}
 }
 
-// captureStdout returns what f writes to standard output. The result lines go
+// captureStderr returns what f writes to standard error. What gog did goes
 // there rather than through a writer the caller supplies, so a test that means
 // to check one has to take it from the process.
-func captureStdout(t *testing.T, f func()) string {
+func captureStderr(t *testing.T, f func()) string {
 	t.Helper()
 	reader, writer, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
 	}
-	original := os.Stdout
-	os.Stdout = writer
-	defer func() { os.Stdout = original }()
+	original := os.Stderr
+	os.Stderr = writer
+	defer func() { os.Stderr = original }()
 
 	done := make(chan string)
 	go func() {

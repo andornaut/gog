@@ -222,19 +222,27 @@ func TestRequirePaths(t *testing.T) {
 func TestUnknownCommand(t *testing.T) {
 	err := unknownCommand(Cmd, []string{"bogus"})
 
-	if err == nil || err.Error() != `unknown command "bogus" for "gog"` {
+	if err == nil || !strings.Contains(err.Error(), `unknown command "bogus" for "gog"`) {
 		t.Errorf("unknownCommand() = %v, want the command named", err)
+	}
+	// A wrong invocation exits 2, so that a script can tell it from a command
+	// that ran and failed.
+	if got := ExitCode(err); got != exitUsage {
+		t.Errorf("ExitCode() = %d, want %d", got, exitUsage)
+	}
+	if err := unknownCommand(Cmd, nil); err != nil {
+		t.Errorf("unknownCommand() with no arguments = %v, want success", err)
 	}
 
 	var out bytes.Buffer
 	Cmd.SetOut(&out)
 	t.Cleanup(func() { Cmd.SetOut(nil) })
 
-	if err := unknownCommand(Cmd, nil); err != nil {
-		t.Fatalf("unknownCommand() with no arguments = %v, want help", err)
+	if err := Cmd.RunE(Cmd, nil); err != nil {
+		t.Fatalf("RunE() with no arguments = %v, want help", err)
 	}
 	if !strings.Contains(out.String(), "Available Commands:") {
-		t.Errorf("unknownCommand() printed %q, want help", out.String())
+		t.Errorf("RunE() printed %q, want help", out.String())
 	}
 }
 
