@@ -40,7 +40,7 @@ func TestUnlinkFilePrintsWhatItRestored(t *testing.T) {
 
 	out := captureStderr(t, func() {
 		if err := UnlinkFile(repoPath, intPath); err != nil {
-			t.Fatalf("UnlinkFile() = %v", err)
+			t.Errorf("UnlinkFile() = %v", err)
 		}
 	})
 

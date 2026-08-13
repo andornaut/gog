@@ -2,13 +2,14 @@ package repository
 
 import (
 	"errors"
-	"io"
 	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/andornaut/gog/internal/gittest"
 )
 
 // newSandbox creates a data directory holding one repository, and a home
@@ -23,7 +24,8 @@ func newSandbox(t *testing.T) (repoPath, homeDir string) {
 	if err := os.MkdirAll(homeDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	newRepo(t, repoPath)
+	gittest.Init(t, repoPath)
+	gittest.Isolate(t, homeDir)
 
 	// Whatever the developer has set would otherwise choose the repository
 	t.Setenv("GOG_DEFAULT_REPOSITORY_NAME", "")
@@ -36,28 +38,6 @@ func newSandbox(t *testing.T) (repoPath, homeDir string) {
 		SetHomeDirForTest(originalHome)
 	})
 	return repoPath, homeDir
-}
-
-// newRepo initializes a repository that can commit without a global git config
-func newRepo(t *testing.T, repoPath string) {
-	t.Helper()
-	if err := os.MkdirAll(repoPath, 0755); err != nil {
-		t.Fatal(err)
-	}
-	runGit(t, repoPath, "init", "-q")
-	runGit(t, repoPath, "config", "user.email", "test@example.com")
-	runGit(t, repoPath, "config", "user.name", "Test User")
-}
-
-func runGit(t *testing.T, repoPath string, args ...string) string {
-	t.Helper()
-	cmd := exec.Command("git", args...)
-	cmd.Dir = repoPath
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %v: %v: %s", args, err, out)
-	}
-	return string(out)
 }
 
 func writeFile(t *testing.T, p, contents string) string {
@@ -449,8 +429,8 @@ func TestRemovePathsUntracksAndLeavesNothingBehind(t *testing.T) {
 	if err := AddPaths(repoPath, false, []string{target}); err != nil {
 		t.Fatal(err)
 	}
-	runGit(t, repoPath, "add", "-A")
-	runGit(t, repoPath, "commit", "-q", "-m", "init")
+	gittest.Run(t, repoPath, "add", "-A")
+	gittest.Run(t, repoPath, "commit", "-q", "-m", "init")
 
 	if err := RemovePaths(repoPath, []string{target}); err != nil {
 		t.Fatalf("RemovePaths() = %v", err)
@@ -459,7 +439,7 @@ func TestRemovePathsUntracksAndLeavesNothingBehind(t *testing.T) {
 	if _, err := os.Lstat(filepath.Join(repoPath, "$HOME", ".bashrc")); !os.IsNotExist(err) {
 		t.Errorf("the repository still holds the path (%v)", err)
 	}
-	if tracked := runGit(t, repoPath, "ls-files"); strings.Contains(tracked, ".bashrc") {
+	if tracked := gittest.Run(t, repoPath, "ls-files"); strings.Contains(tracked, ".bashrc") {
 		t.Errorf("the index still holds %q", tracked)
 	}
 }
@@ -486,28 +466,29 @@ func TestRemovePathsReportsAPathItNeverHeld(t *testing.T) {
 // captureStderr returns what f writes to standard error. What gog did goes
 // there rather than through a writer the caller supplies, so a test that means
 // to check one has to take it from the process.
+//
+// A file rather than a pipe: git inherits whatever os.Stderr is when gog runs
+// it, and a pipe is only read to its end once every process holding the write
+// end has let go of it.
 func captureStderr(t *testing.T, f func()) string {
 	t.Helper()
-	reader, writer, err := os.Pipe()
+	file, err := os.CreateTemp(t.TempDir(), "stderr")
 	if err != nil {
 		t.Fatal(err)
 	}
 	original := os.Stderr
-	os.Stderr = writer
+	os.Stderr = file
 	defer func() { os.Stderr = original }()
 
-	done := make(chan string)
-	go func() {
-		var out strings.Builder
-		_, _ = io.Copy(&out, reader)
-		done <- out.String()
-	}()
-
 	f()
-	if err := writer.Close(); err != nil {
+	if err = file.Close(); err != nil {
 		t.Fatal(err)
 	}
-	return <-done
+	out, err := os.ReadFile(file.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(out)
 }
 
 func TestUnsavedWorkCountsWhatDeletionWouldDestroy(t *testing.T) {
@@ -516,8 +497,8 @@ func TestUnsavedWorkCountsWhatDeletionWouldDestroy(t *testing.T) {
 	if err := AddPaths(repoPath, false, []string{target}); err != nil {
 		t.Fatal(err)
 	}
-	runGit(t, repoPath, "add", "-A")
-	runGit(t, repoPath, "commit", "-q", "-m", "init")
+	gittest.Run(t, repoPath, "add", "-A")
+	gittest.Run(t, repoPath, "commit", "-q", "-m", "init")
 
 	// A repository with no remote holds its whole history nowhere else
 	unsaved, err := UnsavedWork(repoPath)
@@ -530,9 +511,9 @@ func TestUnsavedWorkCountsWhatDeletionWouldDestroy(t *testing.T) {
 
 	// Once a remote holds it, only what is not committed remains
 	remote := filepath.Join(t.TempDir(), "origin.git")
-	runGit(t, repoPath, "init", "-q", "--bare", remote)
-	runGit(t, repoPath, "remote", "add", "origin", remote)
-	runGit(t, repoPath, "push", "-q", "-u", "origin", "HEAD")
+	gittest.Run(t, repoPath, "init", "-q", "--bare", remote)
+	gittest.Run(t, repoPath, "remote", "add", "origin", remote)
+	gittest.Run(t, repoPath, "push", "-q", "-u", "origin", "HEAD")
 	writeFile(t, filepath.Join(repoPath, "$HOME", ".vimrc"), "vimrc\n")
 
 	unsaved, err = UnsavedWork(repoPath)

@@ -2,11 +2,11 @@ package repositorycmd
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/andornaut/gog/internal/gittest"
 	"github.com/andornaut/gog/internal/repository"
 )
 
@@ -70,19 +70,10 @@ func newSandbox(t *testing.T) (repoPath, extPath string) {
 	if err := os.Symlink(intPath, extPath); err != nil {
 		t.Fatal(err)
 	}
-	for _, args := range [][]string{
-		{"init", "-q"},
-		{"config", "user.email", "test@example.com"},
-		{"config", "user.name", "Test User"},
-		{"add", "-A"},
-		{"commit", "-q", "-m", "init"},
-	} {
-		cmd := exec.Command("git", args...)
-		cmd.Dir = repoPath
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v: %s", args, err, out)
-		}
-	}
+	gittest.Init(t, repoPath)
+	gittest.Isolate(t, homeDir)
+	gittest.Run(t, repoPath, "add", "-A")
+	gittest.Run(t, repoPath, "commit", "-q", "-m", "init")
 
 	originalBase := repository.BaseDir
 	repository.BaseDir = baseDir

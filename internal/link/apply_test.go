@@ -3,11 +3,11 @@ package link
 import (
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/andornaut/gog/internal/gittest"
 	"github.com/andornaut/gog/internal/repository"
 )
 
@@ -28,13 +28,7 @@ func write(t *testing.T, repoPath, rel, contents string) string {
 // staged returns the paths that the repository's index holds
 func staged(t *testing.T, repoPath string) string {
 	t.Helper()
-	cmd := exec.Command("git", "ls-files")
-	cmd.Dir = repoPath
-	out, err := cmd.Output()
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(out)
+	return gittest.Run(t, repoPath, "ls-files")
 }
 
 func assertLink(t *testing.T, extPath, intPath string) {

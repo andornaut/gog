@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/andornaut/gog/internal/gittest"
 )
 
 // newBaseDir points the package at an empty data directory for the duration of
@@ -54,8 +56,8 @@ func TestRootPathRefusesAPathAsAName(t *testing.T) {
 // to whichever comes first
 func TestRootPathRefusesAnAmbiguousPrefix(t *testing.T) {
 	base := newBaseDir(t)
-	newRepo(t, filepath.Join(base, "myrepo-v1"))
-	newRepo(t, filepath.Join(base, "myrepo-v2"))
+	gittest.Init(t, filepath.Join(base, "myrepo-v1"))
+	gittest.Init(t, filepath.Join(base, "myrepo-v2"))
 
 	_, err := RootPath("myrepo")
 
@@ -82,7 +84,7 @@ func TestGetFirstSkipsWhatIsNotARepository(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(base, "aaa"), 0755); err != nil {
 		t.Fatal(err)
 	}
-	newRepo(t, filepath.Join(base, "bbb"))
+	gittest.Init(t, filepath.Join(base, "bbb"))
 
 	got, err := getFirst()
 
@@ -98,8 +100,8 @@ func TestGetFirstSkipsWhatIsNotARepository(t *testing.T) {
 // is in it
 func TestList(t *testing.T) {
 	base := newBaseDir(t)
-	newRepo(t, filepath.Join(base, "work"))
-	newRepo(t, filepath.Join(base, "personal"))
+	gittest.Init(t, filepath.Join(base, "work"))
+	gittest.Init(t, filepath.Join(base, "personal"))
 	if err := os.Mkdir(filepath.Join(base, "not-a-repository"), 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +145,7 @@ func TestAddRefusesAnExistingDirectory(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(occupied, "file.txt"), []byte("x"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	newRepo(t, filepath.Join(base, "existing"))
+	gittest.Init(t, filepath.Join(base, "existing"))
 	empty := filepath.Join(base, "empty")
 	if err := os.Mkdir(empty, 0755); err != nil {
 		t.Fatal(err)
@@ -154,7 +156,7 @@ func TestAddRefusesAnExistingDirectory(t *testing.T) {
 	if _, err := Add("occupied", ""); err == nil || !strings.Contains(err.Error(), "not a gog repository") {
 		t.Errorf("Add(\"occupied\") = %v, want the path named as not a gog repository", err)
 	}
-	if _, err := Add("existing", ""); err == nil || !strings.Contains(err.Error(), "already exists") {
+	if _, err := Add("existing", ""); err == nil || !strings.Contains(err.Error(), `a repository named "existing" already exists`) {
 		t.Errorf("Add(\"existing\") = %v, want the repository named as one", err)
 	}
 	if got, err := Add("empty", ""); err != nil || got != empty {

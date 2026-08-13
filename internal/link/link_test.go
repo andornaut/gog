@@ -2,41 +2,41 @@ package link
 
 import (
 	"errors"
-	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/andornaut/gog/internal/gittest"
 	"github.com/andornaut/gog/internal/repository"
 )
 
 // captureStderr returns what f writes to standard error. What gog did goes
 // there rather than through a writer the caller supplies, so a test that means
 // to check one has to take it from the process.
+//
+// A file rather than a pipe: git inherits whatever os.Stderr is when gog runs
+// it, and a pipe is only read to its end once every process holding the write
+// end has let go of it.
 func captureStderr(t *testing.T, f func()) string {
 	t.Helper()
-	reader, writer, err := os.Pipe()
+	file, err := os.CreateTemp(t.TempDir(), "stderr")
 	if err != nil {
 		t.Fatal(err)
 	}
 	original := os.Stderr
-	os.Stderr = writer
+	os.Stderr = file
 	defer func() { os.Stderr = original }()
 
-	done := make(chan string)
-	go func() {
-		var out strings.Builder
-		_, _ = io.Copy(&out, reader)
-		done <- out.String()
-	}()
-
 	f()
-	if err := writer.Close(); err != nil {
+	if err = file.Close(); err != nil {
 		t.Fatal(err)
 	}
-	return <-done
+	out, err := os.ReadFile(file.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(out)
 }
 
 // newSandbox creates a repository and a home directory to link into, and points
@@ -52,7 +52,8 @@ func newSandbox(t *testing.T) (repoPath, homeDir string) {
 			t.Fatal(err)
 		}
 	}
-	gitInit(t, repoPath)
+	gittest.Init(t, repoPath)
+	gittest.Isolate(t, homeDir)
 
 	// Whatever the developer has set would otherwise decide what is linked
 	t.Setenv("GOG_IGNORE_FILES_REGEX", "")
@@ -65,22 +66,6 @@ func newSandbox(t *testing.T) (repoPath, homeDir string) {
 		repository.BaseDir = originalBase
 	})
 	return repoPath, homeDir
-}
-
-// gitInit initializes a repository that can commit without a global git config
-func gitInit(t *testing.T, repoPath string) {
-	t.Helper()
-	for _, args := range [][]string{
-		{"init", "-q"},
-		{"config", "user.email", "test@example.com"},
-		{"config", "user.name", "Test User"},
-	} {
-		cmd := exec.Command("git", args...)
-		cmd.Dir = repoPath
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v: %s", args, err, out)
-		}
-	}
 }
 
 func TestFileLinksAndStagesOneFile(t *testing.T) {
@@ -98,21 +83,23 @@ func TestFileLinksAndStagesOneFile(t *testing.T) {
 }
 
 // The result line names both ends of the link, with the repository's literal
-// $HOME component escaped so that the path can be pasted into a shell
-func TestFilePrintsWhatItLinked(t *testing.T) {
+// $HOME component escaped so that the path can be pasted into a shell. Taken
+// from linkFile, which is the step that prints it: File also stages, and git
+// writes to the same stream.
+func TestLinkFilePrintsWhatItLinked(t *testing.T) {
 	repoPath, homeDir := newSandbox(t)
 	intPath := write(t, repoPath, "$HOME/.bashrc", "bashrc\n")
 
 	out := captureStderr(t, func() {
-		if err := File(repoPath, intPath); err != nil {
-			t.Fatalf("File() = %v", err)
+		if _, err := linkFile(repoPath, intPath); err != nil {
+			t.Errorf("linkFile() = %v", err)
 		}
 	})
 
 	want := "Linked: " + filepath.Join(homeDir, ".bashrc") + " -> " +
 		filepath.Join(repoPath, `\$HOME`, ".bashrc") + "\n"
 	if out != want {
-		t.Errorf("File() printed %q, want %q", out, want)
+		t.Errorf("linkFile() printed %q, want %q", out, want)
 	}
 }
 
