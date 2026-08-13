@@ -41,6 +41,15 @@ func resolveGitPaths(repoPath string, args []string) []string {
 	resolved := make([]string, len(args))
 	copy(resolved, args)
 
+	// Both sides of the comparison have to be free of symbolic links. A
+	// repository can be reached through a symlinked parent (`/var` on macOS is
+	// one), and a resolved argument measured against an unresolved repository
+	// path looks like it lies outside the repository.
+	realRepoPath, err := filepath.EvalSymlinks(repoPath)
+	if err != nil {
+		realRepoPath = repoPath
+	}
+
 	// The subcommand is the first argument only when no global flag precedes
 	// it. Otherwise it is not identified at all and nothing before `--` is
 	// converted, which errs towards passing arguments through unchanged.
@@ -56,13 +65,14 @@ func resolveGitPaths(repoPath string, args []string) []string {
 		case i == 0 || !takesPathspecs || strings.HasPrefix(arg, "-"):
 			continue
 		}
-		resolved[i] = resolveGitPath(repoPath, arg)
+		resolved[i] = resolveGitPath(realRepoPath, arg)
 	}
 	return resolved
 }
 
 // resolveGitPath returns a pathspec relative to the repository if it resolves
-// into the repository, and otherwise returns it unchanged
+// into the repository, and otherwise returns it unchanged. repoPath must
+// already have its symbolic links resolved.
 func resolveGitPath(repoPath, arg string) string {
 	absPath, err := filepath.Abs(arg)
 	if err != nil {
@@ -73,7 +83,7 @@ func resolveGitPath(repoPath, arg string) string {
 		return arg
 	}
 	rel, err := filepath.Rel(repoPath, realPath)
-	if err != nil || strings.HasPrefix(rel, "..") {
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return arg
 	}
 	return rel

@@ -132,6 +132,34 @@ func TestResolveGitPaths(t *testing.T) {
 	}
 }
 
+// A repository can be reached through a symlinked parent directory: `/var` and
+// `/tmp` are symbolic links on macOS, so a temporary directory is one there.
+// The repository path and the resolved argument have to be compared in the same
+// terms, or no pathspec is ever converted.
+func TestResolveGitPathsThroughASymlinkedRepositoryPath(t *testing.T) {
+	root := t.TempDir()
+	realRoot := filepath.Join(root, "real")
+	repoPath := filepath.Join(realRoot, "repo")
+	if err := os.MkdirAll(repoPath, 0755); err != nil {
+		t.Fatal(err)
+	}
+	intPath := filepath.Join(repoPath, "tracked")
+	if err := os.WriteFile(intPath, []byte("contents\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	linkedRoot := filepath.Join(root, "linked")
+	if err := os.Symlink(realRoot, linkedRoot); err != nil {
+		t.Fatal(err)
+	}
+
+	args := []string{"add", intPath}
+	got := resolveGitPaths(filepath.Join(linkedRoot, "repo"), args)
+	want := []string{"add", "tracked"}
+	if !slices.Equal(got, want) {
+		t.Errorf("resolveGitPaths(%q) = %q, want %q", args, got, want)
+	}
+}
+
 func TestResolveGitPathsDoesNotMutateItsArgument(t *testing.T) {
 	repoPath, linkPath := setupResolveGitPaths(t)
 
