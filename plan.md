@@ -249,17 +249,44 @@ Nothing needed changing. What the scenarios established:
   apply, remove and repository removal: nothing is moved across devices, only
   copied.
 
+### Capability 7 - permissions and `$HOME` (62 assertions across two scripts)
+
+Unreadable files, unsearchable directories, an unreadable file inside a tree,
+an unwritable repository, an unwritable destination directory, a directory that
+cannot be created, a repository that cannot be read, and a restore that cannot
+be written, all as an unprivileged user. `$HOME` unset, empty, missing, not a
+directory, unwritable, relative, root, and with a trailing slash, plus an
+unwritable `GOG_HOME` and `XDG_DATA_HOME`.
+
+Every permission failure is reported and skipped or fails the command outright,
+and every one of them converges on a rerun once the permission is fixed.
+`remove` fails before untracking, so the repository's copy survives a restore
+that could not be written.
+
+Landed:
+
+- `$HOME` is made absolute, not just cleaned. A relative `$HOME` was not
+  recognized in the absolute paths it is compared against, so every path under
+  it was stored by its absolute name rather than under the portable `$HOME`
+  component. `BaseDir` already had this normalization.
+- The startup failures in `internal/repository/init` report as `Error: ...` and
+  exit 1, in place of `log.Fatal`'s timestamped line. This settles the question
+  left open when the same correction was made in `internal/link`.
+- A `$HOME` that does not exist, or that is not a directory, is refused. gog
+  used to create its data directory under whatever `$HOME` named and report
+  success, so a typo scattered a tree somewhere unintended.
+
 ## What is left
 
-### Capability 7 - the pieces the lab has not reached
+Every capability in the original plan has been covered. What remains is one
+scenario the lab cannot reach and the open questions below.
 
-- Permission-denied paths across `add`, `apply` and `remove`, run as an
-  unprivileged user rather than root. Only one such path has been exercised so
-  far: a directory that cannot be written during repository removal.
-- Filesystems without symlink support, if that is in scope at all.
-- `gog` invoked with `$HOME` unset or pointing somewhere unwritable.
-
-A rejected push was covered by capability 4 and is no longer listed here.
+- **Filesystems without symlink support**, if they are in scope at all. Proving
+  it needs a filesystem mounted for the purpose, which needs root, so the
+  closest the lab gets is a destination that refuses the `symlink` call: the
+  failure is reported per path and the run exits non-zero. Whether gog should
+  say anything more specific when symlinks are unavailable altogether is
+  undecided.
 
 ## Open questions for the owner
 
@@ -275,10 +302,11 @@ Do not settle these alone. They have been raised and are still unanswered.
    though something went wrong. Capturing the batch's stderr and printing it
    only when the retries also fail would fix it, at the cost of holding git's
    output back.
-3. **`internal/repository/repository.go` still calls `log.Fatal` twice in
-   `init()`** (home directory lookup, data directory creation), in the same
-   timestamped format that was just corrected in `internal/link`. Left alone
-   because the decision taken was scoped to the ignore regex.
+3. **A tree that fails partway through `add` leaves what it copied.** An
+   unreadable file aborts the copy with earlier files already in the
+   repository, unlinked and untracked. Readability cannot be validated up front
+   without opening every file, and a rerun converges, so this may be the right
+   behaviour; nothing reports it either way.
 4. **Errors still surface raw syscall names** such as `lstat /path: no such
    file or directory`. The owner chose to leave these; revisit only if asked.
 5. **A failed clone leaves an empty directory** in the data directory. It is

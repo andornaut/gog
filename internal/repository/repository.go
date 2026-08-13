@@ -2,7 +2,6 @@ package repository
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -122,22 +121,47 @@ func getBaseDir(homeDir string) (string, error) {
 	return filepath.Abs(b)
 }
 
-func init() {
-	var err error
+// fail reports a startup error in the form every other gog failure takes and
+// exits. init cannot return one, and a gog that cannot locate its home
+// directory or its data directory has nothing left to do.
+func fail(err error) {
+	fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+	os.Exit(1)
+}
 
-	homeDir, err = os.UserHomeDir()
+func init() {
+	home, err := os.UserHomeDir()
 	if err != nil {
-		log.Fatal(err)
+		fail(err)
 	}
 	// Normalize so that path-boundary comparisons work when $HOME has a
-	// trailing slash
-	homeDir = filepath.Clean(homeDir)
+	// trailing slash, and so that a relative $HOME is still recognized in the
+	// absolute paths gog compares it against. Without this, every path under a
+	// relative $HOME is stored by its absolute name instead of under the
+	// portable $HOME component, which is the same normalization BaseDir gets.
+	home, err = filepath.Abs(home)
+	if err != nil {
+		fail(err)
+	}
+	// A home directory that does not exist is a misconfigured environment
+	// rather than a new one. Without this check gog creates its data directory
+	// under whatever $HOME happens to name and reports success.
+	info, statErr := os.Stat(home)
+	switch {
+	case os.IsNotExist(statErr):
+		fail(fmt.Errorf("home directory does not exist: %s", home))
+	case statErr != nil:
+		fail(statErr)
+	case !info.IsDir():
+		fail(fmt.Errorf("home directory is not a directory: %s", home))
+	}
+	homeDir = home
 
 	BaseDir, err = getBaseDir(homeDir)
 	if err != nil {
-		log.Fatal(err)
+		fail(err)
 	}
 	if err = os.MkdirAll(BaseDir, 0755); err != nil {
-		log.Fatal(err)
+		fail(fmt.Errorf("cannot create gog's data directory: %w", err))
 	}
 }

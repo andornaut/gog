@@ -256,6 +256,9 @@ done
 
 ## Configuration
 
+`$HOME` must name a directory that exists: gog stores paths under a literal
+`$HOME` component and refuses to run when it cannot resolve one.
+
 You can use environment variables to customize some settings.
 
 Environment variable | Description
