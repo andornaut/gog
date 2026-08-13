@@ -59,9 +59,7 @@ var add = &cobra.Command{
 }
 
 var getDefault = &cobra.Command{
-	Use: "default [--path]",
-	// The former name, kept so that it still works where it is written down
-	Aliases:               []string{"get-default"},
+	Use:                   "default [--path]",
 	Short:                 "Print the name or path of the default repository",
 	Long:                  "Either the first repository or the one defined by $GOG_DEFAULT_REPOSITORY_NAME",
 	Args:                  noArgs,
