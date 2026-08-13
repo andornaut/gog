@@ -25,8 +25,11 @@ concurrency:
 jobs:
   # Publishing waits on the same suite that guards main, rather than on the
   # build alone: something that compiles everywhere still ships whatever the
-  # tests would have caught.
+  # tests would have caught. Called only where a release can follow, since the
+  # Test workflow already runs on every push and pull request of its own
+  # accord, and the jobs below are gated the same way.
   test:
+    if: github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main')
     uses: ./.github/workflows/test.yml
 
   build-platform:
