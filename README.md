@@ -21,8 +21,11 @@ version, plus a `dev` release rebuilt on every push to `main`.
 | Linux arm64 | `gog_linux_arm64.tar.gz` |
 | macOS Apple Silicon | `gog_darwin_arm64.tar.gz` |
 
+The archive also carries `LICENSE` and `README.md` at the top level, so name
+the binary rather than extracting everything into the current directory:
+
 ```bash
-tar -xzf gog_linux_x86_64.tar.gz
+tar -xzf gog_linux_x86_64.tar.gz gog
 sudo install -m 755 gog /usr/local/bin/gog
 ```
 
@@ -98,6 +101,8 @@ Run `gog help <command>` for full usage.
 | Symbolic link | Refused, names its target instead | Skipped, with a warning |
 | Named pipe, socket, device node | Refused | Skipped, with a warning |
 
+- A symbolic link that gog created is followed rather than refused, so a
+  managed path can be added again, or added to a second repository.
 - Skipping the irregular entries is what lets a directory such as `~/.gnupg`
   be added while the agent sockets in it are left alone.
 - A file with more than one name is copied once per name. Git records contents
@@ -189,24 +194,26 @@ gog git log -- ~/.bashrc   # the same, after the separator
 
 ### `gog repository remove`
 
-Deleting a repository cannot be undone by cloning again, so two things happen
-first. Every file the repository had linked is restored as an ordinary file,
-leaving alone any path whose link belongs to another repository. The repository
-is then checked for work that exists nowhere else:
+Deleting a repository cannot be undone by cloning again, so it is refused
+while the repository holds work that exists nowhere else:
 
 ```text
 $ gog repository remove dotfiles
 Error: refusing to remove dotfiles: it holds 1 commit that no remote has and 2 uncommitted changes (pass --force to delete it anyway)
 ```
 
-A repository with no remote at all reports its whole history. Push it, or pass
-`--force`. The name is given in full: unlike `-r`, a prefix is not accepted.
+- A repository with no remote at all reports its whole history. Push it, or
+  pass `--force`.
+- Nothing is restored or deleted until this check passes.
+- Once it does, every file the repository had linked is restored as an ordinary
+  file, leaving alone any path whose link belongs to another repository.
+- The name is given in full: unlike `-r`, a prefix is not accepted.
 
 ### Output
 
 | Stream | Carries |
 | --- | --- |
-| stdout | Results: `Linked:`, `Restored:`, `Skipped:`, and whatever `gog git` and `gog list` produce |
+| stdout | What a command produced or changed: the `Linked:`, `Restored:`, `Skipped:`, `Added repository:` and `Removed repository:` lines, and everything `git`, `list`, `repository list` and `repository default` print |
 | stderr | The repository that was selected (`Repository: dotfiles`), `Warning:` and `Error:` |
 
 Every failure of gog's exits 1. `gog git` exits with git's status.
@@ -260,5 +267,6 @@ release from the same builds.
 | `make build` | Build `./gog` |
 | `make test` | Run the tests with the race detector and coverage |
 | `make coverage`, `make coverage-html` | Report coverage |
-| `make lint`, `make fmt` | Run golangci-lint |
+| `make lint` | Run golangci-lint |
+| `make fmt` | Rewrite the source with golangci-lint's formatter |
 | `make install`, `make uninstall` | Copy to `/usr/local/bin` and remove it. Both use sudo |

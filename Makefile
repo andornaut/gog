@@ -45,4 +45,4 @@ lint:
 	golangci-lint run
 
 uninstall:
-	rm -f "$(DESTDIR)$(BINPREFIX)/$(TARGET)"
+	sudo rm -f "$(DESTDIR)$(BINPREFIX)/$(TARGET)"
