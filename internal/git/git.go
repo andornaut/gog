@@ -29,6 +29,18 @@ func Is(baseDir string) bool {
 	return err == nil && strings.TrimSpace(string(out)) == "false"
 }
 
+// Output runs a git command in a repository and returns its standard output.
+// Standard error stays attached to gog's own, so that git reports any failure
+// itself.
+func Output(baseDir string, arguments ...string) (string, error) {
+	cmd := exec.Command("git", arguments...)
+	cmd.Stderr = os.Stderr
+	cmd.Dir = baseDir
+	cmd.Env = commandEnv()
+	out, err := cmd.Output()
+	return string(out), err
+}
+
 // Run runs a git command in a repository
 func Run(baseDir string, arguments ...string) error {
 	cmd := exec.Command("git", arguments...)

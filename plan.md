@@ -184,14 +184,40 @@ Landed:
   suppressing a backup. The `.gog` guard rails in `validate.go` were kept, so
   that backups left by earlier versions are not swept into a repository.
 
+### Capability 5 - repository removal against live links (55 assertions)
+
+Removal with live links, with unpushed commits, with an uncommitted work tree,
+with no remote at all, of an empty repository, of a repository that was never
+applied, of one repository of an overlay, of a path two repositories track, a
+prefix and an exact name, the empty name, `--force` and `-f`, a restore that
+cannot be written, and what the other commands do afterwards.
+
+The command used to delete a repository outright: every link into it was left
+dangling with nothing counting or mentioning them, unpushed commits went with
+it in silence, and a one-letter prefix was enough to select the target. What
+already worked: an ambiguous prefix and an empty name were refused, removing one
+repository of an overlay broke only its own links, and re-cloning under the same
+name revived every link.
+
+Landed:
+
+- Removal restores every file the repository had linked, to its original
+  location as an ordinary file, before deleting anything. A path whose link
+  belongs to another repository is left alone, and a repository that was never
+  applied creates nothing. Restoring comes first, so a restore that cannot be
+  written keeps the repository: the run fails with the repository intact, and
+  the paths restored before the failure are identical to the copies it still
+  holds.
+- Removal is refused when the repository holds commits that no remote has or
+  changes that were never committed, counting both. A repository with no remote
+  reports its whole history. `--force` overrides.
+- `repository remove` no longer resolves a prefix. `RootPath` still does, for
+  `--repository`; `RemovalPath` is exact, so a short name cannot select
+  something the user did not mean.
+- `UnlinkDir` skips git's own directory, which it now walks when a whole
+  repository is removed.
+
 ## What is left
-
-### Capability 5 - repository removal against live links
-
-`gog repository remove` deletes a repository that may have hundreds of
-symlinks pointing into it. Determine what is left behind on the filesystem and
-whether anything warns the user. This is the evidence needed for the open
-question about guarding that command.
 
 ### Capability 6 - concurrency, scale and interruption
 
@@ -211,20 +237,16 @@ filesystem from `$HOME`.
 
 Do not settle these alone. They have been raised and are still unanswered.
 
-1. **`repository remove` is an unguarded `rm -rf`** of a git repository that
-   may hold unpushed commits, and it now accepts a fuzzy prefix. The owner had
-   no preference when asked and the command was left as it was. Capability 5
-   should produce the evidence to ask again with.
-2. **`gog remove` says nothing when the repository does not hold the path.** A
+1. **`gog remove` says nothing when the repository does not hold the path.** A
    path that was never added, or that belongs to another repository, exits 0
    with no output, which is indistinguishable from a successful removal.
-3. **`internal/repository/repository.go` still calls `log.Fatal` twice in
+2. **`internal/repository/repository.go` still calls `log.Fatal` twice in
    `init()`** (home directory lookup, data directory creation), in the same
    timestamped format that was just corrected in `internal/link`. Left alone
    because the decision taken was scoped to the ignore regex.
-4. **Errors still surface raw syscall names** such as `lstat /path: no such
+3. **Errors still surface raw syscall names** such as `lstat /path: no such
    file or directory`. The owner chose to leave these; revisit only if asked.
-5. **A failed clone leaves an empty directory** in the data directory. It is
+4. **A failed clone leaves an empty directory** in the data directory. It is
    filtered out of `list` and the code deliberately allows reusing it on retry,
    so the owner declined to change it. Recorded so it is not rediscovered.
 

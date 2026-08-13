@@ -8,13 +8,23 @@ import (
 	"github.com/andornaut/gog/internal/repository"
 )
 
-// UnlinkDir replaces symbolic links with the files that they linked to
+// UnlinkDir replaces symbolic links with the files that they linked to. It is
+// called with a whole repository when one is being removed, so git's own
+// directory is skipped: nothing in it was ever linked.
 func UnlinkDir(repoPath, intPath string) error {
 	return filepath.Walk(intPath, func(p string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
 
+		if p == filepath.Join(repoPath, ".git") {
+			if info.IsDir() {
+				return filepath.SkipDir
+			}
+			// A worktree's .git is a file, and skipping a file the way a
+			// directory is skipped would skip its siblings as well
+			return nil
+		}
 		if info.IsDir() {
 			return nil
 		}

@@ -200,6 +200,28 @@ gog prints the repository it selected (`Repository: dotfiles`) to standard
 error, so that standard output carries only what the command itself produced
 and `gog git` output can be piped or redirected.
 
+#### `gog repository remove`
+
+Removing a repository deletes its directory, which is the one thing gog does
+that cloning again cannot undo. Two things happen first.
+
+Every file the repository had linked is restored to its original location as an
+ordinary file, so nothing is left pointing at a directory that no longer
+exists. A path whose link belongs to another repository is left alone.
+
+The repository is then checked for work that exists nowhere else, and removal is
+refused if it finds any:
+
+```text
+$ gog repository remove dotfiles
+Error: refusing to remove dotfiles: it holds 1 commit that no remote has and 2 uncommitted changes (pass --force to delete it anyway)
+```
+
+A repository with no remote at all reports its whole history, because that is
+what would be lost. Push it, or pass `--force`. Unlike `--repository`, this
+command does not accept a name prefix: the repository to delete is named in
+full.
+
 #### Files that are already there
 
 gog never deletes a file it did not put somewhere. When `gog apply` finds

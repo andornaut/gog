@@ -3,9 +3,11 @@ package repositorycmd
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 
+	"github.com/andornaut/gog/internal/link"
 	"github.com/andornaut/gog/internal/repository"
 )
 
@@ -16,7 +18,10 @@ var Cmd = &cobra.Command{
 	SilenceUsage: true,
 }
 
-var isPath bool
+var (
+	isPath   bool
+	isForced bool
+)
 
 var add = &cobra.Command{
 	Use:                   "add [name] [url]",
@@ -86,9 +91,26 @@ var remove = &cobra.Command{
 	Args:                  cobra.ExactArgs(1),
 	DisableFlagsInUseLine: true,
 	RunE: func(c *cobra.Command, args []string) error {
-		repoName := args[0]
-		repoPath, err := repository.Remove(repoName)
+		repoPath, err := repository.RemovalPath(args[0])
 		if err != nil {
+			return err
+		}
+		if !isForced {
+			unsaved, unsavedErr := repository.UnsavedWork(repoPath)
+			if unsavedErr != nil {
+				return unsavedErr
+			}
+			if len(unsaved) > 0 {
+				return fmt.Errorf("refusing to remove %s: it holds %s (pass --force to delete it anyway)",
+					filepath.Base(repoPath), strings.Join(unsaved, " and "))
+			}
+		}
+		// Restore what the repository holds before deleting it, so that the
+		// user is left with their files rather than with links to nothing
+		if err := link.UnlinkDir(repoPath, repoPath); err != nil {
+			return err
+		}
+		if err := repository.Remove(repoPath); err != nil {
 			return err
 		}
 		fmt.Printf("Removed repository: %s\n", repoPath)
@@ -99,5 +121,6 @@ var remove = &cobra.Command{
 func init() {
 	getDefault.Flags().BoolVarP(&isPath, "path", "p", false, "print the path instead of the name")
 	list.Flags().BoolVarP(&isPath, "path", "p", false, "print paths instead of names")
+	remove.Flags().BoolVarP(&isForced, "force", "f", false, "remove even if the repository holds work that no remote has")
 	Cmd.AddCommand(add, remove, getDefault, list)
 }

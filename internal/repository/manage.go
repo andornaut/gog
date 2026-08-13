@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/andornaut/gog/internal/copy"
 	"github.com/andornaut/gog/internal/git"
@@ -49,22 +50,67 @@ func Add(repoName, repoURL string) (string, error) {
 	return repoPath, nil
 }
 
-// Remove removes an existing repository. The name is resolved the same way as
-// --repository, so a unique prefix is accepted. It is validated first because
-// RootPath treats an empty name as a request for the default repository, which
-// must never be deleted by omission.
-func Remove(repoName string) (string, error) {
+// RemovalPath returns the path of the repository with the given name. Unlike
+// RootPath it does not accept a prefix: a name that selects a repository for
+// deletion is given in full, so that a short one cannot match something the
+// user did not mean. The name is validated first because an empty one would
+// otherwise be read as a request for the default repository, which must never
+// be deleted by omission.
+func RemovalPath(repoName string) (string, error) {
 	if err := validateRepoName(repoName); err != nil {
 		return "", err
 	}
-	repoPath, err := RootPath(repoName)
-	if err != nil {
-		return "", err
-	}
-	if err := os.RemoveAll(repoPath); err != nil {
+	repoPath := filepath.Join(BaseDir, repoName)
+	if err := validateRepoPath(repoPath); err != nil {
 		return "", err
 	}
 	return repoPath, nil
+}
+
+// Remove deletes the repository at the given path
+func Remove(repoPath string) error {
+	return os.RemoveAll(repoPath)
+}
+
+// UnsavedWork describes what deleting the given repository would destroy:
+// commits that no remote holds, and changes that were never committed. Both
+// exist only in the repository's own directory, which makes its deletion the
+// one thing gog does that cloning again cannot undo. A repository with no
+// remote at all reports its whole history, because that is exactly what is
+// held nowhere else.
+func UnsavedWork(repoPath string) ([]string, error) {
+	unpushed, err := git.Output(repoPath, "log", "--oneline", "--branches", "--not", "--remotes")
+	if err != nil {
+		return nil, err
+	}
+	uncommitted, err := git.Output(repoPath, "status", "--porcelain")
+	if err != nil {
+		return nil, err
+	}
+
+	var unsaved []string
+	if n := countLines(unpushed); n > 0 {
+		unsaved = append(unsaved, fmt.Sprintf("%s that no remote has", quantify(n, "commit")))
+	}
+	if n := countLines(uncommitted); n > 0 {
+		unsaved = append(unsaved, quantify(n, "uncommitted change"))
+	}
+	return unsaved, nil
+}
+
+func countLines(s string) int {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0
+	}
+	return strings.Count(s, "\n") + 1
+}
+
+func quantify(n int, noun string) string {
+	if n == 1 {
+		return fmt.Sprintf("%d %s", n, noun)
+	}
+	return fmt.Sprintf("%d %ss", n, noun)
 }
 
 // AddPaths adds the given paths from the given repository. Every path is
