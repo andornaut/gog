@@ -68,10 +68,18 @@ would not reach it.
 Run a capability with `bash lab/03-apply.sh`; each script ends with a
 pass/fail tally. Rerun every script after any change to the binary.
 
-Two traps worth knowing:
+Traps worth knowing:
 
 - `ls -l` hides dotfiles, and almost everything `gog` touches is a dotfile. Use
   `find` when checking whether something landed.
+- Interrupting the binary takes three precautions. A background job of a
+  non-interactive shell inherits `SIG_IGN` for `SIGINT`, and Go keeps a signal
+  that was already ignored, so the disposition must be reset before exec (the
+  lab does it with a one-line `python3` wrapper). Backgrounding a shell
+  *function* makes `$!` the subshell rather than the process, so the function
+  must `exec`. And `setsid` forks when the caller is a process group leader,
+  which leaves `$!` naming the wrapper. Any of the three makes the signal reach
+  nothing and the run complete, which reads as "the tool ignored it".
 - Run `id` before writing a permission scenario. Root bypasses the permission
   checks, so under root those scenarios prove nothing and the test must drop
   privileges first. The environment is not always the same one: capability 4
@@ -217,21 +225,41 @@ Landed:
 - `UnlinkDir` skips git's own directory, which it now walks when a whole
   repository is removed.
 
+### Capability 6 - concurrency, scale and interruption (48 assertions)
+
+Two `gog add` and two `gog apply` processes against one repository, a
+3000-file tree through add, apply and repository removal, an `apply` and an
+`add` interrupted partway through, a killed run, a locked index, and a
+repository on a different filesystem from `$HOME`.
+
+Nothing needed changing. What the scenarios established:
+
+- gog takes no lock of its own, so git's index is the only arbiter. Concurrent
+  runs report `Unable to create index.lock` and may exit non-zero with paths
+  left unstaged, but the links are always correct and a rerun converges. The
+  per-path retry in `addToGit` rescues most contention on its own.
+- 3000 files: `add` 9s, `apply` 1s, `repository remove` 7s, with all 3000 paths
+  staged in one run. The 1000-path batching holds.
+- An interrupted `apply` exits 130 with the links it managed, and a rerun
+  completes the rest. An interrupted `add` leaves the files it copied, no links
+  and one untracked entry; a rerun copies, links and stages everything. A
+  killed run can leave git's `index.lock`, after which every staging command
+  fails until it is removed, which git's own message says to do.
+- A repository on a different filesystem from `$HOME` works throughout add,
+  apply, remove and repository removal: nothing is moved across devices, only
+  copied.
+
 ## What is left
-
-### Capability 6 - concurrency, scale and interruption
-
-Two `gog` processes against one repository; a very large tree; interrupting an
-`apply` partway through and rerunning it; a repository on a different
-filesystem from `$HOME`.
 
 ### Capability 7 - the pieces the lab has not reached
 
-- Permission-denied paths, run as an unprivileged user rather than root.
-- A repository whose git remote rejects a push, and what `gog git push`
-  reports.
+- Permission-denied paths across `add`, `apply` and `remove`, run as an
+  unprivileged user rather than root. Only one such path has been exercised so
+  far: a directory that cannot be written during repository removal.
 - Filesystems without symlink support, if that is in scope at all.
 - `gog` invoked with `$HOME` unset or pointing somewhere unwritable.
+
+A rejected push was covered by capability 4 and is no longer listed here.
 
 ## Open questions for the owner
 
@@ -240,13 +268,20 @@ Do not settle these alone. They have been raised and are still unanswered.
 1. **`gog remove` says nothing when the repository does not hold the path.** A
    path that was never added, or that belongs to another repository, exits 0
    with no output, which is indistinguishable from a successful removal.
-2. **`internal/repository/repository.go` still calls `log.Fatal` twice in
+2. **A batch `git add` that fails prints git's `fatal:` even when the run
+   succeeds.** `addToGit` retries the batch's paths individually, so contention
+   with another gog process is usually survived, but git's message from the
+   failed batch has already reached stderr and the run exits 0 looking as
+   though something went wrong. Capturing the batch's stderr and printing it
+   only when the retries also fail would fix it, at the cost of holding git's
+   output back.
+3. **`internal/repository/repository.go` still calls `log.Fatal` twice in
    `init()`** (home directory lookup, data directory creation), in the same
    timestamped format that was just corrected in `internal/link`. Left alone
    because the decision taken was scoped to the ignore regex.
-3. **Errors still surface raw syscall names** such as `lstat /path: no such
+4. **Errors still surface raw syscall names** such as `lstat /path: no such
    file or directory`. The owner chose to leave these; revisit only if asked.
-4. **A failed clone leaves an empty directory** in the data directory. It is
+5. **A failed clone leaves an empty directory** in the data directory. It is
    filtered out of `list` and the code deliberately allows reusing it on retry,
    so the owner declined to change it. Recorded so it is not rediscovered.
 
