@@ -72,7 +72,7 @@ var getDefault = &cobra.Command{
 	Aliases:               []string{"get-default"},
 	Short:                 "Print the name or path of the default repository",
 	Long:                  "Either the first repository or the one defined by $GOG_DEFAULT_REPOSITORY_NAME",
-	Args:                  cobra.NoArgs,
+	Args:                  noArgs,
 	DisableFlagsInUseLine: true,
 	RunE: func(c *cobra.Command, args []string) error {
 		repoPath, err := repository.GetDefault()
@@ -92,7 +92,7 @@ var getDefault = &cobra.Command{
 var list = &cobra.Command{
 	Use:                   "list [--path]",
 	Short:                 "Print the names or paths of all repositories",
-	Args:                  cobra.NoArgs,
+	Args:                  noArgs,
 	DisableFlagsInUseLine: true,
 	RunE: func(c *cobra.Command, args []string) error {
 		names, err := repository.List()
@@ -141,6 +141,15 @@ var remove = &cobra.Command{
 		fmt.Fprintf(os.Stderr, "Removed repository: %s\n", repoPath)
 		return nil
 	},
+}
+
+// noArgs refuses operands, reporting them as the wrong invocation they are
+// rather than as an unknown command.
+func noArgs(c *cobra.Command, args []string) error {
+	if len(args) > 0 {
+		return cli.Usagef("%s takes no arguments, but got %q", c.CommandPath(), args[0])
+	}
+	return nil
 }
 
 // requireArgs validates an operand count. Cobra's own message ("accepts between

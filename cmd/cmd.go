@@ -162,7 +162,7 @@ var add = &cobra.Command{
 var apply = &cobra.Command{
 	Use:                   "apply",
 	Short:                 "Link a repository's contents to the filesystem",
-	Args:                  cobra.NoArgs,
+	Args:                  noArgs,
 	DisableFlagsInUseLine: true,
 	RunE: func(c *cobra.Command, args []string) error {
 		repoPath, err := repoPath()
@@ -211,7 +211,7 @@ var list = &cobra.Command{
 	Long: "Print the paths that `gog apply` would link, as they appear outside the\n" +
 		"repository. The files a repository keeps for itself and whatever\n" +
 		"GOG_IGNORE_FILES_REGEX names are left out.",
-	Args:                  cobra.NoArgs,
+	Args:                  noArgs,
 	DisableFlagsInUseLine: true,
 	RunE: func(c *cobra.Command, args []string) error {
 		repoPath, err := repoPath()
@@ -313,8 +313,17 @@ func takeRepositoryFlag(args []string) ([]string, error) {
 // unknownCommand reports an argument that names no subcommand
 func unknownCommand(c *cobra.Command, args []string) error {
 	if len(args) > 0 {
-		return cli.Usagef("unknown command %q for %q. Run \"%s --help\" for usage",
-			args[0], c.CommandPath(), c.CommandPath())
+		return cli.Usagef("unknown command %q for %q", args[0], c.CommandPath())
+	}
+	return nil
+}
+
+// noArgs refuses operands. cobra.NoArgs reports them as an unknown command,
+// which misdescribes `gog apply /etc/hosts`: apply takes no operands at all,
+// rather than one that was misspelled, and a wrong invocation exits 2.
+func noArgs(c *cobra.Command, args []string) error {
+	if len(args) > 0 {
+		return cli.Usagef("%s takes no arguments, but got %q", c.CommandPath(), args[0])
 	}
 	return nil
 }
