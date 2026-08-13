@@ -12,9 +12,9 @@ import (
 // /home/alice. The trailing slash on base is trimmed so that the root
 // directory "/" matches its contents.
 //
-// An empty base contains nothing. Without this, it would read as a prefix of
-// every absolute path, and a directory that was never resolved would appear to
-// hold the whole filesystem.
+// An empty base contains nothing: read as a prefix, it would match every
+// absolute path, so a directory that was never resolved would appear to hold
+// the whole filesystem.
 func Within(base, p string) bool {
 	if base == "" {
 		return false

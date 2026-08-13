@@ -97,8 +97,7 @@ func TestDirIsIdempotent(t *testing.T) {
 }
 
 // The files a repository keeps for itself sit at its root, which is the
-// filesystem root outside it, so they are named here rather than linked in a
-// test
+// filesystem root outside it, so they are checked here rather than linked
 func TestSkipped(t *testing.T) {
 	repoPath, _ := newSandbox(t)
 	t.Setenv("GOG_IGNORE_FILES_REGEX", `\.swp$`)
@@ -198,8 +197,8 @@ func TestDirReportsAConflictAndCarriesOn(t *testing.T) {
 	assertLink(t, filepath.Join(homeDir, ".vimrc"), otherIntPath)
 }
 
-// The three cases where nothing of the user's is lost, so applying replaces
-// what is in the way without asking
+// The cases where nothing of the user's is lost, so applying replaces what is
+// in the way without asking
 func TestDirReplacesWhatHoldsNothingOfTheUsers(t *testing.T) {
 	tests := []struct {
 		name     string

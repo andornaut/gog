@@ -24,18 +24,21 @@ func TestRequireArgs(t *testing.T) {
 	}
 }
 
-// Naming a subcommand that does not exist is a wrong invocation, so the usage
-// that the root silences for running commands is restored
-func TestUnknownSubcommandRestoresUsage(t *testing.T) {
-	Cmd.SilenceUsage = true
-	t.Cleanup(func() { Cmd.SilenceUsage = false })
-
-	err := Cmd.RunE(Cmd, []string{"bogus"})
-
-	if err == nil || !strings.Contains(err.Error(), `unknown command "bogus"`) {
-		t.Errorf("RunE() = %v, want the command named", err)
-	}
-	if Cmd.SilenceUsage {
-		t.Error("usage is still silenced for a wrong invocation")
+// Naming a subcommand that does not exist is a wrong invocation, and so is
+// naming none. Both are reported by the argument validator, which runs before
+// usage is silenced, so the reader is shown the commands they could have named.
+func TestNeedsCommand(t *testing.T) {
+	for _, tt := range []struct {
+		args []string
+		want string
+	}{
+		// The command path is "repository" here and "gog repository" in the
+		// binary, where the root has adopted it.
+		{[]string{"bogus"}, `unknown command "bogus" for "repository"`},
+		{nil, "repository requires a command"},
+	} {
+		if err := Cmd.Args(Cmd, tt.args); err == nil || !strings.Contains(err.Error(), tt.want) {
+			t.Errorf("Args(%q) = %v, want %q", tt.args, err, tt.want)
+		}
 	}
 }

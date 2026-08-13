@@ -173,9 +173,9 @@ func TestDirCreatesNoDirectoryWithNothingToHold(t *testing.T) {
 	assertAbsent(t, emptyDst)
 }
 
-// A named pipe, socket or device node is skipped rather than opened, which is
-// what lets a directory such as ~/.gnupg be copied while the sockets in it are
-// left alone. Opening one blocks until a writer appears, or fails outright.
+// A named pipe, socket or device node is skipped rather than opened, which
+// lets a directory such as ~/.gnupg be copied while the sockets in it are left
+// alone
 func TestDirSkipsAnIrregularFile(t *testing.T) {
 	root := t.TempDir()
 	src := filepath.Join(root, "src")
@@ -205,7 +205,7 @@ func TestDirSkipsAnIrregularFile(t *testing.T) {
 
 // A symbolic link is skipped rather than followed: copying its target would
 // store the contents while discarding the link, and because none is followed
-// the walk cannot enter a cycle or reach outside the tree
+// the walk cannot meet a cycle or a path outside the tree
 func TestDirSkipsSymbolicLinks(t *testing.T) {
 	tests := []struct {
 		name string

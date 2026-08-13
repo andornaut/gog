@@ -107,28 +107,23 @@ Run `gog help <command>` for full usage.
 | Path another repository manages | Refused unless `--force` | Skipped, with a warning |
 | Named pipe, socket, device node | Refused | Skipped, with a warning |
 
-- A symbolic link that gog created is followed rather than refused, so a path
-  the repository already holds can be added again.
-- A path that a **different** repository manages is refused, because taking it
-  over leaves that repository holding a copy nothing points at. `--force` takes
-  it over anyway:
+- A symbolic link that gog created is followed, so a path the repository already
+  holds can be added again.
+- A path that another repository manages is refused, because taking it over
+  leaves that repository holding a copy nothing points at. Inside an added
+  directory it is skipped instead, so that one managed file does not fail the
+  whole directory. `--force` acts on the path you name, not on what a directory
+  holds.
 
   ```text
   Error: "/home/example/.bashrc" is managed by repository work (remove it from there first, or pass --force to take it over)
-  ```
-
-  Inside an added directory the same path is skipped rather than refused, so
-  that one managed file does not fail the whole directory. `--force` does not
-  reach it: name it to take it over.
-
-  ```text
   Warning: skipping /home/example/.config/foorc (repository work already manages it; remove it from there first)
   ```
 
-- A path inside a repository is refused, and named by the path it is linked
-  from, which is the one `gog add` and `gog remove` mean.
-- Skipping the irregular entries is what lets a directory such as `~/.gnupg`
-  be added while the agent sockets in it are left alone.
+- A path inside a repository is refused, naming the path it is linked from,
+  which is the one `gog add` and `gog remove` mean.
+- Skipping the irregular entries lets a directory such as `~/.gnupg` be added
+  while the agent sockets in it are left alone.
 - A file with more than one name is copied once per name. Git records contents
   per path, so a hard link is not preserved.
 - Every path is checked before any is copied, so one unusable argument fails
@@ -246,7 +241,10 @@ So `gog list | xargs` and `gog apply > log` each carry one kind of thing.
 | --- | --- |
 | 0 | It worked |
 | 1 | It failed |
-| 2 | It was typed wrong: an unknown command or flag, or a missing or extra operand |
+| 2 | It was typed wrong: no command, an unknown command or flag, or a missing or extra operand |
+
+A wrong invocation prints the usage that would have been right; a command that
+ran and failed does not. `gog --help` writes help to stdout and reports success.
 
 `gog git` exits with git's status instead.
 

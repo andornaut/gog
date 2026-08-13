@@ -123,7 +123,7 @@ func TestAddPathsChecksEveryPathBeforeCopyingAny(t *testing.T) {
 
 	err := AddPaths(repoPath, false, []string{good, missing})
 
-	if err == nil || !strings.Contains(err.Error(), "path does not exist") {
+	if err == nil || !strings.Contains(err.Error(), "does not exist") {
 		t.Fatalf("AddPaths() = %v, want a failure naming the missing path", err)
 	}
 	if _, statErr := os.Stat(filepath.Join(repoPath, "$HOME", ".bashrc")); !os.IsNotExist(statErr) {
@@ -166,7 +166,7 @@ func TestAddPathsRefusals(t *testing.T) {
 			prepare: func(t *testing.T, homeDir string) string {
 				return filepath.Join(homeDir, ".gone")
 			},
-			want: "path does not exist",
+			want: "does not exist",
 		},
 		{
 			name: "a path inside a repository",
@@ -198,7 +198,7 @@ func TestAddPathsRefusals(t *testing.T) {
 }
 
 // Following another repository's link would move the path between
-// repositories, so it is refused until the reader says to take it over
+// repositories, so it is refused unless --force says to take it over
 func TestAddPathsRefusesAPathAnotherRepositoryManages(t *testing.T) {
 	repoPath, homeDir := newSandbox(t)
 	managed := writeFile(t, filepath.Join(BaseDir, "other", "$HOME", ".bashrc"), "theirs\n")
@@ -214,7 +214,7 @@ func TestAddPathsRefusesAPathAnotherRepositoryManages(t *testing.T) {
 		t.Error("the repository took the path although it refused")
 	}
 
-	// --force takes it over, which is what the failure said it would do
+	// --force takes it over, as the failure said it would
 	if err = AddPaths(repoPath, true, []string{target}); err != nil {
 		t.Fatalf("AddPaths(force) = %v", err)
 	}
@@ -224,8 +224,7 @@ func TestAddPathsRefusesAPathAnotherRepositoryManages(t *testing.T) {
 	}
 }
 
-// A path this repository already holds is not another repository's, so adding
-// it again goes on working
+// A path this repository already holds may be added again
 func TestAddPathsFollowsItsOwnLink(t *testing.T) {
 	repoPath, homeDir := newSandbox(t)
 	held := writeFile(t, filepath.Join(repoPath, "$HOME", ".bashrc"), "bashrc\n")
@@ -242,7 +241,7 @@ func TestAddPathsFollowsItsOwnLink(t *testing.T) {
 }
 
 // A path inside the data directory is refused by the repository that holds it,
-// and by the path it is linked from, which is the one the command meant
+// and by the path it is linked from
 func TestOwnPathError(t *testing.T) {
 	repoPath, homeDir := newSandbox(t)
 	linked := writeFile(t, filepath.Join(repoPath, "$HOME", ".bashrc"), "bashrc\n")
@@ -287,8 +286,7 @@ func TestOwnPathError(t *testing.T) {
 }
 
 // What a copy leaves behind is named with what to do about it. A link into
-// gog's data directory is a path some repository already manages, and naming
-// that repository says more than the path inside it does.
+// gog's data directory names the repository that manages it.
 func TestReportSkipped(t *testing.T) {
 	repoPath, homeDir := newSandbox(t)
 	managed := writeFile(t, filepath.Join(BaseDir, "other", "$HOME", ".bashrc"), "bashrc\n")
@@ -349,7 +347,7 @@ func TestReportSkipped(t *testing.T) {
 }
 
 // Adding a directory again meets the links the first add left behind, which
-// this repository put there and has nothing to say about
+// this repository put there
 func TestAddPathsIsQuietWhenItMeetsItsOwnLinks(t *testing.T) {
 	repoPath, homeDir := newSandbox(t)
 	conf := filepath.Join(homeDir, ".conf")
@@ -426,8 +424,8 @@ func TestRemovePathsUntracksAndLeavesNothingBehind(t *testing.T) {
 	}
 }
 
-// Removing a path a repository never held is reported rather than passed over,
-// because it looks exactly like one it just gave back
+// Removing a path a repository never held is reported rather than passed over:
+// it looks the same as one that was just given back
 func TestRemovePathsReportsAPathItNeverHeld(t *testing.T) {
 	repoPath, homeDir := newSandbox(t)
 	target := filepath.Join(homeDir, ".never")
@@ -542,8 +540,8 @@ func TestDescribePathError(t *testing.T) {
 		err  error
 		want string
 	}{
-		{name: "missing", err: &fs.PathError{Op: "lstat", Path: "/x", Err: fs.ErrNotExist}, want: "path does not exist: /given"},
-		{name: "unreadable", err: &fs.PathError{Op: "open", Path: "/x", Err: fs.ErrPermission}, want: "cannot read /given: permission denied"},
+		{name: "missing", err: &fs.PathError{Op: "lstat", Path: "/x", Err: fs.ErrNotExist}, want: `path "/given" does not exist`},
+		{name: "unreadable", err: &fs.PathError{Op: "open", Path: "/x", Err: fs.ErrPermission}, want: `cannot read "/given": permission denied`},
 		{name: "anything else is passed through", err: other, want: other.Error()},
 	}
 	for _, tt := range tests {

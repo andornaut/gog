@@ -33,11 +33,9 @@ var gitPathspecSubcommands = map[string]bool{
 //
 // Only the arguments git is certain to read as pathspecs are converted: those
 // after a standalone `--`, and the operands of the subcommands listed above.
-// Every other argument is passed through, because a name that happens to
-// resolve to a managed path is usually not a path at all: `commit -m .bashrc`
-// records the message `$HOME/.bashrc`, `branch wip` creates a branch named
-// after the file, and the subcommand itself is rewritten into something git
-// does not recognize.
+// Every other argument is passed through, because a name that resolves to a
+// managed path is usually not a path: `commit -m .bashrc` would record the
+// message `$HOME/.bashrc`.
 func resolveGitPaths(repoPath string, args []string) []string {
 	resolved := make([]string, len(args))
 	copy(resolved, args)
@@ -52,8 +50,7 @@ func resolveGitPaths(repoPath string, args []string) []string {
 	}
 
 	// The subcommand is the first argument only when no global flag precedes
-	// it. Otherwise it is not identified at all and nothing before `--` is
-	// converted, which errs towards passing arguments through unchanged.
+	// it. Otherwise it is not identified, and nothing before `--` is converted.
 	takesPathspecs := len(args) > 0 && gitPathspecSubcommands[args[0]]
 	afterSeparator := false
 	for i, arg := range args {
@@ -90,10 +87,10 @@ func resolveGitPath(repoPath, arg string) string {
 	return rel
 }
 
-// exitCodeError carries a git command's exit status so that `gog git` can exit
-// with the status git itself returned, rather than collapsing every failure to
-// 1. git has already reported the failure on its own stderr, so this message
-// is never printed.
+// exitCodeError carries a git command's exit status, so that `gog git` exits
+// with the status git returned rather than collapsing every failure to 1. git
+// has already reported the failure on its own stderr, so this message is never
+// printed.
 type exitCodeError struct {
 	code int
 }
@@ -267,18 +264,19 @@ var Cmd = &cobra.Command{
 	Use:   "gog",
 	Short: "Link files to Git repositories",
 	// Runs once the arguments have been accepted and before any command does
-	// its work, which is both where gog's environment has to be resolved and
-	// where a failure stops being a wrong invocation worth printing usage for
+	// its work: where gog's environment is resolved, and where a failure stops
+	// being a wrong invocation worth printing usage for
 	PersistentPreRunE: func(c *cobra.Command, args []string) error {
 		c.SilenceUsage = true
 		return repository.Configure()
 	},
 	// A command with nothing to run never has its arguments validated: cobra
-	// prints help and reports success, so a mistyped command does nothing and
-	// says nothing. Validating here is what makes an unknown command a failure,
-	// and replacing cobra's own check is what makes it exit 2.
-	Args: unknownCommand,
-	RunE: func(c *cobra.Command, args []string) error { return c.Help() },
+	// prints help and reports success. Validating here makes an unknown command
+	// a failure, and replacing cobra's own check makes it exit 2.
+	Args: cli.NeedsCommand,
+	// Never reached, since the arguments never validate, but a command cobra
+	// does not consider runnable has its arguments ignored altogether.
+	RunE: func(c *cobra.Command, args []string) error { return nil },
 }
 
 // takeRepositoryFlag consumes a leading -r/--repository option and returns the
@@ -308,14 +306,6 @@ func takeRepositoryFlag(args []string) ([]string, error) {
 		return args[1:], nil
 	}
 	return args, nil
-}
-
-// unknownCommand reports an argument that names no subcommand
-func unknownCommand(c *cobra.Command, args []string) error {
-	if len(args) > 0 {
-		return cli.Usagef("unknown command %q for %q", args[0], c.CommandPath())
-	}
-	return nil
 }
 
 // noArgs refuses operands. cobra.NoArgs reports them as an unknown command,
@@ -363,8 +353,8 @@ func init() {
 	if err := git_.Flags().MarkHidden("help"); err != nil {
 		panic(err)
 	}
-	// The generated completion command is noise in the listing of a program
-	// with this few commands, and still works when it is not listed
+	// The generated completion command still works when it is not listed, and
+	// gog has too few commands to spend a line on it
 	Cmd.CompletionOptions.HiddenDefaultCmd = true
 	Cmd.AddCommand(add, apply, git_, list, remove, repositorycmd.Cmd)
 }

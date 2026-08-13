@@ -29,9 +29,9 @@ func Add(repoName, repoURL string) (string, error) {
 		// Distinguish an already-configured repository from an unrelated
 		// directory so the user is not told to remove real data
 		if git.Is(repoPath) {
-			return "", fmt.Errorf("repository already exists: %s", repoPath)
+			return "", fmt.Errorf("a repository named %q already exists", filepath.Base(repoPath))
 		}
-		return "", fmt.Errorf("path already exists and is not a gog repository: %s (remove it or choose another name)", repoPath)
+		return "", fmt.Errorf("%q already exists and is not a gog repository (remove it or choose another name)", repoPath)
 	case err != nil && !os.IsNotExist(err):
 		return "", fmt.Errorf("invalid repository path %s: %w", repoPath, err)
 	}
@@ -64,9 +64,8 @@ func initRepo(repoPath, repoURL string) error {
 }
 
 // gitFailure names the step of gog's that failed. A wait status is left out:
-// git ran, and has already explained itself on its own stderr, so restating the
-// status would only add noise above it. Any other failure means git never ran,
-// and nothing but this error says why.
+// git ran and has already explained itself on its own stderr. Any other failure
+// means git never ran, and nothing but this error says why.
 func gitFailure(err error, step string) error {
 	var exitErr *exec.ExitError
 	switch {
@@ -102,10 +101,8 @@ func Remove(repoPath string) error {
 
 // UnsavedWork describes what deleting the given repository would destroy:
 // commits that no remote holds, and changes that were never committed. Both
-// exist only in the repository's own directory, which makes its deletion the
-// one thing gog does that cloning again cannot undo. A repository with no
-// remote at all reports its whole history, because that is exactly what is
-// held nowhere else.
+// exist only in the repository's own directory. A repository with no remote at
+// all reports its whole history.
 func UnsavedWork(repoPath string) ([]string, error) {
 	unpushed, err := git.Output(repoPath, "log", "--oneline", "--branches", "--not", "--remotes")
 	if err != nil {
@@ -162,8 +159,8 @@ func AddPaths(repoPath string, force bool, targetPaths []string) error {
 // another machine. Git records only the executable bit, so a path that
 // withholds access from group or other is recreated with that access granted:
 // a 0600 file becomes 0644 and a 0700 directory becomes 0755. Someone tracking
-// ~/.ssh or ~/.netrc would otherwise find their secrets world-readable on the
-// next machine, with nothing having reported it.
+// ~/.ssh or ~/.netrc would otherwise find it world-readable on the next
+// machine, with nothing having reported it.
 func warnUnrecordableModes(repoPath string, targetPaths []string) {
 	for _, targetPath := range targetPaths {
 		intPath := ToInternalPath(repoPath, targetPath)
@@ -188,11 +185,7 @@ func warnUnrecordableModes(repoPath string, targetPaths []string) {
 // reportSkipped returns what a copy into repoPath says about an entry it left
 // behind. A symbolic link is never followed: copying its target would store the
 // contents while discarding the link itself. One that resolves into gog's data
-// directory is a path some repository already manages, and naming that
-// repository says more than the path inside it does.
-// asTyped names an entry the way the user named the directory it came from.
-// The copy walks the resolved path, so an entry inside it would otherwise be
-// reported through the symbolic links the walk took to reach it.
+// directory names the repository that manages it.
 func reportSkipped(repoPath, resolvedRoot, typedRoot string) copy.ReportFunc {
 	return func(p string, mode os.FileMode) {
 		p = asTyped(p, resolvedRoot, typedRoot)
@@ -201,10 +194,8 @@ func reportSkipped(repoPath, resolvedRoot, typedRoot string) copy.ReportFunc {
 			return
 		}
 		if resolved, err := filepath.EvalSymlinks(p); err == nil && WithinBaseDir(resolved) {
-			// This repository's own link is what a path it holds looks like
-			// from outside, so meeting one is only what adding a directory a
-			// second time does, and telling the reader to remove it from here
-			// would undo what they added
+			// This repository's own link, so the path is already added.
+			// Advising its removal from here would undo that.
 			if paths.Within(paths.Resolve(repoPath), resolved) {
 				return
 			}
@@ -220,7 +211,10 @@ func reportSkipped(repoPath, resolvedRoot, typedRoot string) copy.ReportFunc {
 	}
 }
 
-// asTyped rewrites a path under resolvedRoot to sit under typedRoot instead.
+// asTyped rewrites a path under resolvedRoot to sit under typedRoot instead, so
+// that an entry is named the way the directory it came from was named. The copy
+// walks the resolved path, which spells an entry through whatever symbolic
+// links the walk took to reach it.
 func asTyped(p, resolvedRoot, typedRoot string) string {
 	if resolvedRoot == typedRoot {
 		return p
@@ -233,9 +227,9 @@ func asTyped(p, resolvedRoot, typedRoot string) string {
 }
 
 // repoNameOf names the repository that holds p, which must be a path within the
-// data directory. Both sides are resolved through their symbolic links, because
-// one caller has already resolved p and the other has not, and a resolved path
-// measured against an unresolved data directory names no repository at all.
+// data directory. Both sides are resolved through their symbolic links: a
+// resolved path measured against an unresolved data directory names no
+// repository at all.
 func repoNameOf(p string) string {
 	rel, err := filepath.Rel(paths.Resolve(BaseDir), paths.Resolve(p))
 	if err != nil {
@@ -292,13 +286,12 @@ func resolveAddPath(repoPath string, force bool, targetPath string) (string, err
 		return "", err
 	}
 	extPath, err := filepath.EvalSymlinks(targetPath)
-	// A symbolic link that resolves into gog's own data directory is
-	// bookkeeping: the path is already linked, so it is followed rather than
-	// refused as a link. A link to anywhere else belongs to the user, and
-	// copying its target would store the contents while discarding the link
-	// itself, so the target is named and the link is left alone. This is
-	// decided before the resolution error is reported, so that a broken link
-	// is named as a link rather than as its missing target.
+	// A link that resolves into gog's data directory is one gog made, so the
+	// path is already managed and the link is followed. A link to anywhere else
+	// belongs to the user, and copying its target would store the contents
+	// while discarding the link itself, so the target is named instead. This is
+	// decided before the resolution error is reported, so that a broken link is
+	// named as a link rather than as its missing target.
 	if paths.IsSymlink(targetPath) && (err != nil || !WithinBaseDir(extPath)) {
 		target, readErr := os.Readlink(targetPath)
 		if readErr != nil {
@@ -310,10 +303,8 @@ func resolveAddPath(repoPath string, force bool, targetPath string) (string, err
 		return "", describePathError(targetPath, err)
 	}
 	// Following another repository's link would move the path between
-	// repositories: this one takes the link, and the other is left holding a
-	// copy that nothing points at, which its own `list --status` then offers to
-	// put back. Adding a path this repository already holds is not that, and
-	// goes on working.
+	// repositories, leaving the other holding a copy that nothing points at.
+	// A path this repository already holds may be added again.
 	if !force && paths.IsSymlink(targetPath) && !paths.Within(paths.Resolve(repoPath), extPath) {
 		return "", fmt.Errorf("%q is managed by repository %s (remove it from there first, or pass --force to take it over)",
 			targetPath, repoNameOf(extPath))
@@ -337,9 +328,9 @@ func resolveAddPath(repoPath string, force bool, targetPath string) (string, err
 func describePathError(targetPath string, err error) error {
 	switch {
 	case os.IsNotExist(err):
-		return fmt.Errorf("path does not exist: %s", targetPath)
+		return fmt.Errorf("path %q does not exist", targetPath)
 	case os.IsPermission(err):
-		return fmt.Errorf("cannot read %s: permission denied", targetPath)
+		return fmt.Errorf("cannot read %q: permission denied", targetPath)
 	}
 	return err
 }
@@ -358,10 +349,9 @@ func addTargetPath(repoPath string, force bool, targetPath string) error {
 	}
 
 	intPath := ToInternalPath(repoPath, targetPath)
-	// Compared with its symbolic links resolved, as extPath already is. A data
-	// directory reached through a symlinked parent made the two spellings
-	// differ, so adding a path the repository already held copied the file
-	// over itself and left it empty.
+	// Compared with its symbolic links resolved, as extPath already is: a data
+	// directory reached through a symlinked parent spells the same path two
+	// ways, and copying a file over itself empties it.
 	if extPath == paths.Resolve(intPath) {
 		// Already added
 		return nil
@@ -391,11 +381,10 @@ func addTargetPath(repoPath string, force bool, targetPath string) error {
 }
 
 // undoCopy discards what a failed copy left in the repository, so that a tree
-// that fails part-way through - on a file that cannot be read, say - does not
-// leave files behind that were never linked or staged. Only a path the
-// repository did not already hold can be discarded: removing one it held would
-// throw away whatever the copy had overwritten, which nothing has a record of,
-// so that case is reported instead.
+// that fails part-way through does not leave files behind that were never
+// linked or staged. Only a path the repository did not already hold can be
+// discarded: removing one it held would throw away whatever the copy had
+// overwritten, so that case is reported instead.
 func undoCopy(repoPath, intPath string, held bool, cause error) error {
 	if held {
 		return fmt.Errorf("%w (%s still holds a partial copy of %s; rerun to complete it)",
@@ -421,11 +410,11 @@ func removePath(repoPath, targetPath string) error {
 		}
 		return err
 	}
-	// Untracking is not conditional on the external file having been restored.
-	// It once lived alongside that restoration, so removing a path whose link
-	// the user had already replaced or deleted left the copy in the index, and
-	// the file came back on the next machine that applied the repository.
-	// --ignore-unmatch covers a path that was never staged.
+	// Untracking is not conditional on the external file having been restored:
+	// a path whose link the user had already replaced or deleted would keep its
+	// copy in the index, and the file would come back on the next machine that
+	// applied the repository. --ignore-unmatch covers a path that was never
+	// staged.
 	if err := git.Run(repoPath, "rm", "-q", "-f", "-r", "--ignore-unmatch", intPath); err != nil {
 		return err
 	}

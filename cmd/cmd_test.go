@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -218,31 +217,26 @@ func TestRequirePaths(t *testing.T) {
 }
 
 // A command with nothing to run never has its arguments validated: cobra prints
-// help and reports success, so a mistyped command is reported here instead
-func TestUnknownCommand(t *testing.T) {
-	err := unknownCommand(Cmd, []string{"bogus"})
+// help and reports success, so both a mistyped command and no command at all are
+// reported by the validator instead
+func TestNeedsCommand(t *testing.T) {
+	for _, tt := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"bogus"}, `unknown command "bogus" for "gog"`},
+		{nil, "gog requires a command"},
+	} {
+		err := Cmd.Args(Cmd, tt.args)
 
-	if err == nil || !strings.Contains(err.Error(), `unknown command "bogus" for "gog"`) {
-		t.Errorf("unknownCommand() = %v, want the command named", err)
-	}
-	// A wrong invocation exits 2, so that a script can tell it from a command
-	// that ran and failed.
-	if got := ExitCode(err); got != exitUsage {
-		t.Errorf("ExitCode() = %d, want %d", got, exitUsage)
-	}
-	if err := unknownCommand(Cmd, nil); err != nil {
-		t.Errorf("unknownCommand() with no arguments = %v, want success", err)
-	}
-
-	var out bytes.Buffer
-	Cmd.SetOut(&out)
-	t.Cleanup(func() { Cmd.SetOut(nil) })
-
-	if err := Cmd.RunE(Cmd, nil); err != nil {
-		t.Fatalf("RunE() with no arguments = %v, want help", err)
-	}
-	if !strings.Contains(out.String(), "Available Commands:") {
-		t.Errorf("RunE() printed %q, want help", out.String())
+		if err == nil || !strings.Contains(err.Error(), tt.want) {
+			t.Errorf("Args(%q) = %v, want %q", tt.args, err, tt.want)
+		}
+		// A wrong invocation exits 2, so that a script can tell it from a
+		// command that ran and failed.
+		if got := ExitCode(err); got != exitUsage {
+			t.Errorf("ExitCode() = %d, want %d", got, exitUsage)
+		}
 	}
 }
 

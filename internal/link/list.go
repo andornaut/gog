@@ -20,8 +20,7 @@ const (
 	StateMissing State = "missing"
 	// StateReplace is a path holding something that applying discards before
 	// linking, because nothing of the user's is lost: a broken link, a link
-	// into gog's data directory left by an earlier run or by another repository
-	// that tracks the same path, or a copy of what the repository already holds
+	// into gog's data directory, or a copy of what the repository holds
 	StateReplace State = "replace"
 	// StateConflict is a path holding something of the user's. Applying would
 	// report the path and leave it alone.
@@ -69,8 +68,7 @@ func List(repoPath string) ([]Entry, error) {
 }
 
 // state reports what applying would do to extPath, by the same tests linkFile
-// makes: a link is measured against the repository's own copy, and anything
-// else in the way is measured against what the user would lose.
+// makes
 func state(intPath, extPath string) State {
 	if _, err := os.Lstat(extPath); err != nil {
 		if os.IsNotExist(err) {

@@ -34,10 +34,8 @@ import (
 	"github.com/andornaut/gog/internal/paths"
 )
 
-// File copies the contents of the file named by src to the file named
-// by dst. The file will be created if it does not already exist. If the
-// destination file exists, all its contents will be replaced by the contents
-// of the source file.
+// File copies the contents and mode of src to dst, creating dst or replacing
+// what it holds.
 func File(src, dst string) (err error) {
 	in, err := os.Open(src)
 	if err != nil {
@@ -81,26 +79,24 @@ func File(src, dst string) (err error) {
 	return
 }
 
-// SkipFunc is a callback that is used to determine whether or not to skip
-// processing a directory entry
+// SkipFunc reports whether a directory entry should be passed over
 type SkipFunc func(string, string) bool
 
-// ReportFunc is told about an entry that the copy left behind, and is called
-// for a symbolic link and for an irregular file. What such an entry means to
-// the caller is the caller's to say, so nothing is printed here.
+// ReportFunc is told about an entry that the copy left behind: a symbolic link
+// or an irregular file. The caller decides what to say about it, so nothing is
+// printed here.
 type ReportFunc func(p string, mode os.FileMode)
 
 // Dir recursively copies a directory tree. The source directory must exist.
 //
 // A symbolic link within the tree is reported and skipped rather than
-// followed. Copying a link's target would store the contents while discarding
-// the link itself, and a broken link has no contents to store at all. Because
-// no link is followed, the tree cannot contain a cycle or reach outside
-// itself.
+// followed: copying a link's target would store the contents while discarding
+// the link itself, and a broken link has no contents at all. Because no link is
+// followed, the walk cannot meet a cycle or a path outside the tree.
 //
-// A destination directory is created only once there is something to put in
-// it, so a source directory that is empty - or that holds nothing but skipped
-// entries - leaves no trace at the destination.
+// A destination directory is created only once there is something to put in it,
+// so a source that is empty, or that holds nothing but skipped entries, leaves
+// no trace at the destination.
 func Dir(src string, dst string, skipFunc SkipFunc, report ReportFunc) error {
 	// dst may not exist yet, so only its existing prefix can be resolved
 	return copyDir(src, dst, paths.Resolve(dst), skipFunc, report, func() error {
@@ -108,11 +104,11 @@ func Dir(src string, dst string, skipFunc SkipFunc, report ReportFunc) error {
 	})
 }
 
-// copyDir copies a single level of the tree. `dstRoot` is the resolved
-// top-level destination, retained in order to reject a source that lives
-// inside the tree being written. `ensureParent` creates this directory's
-// parent and is only called once there is something to copy, so that a
-// directory with nothing to hold is never created.
+// copyDir copies a single level of the tree. dstRoot is the resolved top-level
+// destination, kept in order to reject a source inside the tree being written.
+// ensureParent creates this directory's parent, and is called only once there
+// is something to copy, so that a directory with nothing to hold is never
+// created.
 func copyDir(src, dst, dstRoot string, skipFunc SkipFunc, report ReportFunc, ensureParent func() error) error {
 	src = filepath.Clean(src)
 	dst = filepath.Clean(dst)
@@ -123,7 +119,7 @@ func copyDir(src, dst, dstRoot string, skipFunc SkipFunc, report ReportFunc, ens
 	}
 	// A source inside the destination would be re-copied into itself
 	if paths.Within(dstRoot, resolvedSrc) {
-		return fmt.Errorf("copy: source %s resolves inside the destination %s", src, dstRoot)
+		return fmt.Errorf("copy: source %q resolves inside the destination %q", src, dstRoot)
 	}
 
 	si, err := os.Stat(src)
@@ -131,7 +127,7 @@ func copyDir(src, dst, dstRoot string, skipFunc SkipFunc, report ReportFunc, ens
 		return err
 	}
 	if !si.IsDir() {
-		return fmt.Errorf("copy: src must be a directory %s", src)
+		return fmt.Errorf("copy: src %q must be a directory", src)
 	}
 
 	// The entries are listed before anything is written, so a destination
@@ -175,13 +171,11 @@ func copyDir(src, dst, dstRoot string, skipFunc SkipFunc, report ReportFunc, ens
 			}
 			continue
 		}
-		// A symbolic link, named pipe, socket or device node is not something a
-		// copy can carry: git stores neither the kind nor, for the irregular
-		// ones, the contents, and opening one to read it blocks until a writer
-		// appears or reads without end. A link is caught here rather than by its
-		// own test because lstat reports it as neither a directory nor a regular
-		// file, which is also why no link is followed and the walk can meet
-		// neither a cycle nor a path outside the tree.
+		// A symbolic link, named pipe, socket or device node is left behind:
+		// git stores neither its kind nor, for the irregular ones, its
+		// contents, and opening one blocks until a writer appears or reads
+		// without end. lstat reports a link as neither a directory nor a
+		// regular file, so it is caught here, and no link is followed.
 		if !entryInfo.Mode().IsRegular() {
 			report(srcPath, entryInfo.Mode())
 			continue

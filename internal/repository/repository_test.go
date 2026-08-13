@@ -17,8 +17,8 @@ func newBaseDir(t *testing.T) string {
 	return BaseDir
 }
 
-// A repository is named rather than addressed, so a name that is a path reaches
-// nothing outside the data directory
+// A repository is named rather than addressed, so a name that is a path is
+// refused
 func TestValidateRepoName(t *testing.T) {
 	tests := []struct {
 		name string
@@ -58,8 +58,10 @@ func TestRootPathRefusesAnAmbiguousPrefix(t *testing.T) {
 
 	_, err := RootPath("myrepo")
 
-	if err == nil || !strings.Contains(err.Error(), "ambiguous") {
-		t.Errorf("RootPath(\"myrepo\") = %v, want a failure naming the ambiguity", err)
+	// The candidates are named, so that the whole name to use is in front of
+	// the reader rather than left to `gog repository list`.
+	if err == nil || !strings.Contains(err.Error(), "myrepo-v1, myrepo-v2") {
+		t.Errorf("RootPath(\"myrepo\") = %v, want a failure naming the candidates", err)
 	}
 	if got, err := RootPath("myrepo-v1"); err != nil || got != filepath.Join(base, "myrepo-v1") {
 		t.Errorf("RootPath(\"myrepo-v1\") = %q (%v), want the repository it names", got, err)

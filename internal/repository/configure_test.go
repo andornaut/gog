@@ -76,8 +76,8 @@ func TestConfigureNormalizesTheHomeDirectory(t *testing.T) {
 }
 
 // A home directory that cannot be used is a misconfigured environment rather
-// than a new one: without this, gog creates its data directory under whatever
-// $HOME happens to name and reports success
+// than a new one: gog would otherwise create its data directory under whatever
+// $HOME names and report success
 func TestConfigureRefusesAnUnusableHomeDirectory(t *testing.T) {
 	root := t.TempDir()
 	file := filepath.Join(root, "file")
@@ -90,7 +90,7 @@ func TestConfigureRefusesAnUnusableHomeDirectory(t *testing.T) {
 		home string
 		want string
 	}{
-		{name: "one that does not exist", home: filepath.Join(root, "gone"), want: "home directory does not exist"},
+		{name: "one that does not exist", home: filepath.Join(root, "gone"), want: "home directory"},
 		{name: "one that is a file", home: file, want: "home directory is not a directory"},
 	}
 	for _, tt := range tests {

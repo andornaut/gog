@@ -19,15 +19,8 @@ var Cmd = &cobra.Command{
 	Short: "Manage repositories",
 	// A command with nothing to run never has its arguments validated, so an
 	// unknown subcommand would otherwise print help and report success
-	RunE: func(c *cobra.Command, args []string) error {
-		if len(args) > 0 {
-			// Naming a command that does not exist is a wrong invocation, so
-			// the usage that the root silenced for running commands is restored
-			c.SilenceUsage = false
-			return cli.Usagef("unknown command %q for %q", args[0], c.CommandPath())
-		}
-		return c.Help()
-	},
+	Args: cli.NeedsCommand,
+	RunE: func(c *cobra.Command, args []string) error { return nil },
 }
 
 var (
@@ -67,8 +60,7 @@ var add = &cobra.Command{
 
 var getDefault = &cobra.Command{
 	Use: "default [--path]",
-	// The former name, kept so that it goes on working where it is already
-	// written down
+	// The former name, kept so that it still works where it is written down
 	Aliases:               []string{"get-default"},
 	Short:                 "Print the name or path of the default repository",
 	Long:                  "Either the first repository or the one defined by $GOG_DEFAULT_REPOSITORY_NAME",

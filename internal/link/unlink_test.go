@@ -29,9 +29,7 @@ func TestUnlinkFileRestoresWhatTheLinkPointedAt(t *testing.T) {
 	}
 }
 
-// `gog remove` means the same thing whether gog's link is still there, was
-// replaced with a file of the user's, or was deleted, so anything that is not
-// this repository's link is left exactly as it is
+// Anything that is not this repository's link is left exactly as it is
 func TestUnlinkFileLeavesAloneWhatIsNotItsLink(t *testing.T) {
 	tests := []struct {
 		name string
@@ -124,8 +122,8 @@ func TestUnlinkDirRestoresEveryFileInTheTree(t *testing.T) {
 	}
 }
 
-// Unlink is given paths as they are named outside the repository, and hands
-// each to UnlinkDir or UnlinkFile by what the repository holds at it
+// Unlink takes paths as they are named outside the repository, and hands each
+// to UnlinkDir or UnlinkFile by what the repository holds at it
 func TestUnlinkDispatchesOnWhatTheRepositoryHolds(t *testing.T) {
 	repoPath, homeDir := newSandbox(t)
 	for _, rel := range []string{".bashrc", ".config/conf"} {

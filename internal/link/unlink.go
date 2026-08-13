@@ -32,17 +32,17 @@ func UnlinkDir(repoPath, intPath string) error {
 	})
 }
 
-// UnlinkFile replaces a symbolic link with the file that it linked to. It
-// reports success when there is no link to replace, because the caller removes
-// the repository's copy either way: whether the user still has gog's link, has
-// replaced it with a file of their own, or has deleted it, `gog remove` means
-// the same thing.
+// UnlinkFile replaces a symbolic link with the file that it linked to, and
+// reports success when there is no link of gog's to replace: `gog remove` means
+// the same thing whether its link is still there, was replaced with a file of
+// the user's, or was deleted, and the caller removes the repository's copy
+// either way.
 func UnlinkFile(repoPath, intPath string) error {
 	extPath := repository.ToExternalPath(repoPath, intPath)
 
 	extFileInfo, err := os.Stat(extPath)
 	if err != nil {
-		// Either `extFile` doesn't exist or there is permission error; in either case it should be skipped
+		// extPath cannot be examined, so there is no link of gog's to replace
 		return nil
 	}
 	intFileInfo, err := os.Stat(intPath)
@@ -50,7 +50,7 @@ func UnlinkFile(repoPath, intPath string) error {
 		return err
 	}
 	if !os.SameFile(extFileInfo, intFileInfo) {
-		// Only update `extPath` if it is a symbolic link to `intPath`
+		// Not this repository's link, so it is left alone
 		return nil
 	}
 

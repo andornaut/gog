@@ -15,19 +15,17 @@ import (
 	"github.com/andornaut/gog/internal/repository"
 )
 
-// ignoreFilesRegex is what GOG_IGNORE_FILES_REGEX names, and by default
-// matches nothing
+// ignoreFilesRegex is the compiled GOG_IGNORE_FILES_REGEX, matching nothing
+// until Configure reads one
 var ignoreFilesRegex = matchNothing
 
 // matchNothing is a pattern that no path satisfies
 var matchNothing = regexp.MustCompile("a^")
 
 // Configure reads the environment that linking depends on. Every entry point
-// calls it, rather than an init that cannot report a failure and would fail
-// every command over a pattern that only the linking commands read.
-//
-// It is exported because `add` copies into the repository before it links, and
-// an unusable pattern has to fail before the copy rather than after it.
+// calls it for itself, so that a pattern that cannot be compiled fails the
+// command that reads it. `gog add` calls it before copying, so that such a
+// pattern fails before the repository holds a file that was never linked.
 func Configure() error {
 	pattern := os.Getenv("GOG_IGNORE_FILES_REGEX")
 	if pattern == "" {
@@ -43,8 +41,7 @@ func Configure() error {
 }
 
 // ErrIncomplete reports that some paths could not be linked. Each failure is
-// printed as it happens; this is returned so that the command exits non-zero
-// rather than appearing to have succeeded.
+// printed as it happens; this is returned so that the command exits non-zero.
 var ErrIncomplete = errors.New("some paths could not be linked")
 
 // reportFailures returns err if it is set, otherwise ErrIncomplete if anything
@@ -59,13 +56,13 @@ func reportFailures(before int, err error) error {
 	return nil
 }
 
-// Unlink unlinks the given paths
+// Unlink restores the given external paths as ordinary files
 func Unlink(repoPath string, paths []string) error {
 	before := failures
 	return reportFailures(before, syncLinks(repoPath, paths, UnlinkDir, UnlinkFile))
 }
 
-// Link links the given paths
+// Link links the given external paths to what the repository holds at them
 func Link(repoPath string, paths []string) error {
 	if err := Configure(); err != nil {
 		return err
@@ -153,8 +150,7 @@ func Dir(repoPath, intPath string) error {
 }
 
 // File creates a symbolic link from a repository file to the root filesystem.
-// File declares an `error` return type to match the signature of `Dir`, but
-// usually print an error message and return nil.
+// It returns ErrIncomplete when the link could not be made, having printed why.
 func File(repoPath, intPath string) error {
 	if err := Configure(); err != nil {
 		return err
@@ -168,8 +164,9 @@ func File(repoPath, intPath string) error {
 }
 
 // linkFile creates a symbolic link from a repository file to the root
-// filesystem. It returns true if the file is linked and should be added to
-// git. It usually prints an error message and returns (false, nil) on failure.
+// filesystem, and returns true if the file is linked and should be added to
+// git. A failure that leaves the path alone is printed and returns (false,
+// nil); only one that stops the run is returned.
 func linkFile(repoPath, intPath string) (bool, error) {
 	if skipped(repoPath, intPath) {
 		return false, nil
@@ -178,7 +175,6 @@ func linkFile(repoPath, intPath string) (bool, error) {
 	extPath := repository.ToExternalPath(repoPath, intPath)
 	err := os.Symlink(intPath, extPath)
 	if err == nil {
-		// Success
 		printLinked(intPath, extPath)
 		return true, nil
 	}
@@ -198,10 +194,9 @@ func linkFile(repoPath, intPath string) (bool, error) {
 		return false, nil
 	}
 
-	// Check if symlink already points to the correct target
+	// Already linked, so the link is not recreated
 	linkTarget, err := os.Readlink(extPath)
 	if err == nil && linkTarget == intPath {
-		// Already linked to the correct location - no need to recreate
 		return true, nil
 	}
 
@@ -264,13 +259,11 @@ func addToGit(repoPath string, intPaths ...string) {
 }
 
 // discardable reports whether p holds nothing of the user's, so that it can be
-// removed to make way for what the repository holds. A broken link points at
-// nothing, and a link into gog's data directory is bookkeeping left by an
-// earlier run or by another repository that tracks the same path. Anything else
-// is the user's, and gog does not delete it: whatever it holds exists nowhere
-// else, unlike the repository's copy.
+// removed to make way for what the repository holds: a broken link points at
+// nothing, and a link into gog's data directory was made by gog. Anything else
+// is the user's and is not deleted, because what it holds exists nowhere else.
 //
-// The error explains why a link could not be resolved, and is only set when the
+// The error explains why a link could not be resolved, and is set only when the
 // answer is false.
 func discardable(p string) (bool, error) {
 	if _, err := filepath.EvalSymlinks(p); err != nil {
@@ -288,13 +281,12 @@ func refusal(p string, err error) error {
 	if err != nil {
 		return fmt.Errorf("cannot resolve %s, leaving it alone: %w", p, err)
 	}
-	return fmt.Errorf("%s already exists (move or remove it, then run the command again)", p)
+	return fmt.Errorf("%q already exists (move or remove it, then run the command again)", p)
 }
 
 // isGogOwnedLink reports whether p is a symbolic link that resolves into gog's
-// data directory. Such a link was created by gog itself - by a previous run or
-// by another repository that also tracks this path - so it is bookkeeping
-// rather than the user's data, and replacing it discards nothing.
+// data directory, which means gog made it: an earlier run, or another
+// repository that tracks the same path. Replacing it discards nothing.
 func isGogOwnedLink(p string) bool {
 	if !paths.IsSymlink(p) {
 		return false

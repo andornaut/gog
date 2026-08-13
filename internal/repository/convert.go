@@ -20,23 +20,23 @@ func ToInternalPath(repoPath, p string) string {
 func ToExternalPath(repoPath, p string) string {
 	p = strings.TrimPrefix(p, repoPath+"/")
 
-	// Only expand $HOME specifically, not arbitrary environment variables
-	// This prevents path injection attacks via malicious environment variables.
-	// Match on a path boundary so that a file named e.g. $HOMEWORK is not expanded.
-	// Clean removes the double slash that a root home directory would produce.
+	// Only $HOME is expanded, so that the environment cannot decide where a
+	// repository writes, and only on a path boundary, so that a name such as
+	// $HOMEWORK is left alone. Clean removes the double slash that a root home
+	// directory would produce.
 	if paths.Within("$HOME", p) {
 		p = path.Clean(strings.Replace(p, "$HOME", homeDir, 1))
 	}
 
-	// If p does not start with $HOME and was expanded, then TrimPrefix stripped leading "/", so we must re-add it now.
+	// A path that was not expanded lost its leading separator to TrimPrefix
 	if !strings.HasPrefix(p, "/") {
 		p = "/" + p
 	}
 	return p
 }
 
-// SetHomeDirForTest sets homeDir for testing and returns the original value.
-// This should only be used in tests to mock the home directory.
+// SetHomeDirForTest sets homeDir and returns its previous value. Only tests
+// use it.
 func SetHomeDirForTest(dir string) string {
 	original := homeDir
 	homeDir = dir

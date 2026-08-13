@@ -21,8 +21,8 @@ func GetDefault() (string, error) {
 	if defaultName != "" {
 		p, err := RootPath(defaultName)
 		if err != nil {
-			// The name was never typed on the command line, so naming where it
-			// came from is what makes the failure actionable
+			// The name was never typed on the command line, so the failure
+			// names where it came from
 			return "", fmt.Errorf("%w (named by GOG_DEFAULT_REPOSITORY_NAME)", err)
 		}
 		return p, nil
@@ -30,12 +30,21 @@ func GetDefault() (string, error) {
 	return getFirst()
 }
 
+// basenames returns the repository names of a list of repository paths, in the
+// order they were matched.
+func basenames(paths []string) []string {
+	names := make([]string, 0, len(paths))
+	for _, p := range paths {
+		names = append(names, filepath.Base(p))
+	}
+	return names
+}
+
 // WithinBaseDir reports whether an already-resolved path lies inside gog's data
 // directory. Both sides have to be free of symbolic links: the data directory
 // can be reached through a symlinked parent (a temporary directory under /var
 // on macOS is one), and a resolved path measured against an unresolved BaseDir
-// looks like it lies outside, so a link gog made itself is taken for the user's
-// own and left in place.
+// looks like it lies outside.
 func WithinBaseDir(resolved string) bool {
 	return paths.Within(paths.Resolve(BaseDir), resolved)
 }
@@ -73,23 +82,21 @@ func RootPath(name string) (string, error) {
 	}
 	p := filepath.Join(BaseDir, name)
 
-	// First check if exact match exists
 	if err := validateRepoPath(p); err == nil {
 		return p, nil
 	}
 
-	// Fall back to glob matching only if exact match doesn't exist
+	// A name that matches no repository exactly is read as a prefix
 	globPaths, err := filepath.Glob(p + "*")
 	if err != nil {
 		return "", err
 	}
 
-	// Validate that we have exactly one match and it's in the correct directory
 	if len(globPaths) == 0 {
-		return "", fmt.Errorf("repository not found: %s", name)
+		return "", fmt.Errorf("repository %q not found", name)
 	}
 
-	// Filter to basenames that start with the requested name
+	// Glob matches by path, so the prefix is checked against the name itself
 	var validPaths []string
 	for _, globPath := range globPaths {
 		basename := filepath.Base(globPath)
@@ -99,10 +106,11 @@ func RootPath(name string) (string, error) {
 	}
 
 	if len(validPaths) == 0 {
-		return "", fmt.Errorf("repository not found: %s", name)
+		return "", fmt.Errorf("repository %q not found", name)
 	}
 	if len(validPaths) > 1 {
-		return "", fmt.Errorf("ambiguous repository name %q matches multiple repositories (use a more specific name)", name)
+		return "", fmt.Errorf("%q begins the name of %d repositories: %s. Use the whole name of the one you mean",
+			name, len(validPaths), strings.Join(basenames(validPaths), ", "))
 	}
 
 	p = validPaths[0]
@@ -118,7 +126,7 @@ func getFirst() (string, error) {
 		return "", err
 	}
 	if len(repoNames) == 0 {
-		return "", fmt.Errorf("no valid git repositories found in %s (run \"gog repository add\" to add one)", BaseDir)
+		return "", fmt.Errorf("no repositories found in %q (run \"gog repository add\" to add one)", BaseDir)
 	}
 	return filepath.Join(BaseDir, repoNames[0]), nil
 }
@@ -141,30 +149,27 @@ func getBaseDir(homeDir string) (string, error) {
 
 // Configure locates the home directory and the data directory that every
 // command works from. It is called once, before any command runs, and returns
-// its failures rather than reporting them: a package that exits the process
-// cannot be tested, and a startup failure is reported in the same form as
-// every other one.
+// its failures so that they are reported in the same form as every other one.
 func Configure() error {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return err
 	}
-	// Normalize so that path-boundary comparisons work when $HOME has a
-	// trailing slash, and so that a relative $HOME is still recognized in the
-	// absolute paths gog compares it against. Without this, every path under a
-	// relative $HOME is stored by its absolute name instead of under the
-	// portable $HOME component, which is the same normalization BaseDir gets.
+	// Normalized, as BaseDir is, so that path-boundary comparisons hold when
+	// $HOME has a trailing slash, and so that a relative $HOME is recognized in
+	// the absolute paths gog compares it against rather than storing every path
+	// under it by its absolute name
 	home, err = filepath.Abs(home)
 	if err != nil {
 		return err
 	}
 	// A home directory that does not exist is a misconfigured environment
-	// rather than a new one. Without this check gog creates its data directory
-	// under whatever $HOME happens to name and reports success.
+	// rather than a new one: gog would otherwise create its data directory
+	// under whatever $HOME names and report success.
 	info, err := os.Stat(home)
 	switch {
 	case os.IsNotExist(err):
-		return fmt.Errorf("home directory does not exist: %s", home)
+		return fmt.Errorf("home directory %q does not exist", home)
 	case err != nil:
 		return err
 	case !info.IsDir():

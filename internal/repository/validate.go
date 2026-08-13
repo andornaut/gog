@@ -12,8 +12,8 @@ import (
 )
 
 var (
-	// validRepoName is the regex pattern for valid repository names.
-	// \w already includes underscores.
+	// validRepoName is the pattern a repository name must match. \w already
+	// includes underscores.
 	validRepoName = regexp.MustCompile(`^[\w-]+$`)
 )
 
@@ -28,13 +28,13 @@ func validateRepoName(name string) error {
 func validateRepoPath(p string) error {
 	fileInfo, err := os.Stat(p)
 	if err != nil {
-		return fmt.Errorf("repository not found: %s", filepath.Base(p))
+		return fmt.Errorf("repository %q not found", filepath.Base(p))
 	}
 	if !fileInfo.IsDir() {
-		return fmt.Errorf("repository path must be a directory: %s", p)
+		return fmt.Errorf("repository path %q must be a directory", p)
 	}
 	if !git.Is(p) {
-		return fmt.Errorf("repository must be initialized as a git repository (run \"git init\" in %s)", p)
+		return fmt.Errorf("repository %q must be initialized as a git repository (run \"git init\" in it)", p)
 	}
 	return nil
 }
@@ -43,19 +43,17 @@ func validateTargetPath(p string) error {
 	if paths.Within(BaseDir, p) {
 		return ownPathError(p)
 	}
-	// gog no longer creates .gog backups, but earlier versions left them in home
-	// directories, and a displaced copy of a file the repository already holds
-	// is not worth tracking
+	// .gog is the suffix of a backup that older versions left behind, which
+	// duplicates a file the repository already holds
 	if strings.HasSuffix(p, ".gog") {
 		return fmt.Errorf("invalid target path %q (.gog backup files cannot be managed)", p)
 	}
 	return nil
 }
 
-// ownPathError refuses a path inside gog's data directory, which a command
-// never means: a repository's copy is reached by the path it is linked from.
-// The repository is named, and so is that path when the link is there to prove
-// which one it is.
+// ownPathError refuses a path inside gog's data directory: a repository's copy
+// is named by the path it is linked from. That path is given too when the link
+// is there to prove which one it is.
 func ownPathError(p string) error {
 	name := repoNameOf(p)
 	if name == "" || name == "." {

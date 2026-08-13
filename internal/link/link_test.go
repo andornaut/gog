@@ -103,8 +103,8 @@ func TestFileRefusesADirectoryInTheWay(t *testing.T) {
 	}
 }
 
-// Link is given paths as they are named outside the repository, and hands each
-// to Dir or File by what the repository holds at it
+// Link takes paths as they are named outside the repository, and hands each to
+// Dir or File by what the repository holds at it
 func TestLinkDispatchesOnWhatTheRepositoryHolds(t *testing.T) {
 	repoPath, homeDir := newSandbox(t)
 	fileIntPath := write(t, repoPath, "$HOME/.bashrc", "bashrc\n")
@@ -122,8 +122,8 @@ func TestLinkDispatchesOnWhatTheRepositoryHolds(t *testing.T) {
 	}
 	assertLink(t, filepath.Join(homeDir, ".bashrc"), fileIntPath)
 	assertLink(t, filepath.Join(homeDir, ".config/app/conf"), dirIntPath)
-	// A path the repository does not hold is passed over rather than failing the
-	// run: `gog add` links what it just copied, and nothing else is its business
+	// A path the repository does not hold is passed over rather than failing
+	// the run
 	if _, statErr := os.Lstat(unheld); !os.IsNotExist(statErr) {
 		t.Errorf("a path the repository does not hold was acted on (%v)", statErr)
 	}
