@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/andornaut/gog/internal/paths"
 )
 
 var (
@@ -26,6 +28,16 @@ func GetDefault() (string, error) {
 		return p, nil
 	}
 	return getFirst()
+}
+
+// WithinBaseDir reports whether an already-resolved path lies inside gog's data
+// directory. Both sides have to be free of symbolic links: the data directory
+// can be reached through a symlinked parent (a temporary directory under /var
+// on macOS is one), and a resolved path measured against an unresolved BaseDir
+// looks like it lies outside, so a link gog made itself is taken for the user's
+// own and left in place.
+func WithinBaseDir(resolved string) bool {
+	return paths.Within(paths.Resolve(BaseDir), resolved)
 }
 
 // List returns a list of repositories

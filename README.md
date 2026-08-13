@@ -76,6 +76,7 @@ gog apply
 | `-r, --repository NAME` | `add`, `apply`, `list`, `remove`, `git` | Repository to use. A unique prefix of the name is accepted |
 | `-s, --status` | `list` | Print what applying would do to each path |
 | `--path` | `repository default`, `repository list` | Print paths instead of names |
+| `--force` | `add` | Take a path over from the repository that manages it |
 | `--force` | `repository remove` | Delete even if the repository holds work that no remote has |
 | `--version` | `gog` | Print the version |
 
@@ -103,11 +104,22 @@ Run `gog help <command>` for full usage.
 | --- | --- | --- |
 | File, directory | Added | Added |
 | Symbolic link | Refused, names its target instead | Skipped, with a warning |
+| Path another repository manages | Refused unless `--force` | Skipped, with a warning |
 | Named pipe, socket, device node | Refused | Skipped, with a warning |
 
-- A symbolic link that gog created is followed rather than refused, so a
-  managed path can be added again, or added to a second repository. Inside an
-  added directory it is skipped instead, naming the repository that holds it:
+- A symbolic link that gog created is followed rather than refused, so a path
+  the repository already holds can be added again.
+- A path that a **different** repository manages is refused, because taking it
+  over leaves that repository holding a copy nothing points at. `--force` takes
+  it over anyway:
+
+  ```text
+  Error: "/home/example/.bashrc" is managed by repository work (remove it from there first, or pass --force to take it over)
+  ```
+
+  Inside an added directory the same path is skipped rather than refused, so
+  that one managed file does not fail the whole directory. `--force` does not
+  reach it: name it to take it over.
 
   ```text
   Warning: skipping /home/example/.config/foorc (repository work already manages it; remove it from there first)

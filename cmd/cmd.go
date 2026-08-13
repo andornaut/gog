@@ -125,6 +125,7 @@ func ExitCode(err error) int {
 
 var (
 	repositoryFlag string
+	isForced       bool
 	isStatus       bool
 )
 
@@ -151,7 +152,7 @@ var add = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if err := repository.AddPaths(repoPath, paths); err != nil {
+		if err := repository.AddPaths(repoPath, isForced, paths); err != nil {
 			return err
 		}
 		return link.Link(repoPath, paths)
@@ -341,6 +342,7 @@ func init() {
 		}
 	}
 	list.Flags().BoolVarP(&isStatus, "status", "s", false, "print what applying would do to each path")
+	add.Flags().BoolVar(&isForced, "force", false, "take a path over from the repository that manages it")
 	// A flag cobra could not parse is a wrong invocation, and exits 2 like one.
 	Cmd.SetFlagErrorFunc(func(c *cobra.Command, err error) error { return cli.Usage(err) })
 	// -v is --vault in mrs, so --version is spelled out here rather than

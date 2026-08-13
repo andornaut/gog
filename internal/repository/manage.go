@@ -145,13 +145,13 @@ func quantify(n int, noun string) string {
 // checked before any is copied, so that one unusable path fails the command
 // outright instead of leaving the repository holding files that were never
 // linked or staged.
-func AddPaths(repoPath string, targetPaths []string) error {
+func AddPaths(repoPath string, force bool, targetPaths []string) error {
 	for _, targetPath := range targetPaths {
-		if _, err := resolveAddPath(targetPath); err != nil {
+		if _, err := resolveAddPath(repoPath, force, targetPath); err != nil {
 			return err
 		}
 	}
-	if err := syncRepository(repoPath, targetPaths, addPath); err != nil {
+	if err := syncRepository(repoPath, targetPaths, addPath(force)); err != nil {
 		return err
 	}
 	warnUnrecordableModes(repoPath, targetPaths)
@@ -185,32 +185,43 @@ func warnUnrecordableModes(repoPath string, targetPaths []string) {
 	}
 }
 
-// reportSkipped warns about an entry that copying a directory left behind, and
-// says what to do about it. A symbolic link is never followed: copying its
-// target would store the contents while discarding the link itself. One that
-// resolves into gog's data directory is a path some repository already manages,
-// and naming that repository says more than the path inside it does.
-func reportSkipped(p string, mode os.FileMode) {
-	if mode&os.ModeSymlink == 0 {
-		fmt.Fprintf(os.Stderr, "Warning: skipping %s %s (git cannot store it)\n", copy.FileKind(mode), p)
-		return
+// reportSkipped returns what a copy into repoPath says about an entry it left
+// behind. A symbolic link is never followed: copying its target would store the
+// contents while discarding the link itself. One that resolves into gog's data
+// directory is a path some repository already manages, and naming that
+// repository says more than the path inside it does.
+func reportSkipped(repoPath string) copy.ReportFunc {
+	return func(p string, mode os.FileMode) {
+		if mode&os.ModeSymlink == 0 {
+			fmt.Fprintf(os.Stderr, "Warning: skipping %s %s (git cannot store it)\n", copy.FileKind(mode), p)
+			return
+		}
+		if resolved, err := filepath.EvalSymlinks(p); err == nil && WithinBaseDir(resolved) {
+			// This repository's own link is what a path it holds looks like
+			// from outside, so meeting one is only what adding a directory a
+			// second time does, and telling the reader to remove it from here
+			// would undo what they added
+			if paths.Within(paths.Resolve(repoPath), resolved) {
+				return
+			}
+			fmt.Fprintf(os.Stderr, "Warning: skipping %s (repository %s already manages it; remove it from there first)\n",
+				p, repoNameOf(resolved))
+			return
+		}
+		if target, err := os.Readlink(p); err == nil {
+			fmt.Fprintf(os.Stderr, "Warning: skipping symbolic link %s -> %s (add that path instead)\n", p, target)
+			return
+		}
+		fmt.Fprintf(os.Stderr, "Warning: skipping symbolic link %s (add its target instead)\n", p)
 	}
-	if resolved, err := filepath.EvalSymlinks(p); err == nil && paths.Within(BaseDir, resolved) {
-		fmt.Fprintf(os.Stderr, "Warning: skipping %s (repository %s already manages it; remove it from there first)\n",
-			p, repoNameOf(resolved))
-		return
-	}
-	if target, err := os.Readlink(p); err == nil {
-		fmt.Fprintf(os.Stderr, "Warning: skipping symbolic link %s -> %s (add that path instead)\n", p, target)
-		return
-	}
-	fmt.Fprintf(os.Stderr, "Warning: skipping symbolic link %s (add its target instead)\n", p)
 }
 
 // repoNameOf names the repository that holds p, which must be a path within the
-// data directory
+// data directory. Both sides are resolved through their symbolic links, because
+// one caller has already resolved p and the other has not, and a resolved path
+// measured against an unresolved data directory names no repository at all.
 func repoNameOf(p string) string {
-	rel, err := filepath.Rel(BaseDir, p)
+	rel, err := filepath.Rel(paths.Resolve(BaseDir), paths.Resolve(p))
 	if err != nil {
 		return ""
 	}
@@ -260,19 +271,19 @@ func ValidateTargetPaths(targetPaths []string) error {
 
 // resolveAddPath validates a path given to `gog add` and returns the path
 // whose contents will be copied into the repository
-func resolveAddPath(targetPath string) (string, error) {
+func resolveAddPath(repoPath string, force bool, targetPath string) (string, error) {
 	if err := validateTargetPath(targetPath); err != nil {
 		return "", err
 	}
 	extPath, err := filepath.EvalSymlinks(targetPath)
 	// A symbolic link that resolves into gog's own data directory is
-	// bookkeeping: the path is already linked, possibly by another repository,
-	// so it is followed. A link to anywhere else belongs to the user, and
+	// bookkeeping: the path is already linked, so it is followed rather than
+	// refused as a link. A link to anywhere else belongs to the user, and
 	// copying its target would store the contents while discarding the link
 	// itself, so the target is named and the link is left alone. This is
 	// decided before the resolution error is reported, so that a broken link
 	// is named as a link rather than as its missing target.
-	if paths.IsSymlink(targetPath) && (err != nil || !paths.Within(BaseDir, extPath)) {
+	if paths.IsSymlink(targetPath) && (err != nil || !WithinBaseDir(extPath)) {
 		target, readErr := os.Readlink(targetPath)
 		if readErr != nil {
 			return "", fmt.Errorf("%q is a symbolic link (add its target instead)", targetPath)
@@ -281,6 +292,15 @@ func resolveAddPath(targetPath string) (string, error) {
 	}
 	if err != nil {
 		return "", describePathError(targetPath, err)
+	}
+	// Following another repository's link would move the path between
+	// repositories: this one takes the link, and the other is left holding a
+	// copy that nothing points at, which its own `list --status` then offers to
+	// put back. Adding a path this repository already holds is not that, and
+	// goes on working.
+	if !force && paths.IsSymlink(targetPath) && !paths.Within(paths.Resolve(repoPath), extPath) {
+		return "", fmt.Errorf("%q is managed by repository %s (remove it from there first, or pass --force to take it over)",
+			targetPath, repoNameOf(extPath))
 	}
 	info, err := os.Stat(extPath)
 	if err != nil {
@@ -308,8 +328,15 @@ func describePathError(targetPath string, err error) error {
 	return err
 }
 
-func addPath(repoPath, targetPath string) error {
-	extPath, err := resolveAddPath(targetPath)
+// addPath binds --force to the signature that syncRepository calls
+func addPath(force bool) syncFunc {
+	return func(repoPath, targetPath string) error {
+		return addTargetPath(repoPath, force, targetPath)
+	}
+}
+
+func addTargetPath(repoPath string, force bool, targetPath string) error {
+	extPath, err := resolveAddPath(repoPath, force, targetPath)
 	if err != nil {
 		return err
 	}
@@ -331,7 +358,7 @@ func addPath(repoPath, targetPath string) error {
 	held := lstatErr == nil
 
 	if extFileInfo.IsDir() {
-		err = copy.Dir(extPath, intPath, shouldSkip, reportSkipped)
+		err = copy.Dir(extPath, intPath, shouldSkip, reportSkipped(repoPath))
 	} else if err = os.MkdirAll(filepath.Dir(intPath), 0755); err == nil {
 		// The parent directory is created here, because `copy.File` does not
 		// create directories

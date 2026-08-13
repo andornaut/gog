@@ -303,7 +303,7 @@ func isGogOwnedLink(p string) bool {
 	if err != nil {
 		return false
 	}
-	return paths.Within(repository.BaseDir, resolved)
+	return repository.WithinBaseDir(resolved)
 }
 
 // sameContents reports whether both paths are regular files holding identical
