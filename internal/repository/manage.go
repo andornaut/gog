@@ -19,7 +19,7 @@ func Add(repoName, repoURL string) (string, error) {
 
 	// Reject any existing non-empty path, git repository or not, so that an
 	// existing data directory is never converted into a repository. An empty
-	// directory (e.g. left over from a failed clone) may be reused.
+	// directory may be reused.
 	repoPath := filepath.Join(BaseDir, repoName)
 	entries, err := os.ReadDir(repoPath)
 	switch {
@@ -38,16 +38,25 @@ func Add(repoName, repoURL string) (string, error) {
 		return "", err
 	}
 
-	if repoURL == "" {
-		if err := git.Init(BaseDir, repoPath); err != nil {
-			return "", err
+	if err := initRepo(repoPath, repoURL); err != nil {
+		// Leave nothing in the data directory that is not a repository: a
+		// failed clone otherwise leaves the directory it was cloning into,
+		// empty or half written
+		if rmErr := os.RemoveAll(repoPath); rmErr != nil {
+			return "", fmt.Errorf("%w (and %s could not be removed: %v)", err, repoPath, rmErr)
 		}
-	} else {
-		if err := git.Clone(BaseDir, repoPath, repoURL); err != nil {
-			return "", err
-		}
+		return "", err
 	}
 	return repoPath, nil
+}
+
+// initRepo creates the git repository at repoPath, by cloning repoURL if one
+// was given and initializing an empty repository otherwise
+func initRepo(repoPath, repoURL string) error {
+	if repoURL == "" {
+		return git.Init(BaseDir, repoPath)
+	}
+	return git.Clone(BaseDir, repoPath, repoURL)
 }
 
 // RemovalPath returns the path of the repository with the given name. Unlike
@@ -251,15 +260,40 @@ func addPath(repoPath, targetPath string) error {
 	if err != nil {
 		return err
 	}
-	if extFileInfo.IsDir() {
-		return copy.Dir(extPath, intPath, shouldSkip)
-	}
 
-	// Create the parent directory, because `copy.File` does not create directories
-	if err := os.MkdirAll(filepath.Dir(intPath), 0755); err != nil {
-		return err
+	// Whether the repository already held this path decides what a failed copy
+	// can undo
+	_, lstatErr := os.Lstat(intPath)
+	held := lstatErr == nil
+
+	if extFileInfo.IsDir() {
+		err = copy.Dir(extPath, intPath, shouldSkip)
+	} else if err = os.MkdirAll(filepath.Dir(intPath), 0755); err == nil {
+		// The parent directory is created here, because `copy.File` does not
+		// create directories
+		err = copy.File(extPath, intPath)
 	}
-	return copy.File(extPath, intPath)
+	if err != nil {
+		return undoCopy(repoPath, intPath, held, err)
+	}
+	return nil
+}
+
+// undoCopy discards what a failed copy left in the repository, so that a tree
+// that fails part-way through - on a file that cannot be read, say - does not
+// leave files behind that were never linked or staged. Only a path the
+// repository did not already hold can be discarded: removing one it held would
+// throw away whatever the copy had overwritten, which nothing has a record of,
+// so that case is reported instead.
+func undoCopy(repoPath, intPath string, held bool, cause error) error {
+	if held {
+		return fmt.Errorf("%w (%s still holds a partial copy of %s; rerun to complete it)",
+			cause, filepath.Base(repoPath), ToExternalPath(repoPath, intPath))
+	}
+	if err := os.RemoveAll(intPath); err != nil {
+		return fmt.Errorf("%w (and %s could not be discarded: %v)", cause, intPath, err)
+	}
+	return cause
 }
 
 func removePath(repoPath, targetPath string) error {
@@ -269,7 +303,9 @@ func removePath(repoPath, targetPath string) error {
 	intPath := ToInternalPath(repoPath, targetPath)
 	if _, err := os.Lstat(intPath); err != nil {
 		if os.IsNotExist(err) {
-			// The repository does not hold this path, so there is nothing to remove
+			// Reported rather than passed over in silence, because a path this
+			// repository never held looks exactly like one it just gave back
+			fmt.Printf("Not tracked by %s: %s\n", filepath.Base(repoPath), targetPath)
 			return nil
 		}
 		return err

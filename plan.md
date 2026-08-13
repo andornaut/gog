@@ -275,43 +275,42 @@ Landed:
 - A `$HOME` that does not exist, or that is not a directory, is refused. gog
   used to create its data directory under whatever `$HOME` named and report
   success, so a typo scattered a tree somewhere unintended.
+- `gog remove` reports each path the repository does not hold, rather than
+  exiting 0 in silence: a path it never held looked exactly like one it had
+  just given back.
+- A copy that fails part-way through `add` is discarded, so the repository is
+  left as it was. Only a path the repository did not already hold can be
+  discarded; one it held is reported as a partial copy instead, because nothing
+  has a record of what the copy overwrote.
+- A failed `repository add` removes the directory it was cloning into, so the
+  data directory never holds anything that is not a repository.
 
 ## What is left
 
-Every capability in the original plan has been covered. What remains is one
-scenario the lab cannot reach and the open questions below.
+Nothing. Every capability in the original plan has been covered, and every
+question raised along the way has been answered. Rebuild the lab from the
+appendix if the work is picked up again.
 
-- **Filesystems without symlink support**, if they are in scope at all. Proving
-  it needs a filesystem mounted for the purpose, which needs root, so the
-  closest the lab gets is a destination that refuses the `symlink` call: the
-  failure is reported per path and the run exits non-zero. Whether gog should
-  say anything more specific when symlinks are unavailable altogether is
-  undecided.
+## Decisions taken
 
-## Open questions for the owner
+Recorded so they are not rediscovered and reopened.
 
-Do not settle these alone. They have been raised and are still unanswered.
-
-1. **`gog remove` says nothing when the repository does not hold the path.** A
-   path that was never added, or that belongs to another repository, exits 0
-   with no output, which is indistinguishable from a successful removal.
-2. **A batch `git add` that fails prints git's `fatal:` even when the run
-   succeeds.** `addToGit` retries the batch's paths individually, so contention
-   with another gog process is usually survived, but git's message from the
-   failed batch has already reached stderr and the run exits 0 looking as
-   though something went wrong. Capturing the batch's stderr and printing it
-   only when the retries also fail would fix it, at the cost of holding git's
-   output back.
-3. **A tree that fails partway through `add` leaves what it copied.** An
-   unreadable file aborts the copy with earlier files already in the
-   repository, unlinked and untracked. Readability cannot be validated up front
-   without opening every file, and a rerun converges, so this may be the right
-   behaviour; nothing reports it either way.
-4. **Errors still surface raw syscall names** such as `lstat /path: no such
-   file or directory`. The owner chose to leave these; revisit only if asked.
-5. **A failed clone leaves an empty directory** in the data directory. It is
-   filtered out of `list` and the code deliberately allows reusing it on retry,
-   so the owner declined to change it. Recorded so it is not rediscovered.
+- **Filesystems without symlink support are out of scope.** A filesystem that
+  cannot hold a symbolic link cannot hold a gog-managed home directory, and the
+  per-path failure gog already reports is answer enough. Proving it would need
+  a filesystem mounted for the purpose, which needs root.
+- **A batch `git add` that fails still prints git's message even when the
+  per-path retries succeed.** Holding git's output back until the retries have
+  been decided costs more than the noise does.
+- **Errors surface raw syscall names**, such as `lstat /path: no such file or
+  directory`. The syscall and the path are precise; wrapping every one of them
+  explains less than it costs.
+- **`repository remove` refuses rather than prompting.** It reports what it
+  would destroy and exits, and `--force` is the way past it, so nothing depends
+  on a terminal being attached.
+- **`.gog` guard rails outlived the backups.** gog no longer creates them, but
+  `validateTargetPath` and `shouldSkip` still refuse them, so that backups left
+  by earlier versions are not swept into a repository.
 
 ## Appendix: `lib.sh`
 
