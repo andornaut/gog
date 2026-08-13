@@ -337,7 +337,9 @@ func TestReportSkipped(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := captureStderr(t, func() { reportSkipped(repoPath)(tt.p, tt.mode) })
+			// The paths here are already named as the caller typed them, so
+			// the two roots are the same and nothing is rewritten.
+			got := captureStderr(t, func() { reportSkipped(repoPath, homeDir, homeDir)(tt.p, tt.mode) })
 
 			if got != tt.want {
 				t.Errorf("reportSkipped() printed %q, want %q", got, tt.want)
@@ -619,5 +621,31 @@ func TestWidenedMode(t *testing.T) {
 					tt.mode, gotMode, gotWidened, tt.wantMode, tt.wantWidened)
 			}
 		})
+	}
+}
+
+// A data directory reached through a symbolic link is what a temporary
+// directory on macOS is, and what moving one onto another disk leaves behind.
+// Adding a path the repository already holds compared the resolved file against
+// the unresolved one, missed, and copied the file over itself.
+func TestAddPathsThroughASymlinkedDataDirectoryKeepsWhatItHolds(t *testing.T) {
+	repoPath, homeDir := newSandbox(t)
+	held := writeFile(t, filepath.Join(repoPath, "$HOME", ".bashrc"), "bashrc\n")
+	target := symlink(t, held, filepath.Join(homeDir, ".bashrc"))
+
+	linked := filepath.Join(t.TempDir(), "data-link")
+	if err := os.Symlink(BaseDir, linked); err != nil {
+		t.Fatal(err)
+	}
+	// Restored by the sandbox's own cleanup.
+	BaseDir = linked
+
+	if err := AddPaths(filepath.Join(linked, filepath.Base(repoPath)), false, []string{target}); err != nil {
+		t.Fatalf("AddPaths() = %v", err)
+	}
+
+	contents, err := os.ReadFile(held)
+	if err != nil || string(contents) != "bashrc\n" {
+		t.Errorf("the repository holds %q (%v), want what it held", contents, err)
 	}
 }

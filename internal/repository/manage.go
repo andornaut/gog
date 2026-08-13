@@ -190,8 +190,12 @@ func warnUnrecordableModes(repoPath string, targetPaths []string) {
 // contents while discarding the link itself. One that resolves into gog's data
 // directory is a path some repository already manages, and naming that
 // repository says more than the path inside it does.
-func reportSkipped(repoPath string) copy.ReportFunc {
+// asTyped names an entry the way the user named the directory it came from.
+// The copy walks the resolved path, so an entry inside it would otherwise be
+// reported through the symbolic links the walk took to reach it.
+func reportSkipped(repoPath, resolvedRoot, typedRoot string) copy.ReportFunc {
 	return func(p string, mode os.FileMode) {
+		p = asTyped(p, resolvedRoot, typedRoot)
 		if mode&os.ModeSymlink == 0 {
 			fmt.Fprintf(os.Stderr, "Warning: skipping %s %s (git cannot store it)\n", copy.FileKind(mode), p)
 			return
@@ -214,6 +218,18 @@ func reportSkipped(repoPath string) copy.ReportFunc {
 		}
 		fmt.Fprintf(os.Stderr, "Warning: skipping symbolic link %s (add its target instead)\n", p)
 	}
+}
+
+// asTyped rewrites a path under resolvedRoot to sit under typedRoot instead.
+func asTyped(p, resolvedRoot, typedRoot string) string {
+	if resolvedRoot == typedRoot {
+		return p
+	}
+	rel, err := filepath.Rel(resolvedRoot, p)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return p
+	}
+	return filepath.Join(typedRoot, rel)
 }
 
 // repoNameOf names the repository that holds p, which must be a path within the
@@ -342,7 +358,11 @@ func addTargetPath(repoPath string, force bool, targetPath string) error {
 	}
 
 	intPath := ToInternalPath(repoPath, targetPath)
-	if extPath == intPath {
+	// Compared with its symbolic links resolved, as extPath already is. A data
+	// directory reached through a symlinked parent made the two spellings
+	// differ, so adding a path the repository already held copied the file
+	// over itself and left it empty.
+	if extPath == paths.Resolve(intPath) {
 		// Already added
 		return nil
 	}
@@ -358,7 +378,7 @@ func addTargetPath(repoPath string, force bool, targetPath string) error {
 	held := lstatErr == nil
 
 	if extFileInfo.IsDir() {
-		err = copy.Dir(extPath, intPath, shouldSkip, reportSkipped(repoPath))
+		err = copy.Dir(extPath, intPath, shouldSkip, reportSkipped(repoPath, extPath, targetPath))
 	} else if err = os.MkdirAll(filepath.Dir(intPath), 0755); err == nil {
 		// The parent directory is created here, because `copy.File` does not
 		// create directories
