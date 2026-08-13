@@ -230,8 +230,15 @@ func resolveAddPath(targetPath string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if _, err := os.Stat(extPath); err != nil {
+	info, err := os.Stat(extPath)
+	if err != nil {
 		return "", err
+	}
+	// A named pipe, socket or device node has no contents to store: git holds
+	// neither its kind nor its contents, and opening one to read it blocks
+	// until a writer appears or reads without end
+	if !info.Mode().IsRegular() && !info.IsDir() {
+		return "", fmt.Errorf("%q is a %s (gog manages files and directories)", targetPath, copy.FileKind(info.Mode()))
 	}
 	return extPath, nil
 }

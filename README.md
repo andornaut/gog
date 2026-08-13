@@ -172,6 +172,18 @@ If any of the path arguments to `gog add` begin with the current user's home
 directory, then this prefix is replaced with a literal `$HOME` path
 component, which is expanded to the home directory when `gog apply` is run.
 
+gog manages files and directories. A named pipe, socket or device node has
+nothing git can store, so one given directly to `gog add` is refused, and one
+found inside a directory is reported and skipped while the rest of the tree is
+added. This is what lets a directory such as `~/.gnupg` be added while the
+agent sockets in it are left alone. Symbolic links are handled the same way: a
+link given directly names its target instead, and a link inside a directory is
+skipped rather than followed.
+
+A file with more than one name is copied once per name. Git records contents
+per path, so a hard link is not preserved: the repository holds two independent
+files, and changing one no longer changes the other.
+
 #### `gog git`
 
 `gog git` runs git in the repository's directory and exits with git's own exit

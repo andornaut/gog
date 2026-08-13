@@ -174,6 +174,13 @@ func copyDir(src, dst, dstRoot string, skipFunc SkipFunc, ensureParent func() er
 			}
 			continue
 		}
+		// A named pipe, socket or device node is not something a copy can
+		// carry: git stores neither its kind nor its contents, and opening one
+		// to read it blocks until a writer appears or reads without end
+		if !entryInfo.Mode().IsRegular() {
+			printSkippedIrregular(srcPath, entryInfo.Mode())
+			continue
+		}
 		if err := ensureDst(); err != nil {
 			return err
 		}
@@ -190,4 +197,30 @@ func printSkippedLink(p string) {
 		return
 	}
 	fmt.Fprintf(os.Stderr, "Warning: skipping symbolic link %s\n", p)
+}
+
+func printSkippedIrregular(p string, mode os.FileMode) {
+	fmt.Fprintf(os.Stderr, "Warning: skipping %s %s (git cannot store it)\n", FileKind(mode), p)
+}
+
+// FileKind names what a mode describes, for reporting a path that gog cannot
+// manage. Only the kinds that can be met in a home directory are distinguished.
+func FileKind(mode os.FileMode) string {
+	switch {
+	case mode.IsDir():
+		return "directory"
+	case mode&os.ModeSymlink != 0:
+		return "symbolic link"
+	case mode&os.ModeNamedPipe != 0:
+		return "named pipe"
+	case mode&os.ModeSocket != 0:
+		return "socket"
+	case mode&os.ModeCharDevice != 0:
+		return "character device"
+	case mode&os.ModeDevice != 0:
+		return "block device"
+	case mode.IsRegular():
+		return "file"
+	}
+	return "irregular file"
 }
