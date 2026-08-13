@@ -2,6 +2,7 @@ package link
 
 import (
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,6 +11,33 @@ import (
 
 	"github.com/andornaut/gog/internal/repository"
 )
+
+// captureStderr returns what f writes to standard error. What gog did goes
+// there rather than through a writer the caller supplies, so a test that means
+// to check one has to take it from the process.
+func captureStderr(t *testing.T, f func()) string {
+	t.Helper()
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := os.Stderr
+	os.Stderr = writer
+	defer func() { os.Stderr = original }()
+
+	done := make(chan string)
+	go func() {
+		var out strings.Builder
+		_, _ = io.Copy(&out, reader)
+		done <- out.String()
+	}()
+
+	f()
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return <-done
+}
 
 // newSandbox creates a repository and a home directory to link into, and points
 // the repository package at both for the duration of the test
@@ -69,17 +97,43 @@ func TestFileLinksAndStagesOneFile(t *testing.T) {
 	}
 }
 
-func TestFileSkipsAnIgnoredFile(t *testing.T) {
+// The result line names both ends of the link, with the repository's literal
+// $HOME component escaped so that the path can be pasted into a shell
+func TestFilePrintsWhatItLinked(t *testing.T) {
 	repoPath, homeDir := newSandbox(t)
-	t.Setenv("GOG_IGNORE_FILES_REGEX", `\.swp$`)
-	intPath := write(t, repoPath, "$HOME/.bashrc.swp", "swp\n")
+	intPath := write(t, repoPath, "$HOME/.bashrc", "bashrc\n")
 
-	if err := File(repoPath, intPath); err != nil {
-		t.Fatalf("File() = %v", err)
+	out := captureStderr(t, func() {
+		if err := File(repoPath, intPath); err != nil {
+			t.Fatalf("File() = %v", err)
+		}
+	})
+
+	want := "Linked: " + filepath.Join(homeDir, ".bashrc") + " -> " +
+		filepath.Join(repoPath, `\$HOME`, ".bashrc") + "\n"
+	if out != want {
+		t.Errorf("File() printed %q, want %q", out, want)
+	}
+}
+
+// A path git will not stage is reported, and the link is still made
+func TestFileReportsAPathGitWillNotStage(t *testing.T) {
+	repoPath, homeDir := newSandbox(t)
+	intPath := write(t, repoPath, "$HOME/.bashrc", "bashrc\n")
+	// The lock an interrupted or concurrent git leaves behind
+	if err := os.WriteFile(filepath.Join(repoPath, ".git", "index.lock"), nil, 0644); err != nil {
+		t.Fatal(err)
 	}
 
-	if _, err := os.Lstat(filepath.Join(homeDir, ".bashrc.swp")); !os.IsNotExist(err) {
-		t.Errorf("a path the pattern matches was linked (%v)", err)
+	out := captureStderr(t, func() {
+		if err := File(repoPath, intPath); !errors.Is(err, ErrIncomplete) {
+			t.Errorf("File() = %v, want ErrIncomplete", err)
+		}
+	})
+
+	assertLink(t, filepath.Join(homeDir, ".bashrc"), intPath)
+	if !strings.Contains(out, "Error: failed to add "+intPath+" to git") {
+		t.Errorf("File() printed %q, want the path git would not stage", out)
 	}
 }
 

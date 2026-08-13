@@ -285,6 +285,46 @@ func TestOwnPathError(t *testing.T) {
 	}
 }
 
+// A copy walks the resolved path, so an entry is named the way the directory it
+// came from was named
+func TestAsTyped(t *testing.T) {
+	tests := []struct {
+		name         string
+		p            string
+		resolvedRoot string
+		typedRoot    string
+		want         string
+	}{
+		{name: "under the resolved root", p: "/real/conf/one", resolvedRoot: "/real/conf", typedRoot: "/home/conf", want: "/home/conf/one"},
+		{name: "the root itself", p: "/real/conf", resolvedRoot: "/real/conf", typedRoot: "/home/conf", want: "/home/conf"},
+		{name: "roots that are the same", p: "/real/conf/one", resolvedRoot: "/real/conf", typedRoot: "/real/conf", want: "/real/conf/one"},
+		{name: "outside the resolved root", p: "/real/other/one", resolvedRoot: "/real/conf", typedRoot: "/home/conf", want: "/real/other/one"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := asTyped(tt.p, tt.resolvedRoot, tt.typedRoot); got != tt.want {
+				t.Errorf("asTyped(%q) = %q, want %q", tt.p, got, tt.want)
+			}
+		})
+	}
+}
+
+// `gog remove` checks the whole batch before it restores anything
+func TestValidateTargetPaths(t *testing.T) {
+	repoPath, homeDir := newSandbox(t)
+	mine := filepath.Join(homeDir, ".bashrc")
+
+	if err := ValidateTargetPaths([]string{mine}); err != nil {
+		t.Errorf("ValidateTargetPaths() = %v, want success", err)
+	}
+
+	err := ValidateTargetPaths([]string{mine, filepath.Join(repoPath, "$HOME", ".vimrc")})
+
+	if err == nil || !strings.Contains(err.Error(), "repository dots holds it") {
+		t.Errorf("ValidateTargetPaths() = %v, want the batch refused", err)
+	}
+}
+
 // What a copy leaves behind is named with what to do about it. A link into
 // gog's data directory names the repository that manages it.
 func TestReportSkipped(t *testing.T) {

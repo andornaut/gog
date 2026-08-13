@@ -3,6 +3,7 @@ package repository
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -93,10 +94,47 @@ func TestGetFirstSkipsWhatIsNotARepository(t *testing.T) {
 	}
 }
 
-// An existing directory holding anything is never converted into a repository,
-// so that a data directory is not adopted by name alone. An empty one, such as
-// a failed clone leaves behind, may be reused.
-func TestAddRefusesAnExistingNonEmptyDirectory(t *testing.T) {
+// List names the repositories in the data directory, passing over whatever else
+// is in it
+func TestList(t *testing.T) {
+	base := newBaseDir(t)
+	newRepo(t, filepath.Join(base, "work"))
+	newRepo(t, filepath.Join(base, "personal"))
+	if err := os.Mkdir(filepath.Join(base, "not-a-repository"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(base, "a-file"), []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := List()
+
+	if err != nil {
+		t.Fatalf("List() = %v", err)
+	}
+	if want := []string{"personal", "work"}; !slices.Equal(got, want) {
+		t.Errorf("List() = %v, want %v", got, want)
+	}
+}
+
+// A failed clone leaves nothing in the data directory, so that the next attempt
+// is not refused by what the last one left
+func TestAddLeavesNothingBehindWhenTheCloneFails(t *testing.T) {
+	base := newBaseDir(t)
+
+	_, err := Add("broken", filepath.Join(base, "no-such-remote.git"))
+
+	if err == nil || !strings.Contains(err.Error(), "failed to clone") {
+		t.Fatalf("Add() = %v, want a failure naming the step", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(base, "broken")); !os.IsNotExist(statErr) {
+		t.Error("the failed clone left its directory behind")
+	}
+}
+
+// An existing directory is never converted into a repository, so that a data
+// directory is not adopted by name alone. An empty one may be reused.
+func TestAddRefusesAnExistingDirectory(t *testing.T) {
 	base := newBaseDir(t)
 	occupied := filepath.Join(base, "occupied")
 	if err := os.Mkdir(occupied, 0755); err != nil {
@@ -105,15 +143,19 @@ func TestAddRefusesAnExistingNonEmptyDirectory(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(occupied, "file.txt"), []byte("x"), 0644); err != nil {
 		t.Fatal(err)
 	}
+	newRepo(t, filepath.Join(base, "existing"))
 	empty := filepath.Join(base, "empty")
 	if err := os.Mkdir(empty, 0755); err != nil {
 		t.Fatal(err)
 	}
 
-	_, err := Add("occupied", "")
-
-	if err == nil || !strings.Contains(err.Error(), "not a gog repository") {
+	// A repository and an unrelated directory are told apart, so that the
+	// reader is not asked to remove data gog put there
+	if _, err := Add("occupied", ""); err == nil || !strings.Contains(err.Error(), "not a gog repository") {
 		t.Errorf("Add(\"occupied\") = %v, want the path named as not a gog repository", err)
+	}
+	if _, err := Add("existing", ""); err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Errorf("Add(\"existing\") = %v, want the repository named as one", err)
 	}
 	if got, err := Add("empty", ""); err != nil || got != empty {
 		t.Errorf("Add(\"empty\") = %q (%v), want the empty directory reused", got, err)

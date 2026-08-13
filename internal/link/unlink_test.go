@@ -29,6 +29,26 @@ func TestUnlinkFileRestoresWhatTheLinkPointedAt(t *testing.T) {
 	}
 }
 
+// The result line names the path that was given back
+func TestUnlinkFilePrintsWhatItRestored(t *testing.T) {
+	repoPath, homeDir := newSandbox(t)
+	intPath := write(t, repoPath, "$HOME/.bashrc", "bashrc\n")
+	extPath := filepath.Join(homeDir, ".bashrc")
+	if err := os.Symlink(intPath, extPath); err != nil {
+		t.Fatal(err)
+	}
+
+	out := captureStderr(t, func() {
+		if err := UnlinkFile(repoPath, intPath); err != nil {
+			t.Fatalf("UnlinkFile() = %v", err)
+		}
+	})
+
+	if want := "Restored: " + extPath + "\n"; out != want {
+		t.Errorf("UnlinkFile() printed %q, want %q", out, want)
+	}
+}
+
 // Anything that is not this repository's link is left exactly as it is
 func TestUnlinkFileLeavesAloneWhatIsNotItsLink(t *testing.T) {
 	tests := []struct {

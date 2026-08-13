@@ -197,6 +197,29 @@ func TestDirReportsAConflictAndCarriesOn(t *testing.T) {
 	assertLink(t, filepath.Join(homeDir, ".vimrc"), otherIntPath)
 }
 
+// A path that cannot be linked at all fails the command, naming what could not
+// be done. Only a conflict is reported and passed over.
+func TestDirFailsWhenTheLinkCannotBeMade(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root writes to a directory whose mode forbids it")
+	}
+	repoPath, homeDir := newSandbox(t)
+	write(t, repoPath, "$HOME/.bashrc", "bashrc\n")
+	if err := os.Chmod(homeDir, 0500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(homeDir, 0755) })
+
+	err := Dir(repoPath, repoPath)
+
+	if err == nil || !strings.Contains(err.Error(), "failed to create symlink") {
+		t.Errorf("Dir() = %v, want a failure naming what could not be done", err)
+	}
+	if _, statErr := os.Lstat(filepath.Join(homeDir, ".bashrc")); !os.IsNotExist(statErr) {
+		t.Errorf("the path was linked although the directory forbids it (%v)", statErr)
+	}
+}
+
 // The cases where nothing of the user's is lost, so applying replaces what is
 // in the way without asking
 func TestDirReplacesWhatHoldsNothingOfTheUsers(t *testing.T) {
