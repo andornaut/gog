@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"testing"
 
 	"github.com/andornaut/gog/internal/paths"
@@ -26,6 +25,9 @@ func newSandbox(t *testing.T) (repoPath, homeDir string) {
 		}
 	}
 	gitInit(t, repoPath)
+
+	// Whatever the developer has set would otherwise decide what is linked
+	t.Setenv("GOG_IGNORE_FILES_REGEX", "")
 
 	originalHome := repository.SetHomeDirForTest(homeDir)
 	originalBase := repository.BaseDir
@@ -235,14 +237,10 @@ func TestFileSkipsAlreadyLinked(t *testing.T) {
 
 // TestFileSkipsIgnoredFiles verifies GOG_IGNORE_FILES_REGEX pattern matching
 func TestFileSkipsIgnoredFiles(t *testing.T) {
-	// Save and restore original regex
-	originalRegex := ignoreFilesRegex
-	defer func() { ignoreFilesRegex = originalRegex }()
-
-	// Set ignore pattern to skip .swp files
-	ignoreFilesRegex = regexp.MustCompile(`\.swp$`)
-
 	repoPath, _ := newSandbox(t)
+	// Set through the environment, which is where the pattern comes from: an
+	// entry point that reads it for itself is not exercised by assigning it
+	t.Setenv("GOG_IGNORE_FILES_REGEX", `\.swp$`)
 
 	// Create a .swp file in the repo (should be ignored)
 	intPath := filepath.Join(repoPath, "$HOME", ".bashrc.swp")

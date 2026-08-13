@@ -19,6 +19,9 @@ var Cmd = &cobra.Command{
 	// unknown subcommand would otherwise print help and report success
 	RunE: func(c *cobra.Command, args []string) error {
 		if len(args) > 0 {
+			// Naming a command that does not exist is a wrong invocation, so
+			// the usage that the root silenced for running commands is restored
+			c.SilenceUsage = false
 			return fmt.Errorf("unknown command %q for %q", args[0], c.CommandPath())
 		}
 		return c.Help()

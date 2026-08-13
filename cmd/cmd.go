@@ -130,6 +130,12 @@ var add = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		// Linking is configured before anything is copied, so that a pattern
+		// that cannot be compiled does not leave the repository holding a file
+		// that was never linked or staged
+		if err = link.Configure(); err != nil {
+			return err
+		}
 		repoPath, err := repoPath()
 		if err != nil {
 			return err

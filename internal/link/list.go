@@ -39,7 +39,7 @@ type Entry struct {
 // repository meets them. The files that are never linked are left out, so the
 // listing is what `apply` would act on rather than what the directory contains.
 func List(repoPath string) ([]Entry, error) {
-	if err := configure(); err != nil {
+	if err := Configure(); err != nil {
 		return nil, err
 	}
 	var entries []Entry

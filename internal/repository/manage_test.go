@@ -2,6 +2,7 @@ package repository
 
 import (
 	"errors"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -27,6 +28,9 @@ func newSandbox(t *testing.T) (repoPath, homeDir string) {
 	runGit(t, repoPath, "init", "-q")
 	runGit(t, repoPath, "config", "user.email", "test@example.com")
 	runGit(t, repoPath, "config", "user.name", "Test User")
+
+	// Whatever the developer has set would otherwise choose the repository
+	t.Setenv("GOG_DEFAULT_REPOSITORY_NAME", "")
 
 	originalBase := BaseDir
 	BaseDir = baseDir
@@ -200,10 +204,46 @@ func TestRemovePathsUntracksAndLeavesNothingBehind(t *testing.T) {
 // because it looks exactly like one it just gave back
 func TestRemovePathsReportsAPathItNeverHeld(t *testing.T) {
 	repoPath, homeDir := newSandbox(t)
+	target := filepath.Join(homeDir, ".never")
 
-	if err := RemovePaths(repoPath, []string{filepath.Join(homeDir, ".never")}); err != nil {
-		t.Errorf("RemovePaths() = %v, want success", err)
+	out := captureStdout(t, func() {
+		if err := RemovePaths(repoPath, []string{target}); err != nil {
+			t.Errorf("RemovePaths() = %v, want success", err)
+		}
+	})
+
+	want := "Skipped: " + target + " (not tracked by dots)"
+
+	if !strings.Contains(out, want) {
+		t.Errorf("RemovePaths() printed %q, want %q", out, want)
 	}
+}
+
+// captureStdout returns what f writes to standard output. The result lines go
+// there rather than through a writer the caller supplies, so a test that means
+// to check one has to take it from the process.
+func captureStdout(t *testing.T, f func()) string {
+	t.Helper()
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := os.Stdout
+	os.Stdout = writer
+	defer func() { os.Stdout = original }()
+
+	done := make(chan string)
+	go func() {
+		var out strings.Builder
+		_, _ = io.Copy(&out, reader)
+		done <- out.String()
+	}()
+
+	f()
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return <-done
 }
 
 func TestUnsavedWorkCountsWhatDeletionWouldDestroy(t *testing.T) {

@@ -9,7 +9,7 @@ import (
 
 // configureIn runs Configure against the given home directory, restoring what
 // the package held afterwards
-func configureIn(t *testing.T, home string) error {
+func configureIn(t *testing.T, home string, andThen ...func()) error {
 	t.Helper()
 	originalBase, originalHome := BaseDir, homeDir
 	t.Cleanup(func() {
@@ -17,6 +17,13 @@ func configureIn(t *testing.T, home string) error {
 		homeDir = originalHome
 	})
 	t.Setenv("HOME", home)
+	// Whatever the developer has set would otherwise decide where the data
+	// directory lands, and Configure creates it
+	t.Setenv("GOG_HOME", "")
+	t.Setenv("XDG_DATA_HOME", "")
+	for _, set := range andThen {
+		set()
+	}
 	return Configure()
 }
 
@@ -100,9 +107,8 @@ func TestConfigureRefusesAnUnusableHomeDirectory(t *testing.T) {
 func TestConfigureHonoursGogHome(t *testing.T) {
 	home := t.TempDir()
 	want := filepath.Join(t.TempDir(), "elsewhere")
-	t.Setenv("GOG_HOME", want)
 
-	if err := configureIn(t, home); err != nil {
+	if err := configureIn(t, home, func() { t.Setenv("GOG_HOME", want) }); err != nil {
 		t.Fatalf("Configure() = %v", err)
 	}
 
@@ -114,9 +120,8 @@ func TestConfigureHonoursGogHome(t *testing.T) {
 func TestConfigureHonoursXdgDataHome(t *testing.T) {
 	home := t.TempDir()
 	dataHome := t.TempDir()
-	t.Setenv("XDG_DATA_HOME", dataHome)
 
-	if err := configureIn(t, home); err != nil {
+	if err := configureIn(t, home, func() { t.Setenv("XDG_DATA_HOME", dataHome) }); err != nil {
 		t.Fatalf("Configure() = %v", err)
 	}
 

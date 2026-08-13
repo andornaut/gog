@@ -80,28 +80,51 @@ func TestDirIsIdempotent(t *testing.T) {
 	assertLink(t, filepath.Join(homeDir, ".bashrc"), intPath)
 }
 
-func TestDirSkipsWhatIsNeverLinked(t *testing.T) {
-	repoPath, homeDir := newSandbox(t)
-	for _, name := range []string{".gitignore", "LICENSE", "README.md"} {
-		write(t, repoPath, name, name)
+// The files a repository keeps for itself sit at its root, which is the
+// filesystem root outside it, so they are named here rather than linked in a
+// test
+func TestSkipped(t *testing.T) {
+	repoPath, _ := newSandbox(t)
+	t.Setenv("GOG_IGNORE_FILES_REGEX", `\.swp$`)
+	if err := Configure(); err != nil {
+		t.Fatal(err)
 	}
+
+	tests := []struct {
+		rel  string
+		want bool
+	}{
+		{rel: ".gitignore", want: true},
+		{rel: "LICENSE", want: true},
+		{rel: "README.md", want: true},
+		{rel: "$HOME/.vimrc.swp", want: true},
+		{rel: "$HOME/.bashrc", want: false},
+		{rel: "$HOME/.config/README.md", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.rel, func(t *testing.T) {
+			if got := skipped(repoPath, filepath.Join(repoPath, tt.rel)); got != tt.want {
+				t.Errorf("skipped(%q) = %v, want %v", tt.rel, got, tt.want)
+			}
+		})
+	}
+}
+
+// .git holds nothing that was ever linked, and walking into it would stage the
+// repository's own bookkeeping
+func TestDirNeverWalksIntoGit(t *testing.T) {
+	repoPath, homeDir := newSandbox(t)
 	write(t, repoPath, "$HOME/.bashrc", "bashrc\n")
 
 	if err := Dir(repoPath, repoPath); err != nil {
 		t.Fatalf("Dir() = %v", err)
 	}
 
-	// A repository's own files stay in it, and .git is never walked into
-	for _, name := range []string{".gitignore", "LICENSE", "README.md"} {
-		if _, err := os.Lstat(filepath.Join("/", name)); err == nil {
-			t.Errorf("%s was linked to the filesystem root", name)
-		}
-	}
 	if _, err := os.Lstat(filepath.Join(homeDir, ".bashrc")); err != nil {
-		t.Errorf("the rest of the repository was not linked: %v", err)
+		t.Errorf("the repository was not linked: %v", err)
 	}
-	if strings.Contains(staged(t, repoPath), ".git/") {
-		t.Error("something under .git was staged")
+	if got := staged(t, repoPath); strings.Contains(got, ".git/") {
+		t.Errorf("the index holds %q, want nothing from .git", got)
 	}
 }
 

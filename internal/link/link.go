@@ -22,10 +22,13 @@ var ignoreFilesRegex = matchNothing
 // matchNothing is a pattern that no path satisfies
 var matchNothing = regexp.MustCompile("a^")
 
-// configure reads the environment that linking depends on. Each entry point
+// Configure reads the environment that linking depends on. Every entry point
 // calls it, rather than an init that cannot report a failure and would fail
 // every command over a pattern that only the linking commands read.
-func configure() error {
+//
+// It is exported because `add` copies into the repository before it links, and
+// an unusable pattern has to fail before the copy rather than after it.
+func Configure() error {
 	pattern := os.Getenv("GOG_IGNORE_FILES_REGEX")
 	if pattern == "" {
 		ignoreFilesRegex = matchNothing
@@ -64,7 +67,7 @@ func Unlink(repoPath string, paths []string) error {
 
 // Link links the given paths
 func Link(repoPath string, paths []string) error {
-	if err := configure(); err != nil {
+	if err := Configure(); err != nil {
 		return err
 	}
 	before := failures
@@ -100,7 +103,7 @@ func syncLinks(repoPath string, paths []string, updateDir, updateFile syncFunc) 
 // Dir recursively creates symbolic links from a repository directory's files
 // to the root filesystem
 func Dir(repoPath, intPath string) error {
-	if err := configure(); err != nil {
+	if err := Configure(); err != nil {
 		return err
 	}
 	before := failures
@@ -153,6 +156,9 @@ func Dir(repoPath, intPath string) error {
 // File declares an `error` return type to match the signature of `Dir`, but
 // usually print an error message and return nil.
 func File(repoPath, intPath string) error {
+	if err := Configure(); err != nil {
+		return err
+	}
 	before := failures
 	shouldAdd, err := linkFile(repoPath, intPath)
 	if shouldAdd {
