@@ -39,6 +39,7 @@ would pass without proving anything; `09-permissions.sh` refuses to run.
 | `11-repo-add.sh` | What a failed `repository add` leaves behind, and the directories it may reuse or refuse |
 | `12-special-files.sh` | Named pipes, sockets and device nodes given directly and found inside a tree, hard links, and a file where a directory must be |
 | `13-terminal.sh` | `gog git` with a pseudo-terminal: paging, colour, an editor, a prompt, and exit codes |
+| `14-cli.sh` | The command line itself: unknown commands, argument validation, `--version`, completion, and the form failures take |
 
 ## Writing a scenario
 

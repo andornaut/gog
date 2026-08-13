@@ -96,17 +96,17 @@ func Dir(repoPath, intPath string) error {
 				// Creating the directory would otherwise write through the link
 				// into whatever it points at
 				if ok, discardErr := discardable(extPath); !ok {
-					printError(p, refusal(extPath, discardErr))
+					printError(refusal(extPath, discardErr))
 					return filepath.SkipDir
 				}
 				if rmErr := os.Remove(extPath); rmErr != nil {
-					printError(p, fmt.Errorf("failed to remove %s: %w", extPath, rmErr))
+					printError(fmt.Errorf("failed to remove %s: %w", extPath, rmErr))
 					return filepath.SkipDir
 				}
 			}
 
 			if mkdirErr := os.MkdirAll(extPath, 0755); mkdirErr != nil {
-				printError(p, fmt.Errorf("failed to create directory %s: %w", extPath, mkdirErr))
+				printError(fmt.Errorf("failed to create directory %s: %w", extPath, mkdirErr))
 				return filepath.SkipDir
 			}
 			return nil
@@ -138,15 +138,7 @@ func File(repoPath, intPath string) error {
 // filesystem. It returns true if the file is linked and should be added to
 // git. It usually prints an error message and returns (false, nil) on failure.
 func linkFile(repoPath, intPath string) (bool, error) {
-	if ignoreFilesRegex.MatchString(strings.TrimPrefix(intPath, repoPath+"/")) {
-		return false, nil
-	}
-	switch intPath {
-	case filepath.Join(repoPath, ".gitignore"):
-		return false, nil
-	case filepath.Join(repoPath, "LICENSE"):
-		return false, nil
-	case filepath.Join(repoPath, "README.md"):
+	if Skipped(repoPath, intPath) {
 		return false, nil
 	}
 
@@ -165,11 +157,11 @@ func linkFile(repoPath, intPath string) (bool, error) {
 
 	extFileInfo, err := os.Lstat(extPath)
 	if err != nil {
-		printError(intPath, fmt.Errorf("failed to stat %s: %w", extPath, err))
+		printError(fmt.Errorf("failed to stat %s: %w", extPath, err))
 		return false, nil
 	}
 	if extFileInfo.IsDir() {
-		printError(intPath, fmt.Errorf("cannot create symlink: %s exists and is a directory (remove the directory or use a different location)", extPath))
+		printError(fmt.Errorf("cannot create symlink: %s exists and is a directory (remove the directory or use a different location)", extPath))
 		return false, nil
 	}
 
@@ -184,20 +176,36 @@ func linkFile(repoPath, intPath string) (bool, error) {
 	// `add` copies a path into the repository before linking it, so an
 	// identical file is the copy of what is about to be linked
 	if !ok && !sameContents(extPath, intPath) {
-		printError(intPath, refusal(extPath, discardErr))
+		printError(refusal(extPath, discardErr))
 		return false, nil
 	}
 
 	if err = os.Remove(extPath); err != nil {
-		printError(intPath, fmt.Errorf("failed to remove %s: %w", extPath, err))
+		printError(fmt.Errorf("failed to remove %s: %w", extPath, err))
 		return false, nil
 	}
 	if err = os.Symlink(intPath, extPath); err != nil {
-		printError(intPath, fmt.Errorf("failed to create symlink from %s to %s: %w", extPath, intPath, err))
+		printError(fmt.Errorf("failed to create symlink from %s to %s: %w", extPath, intPath, err))
 		return false, nil
 	}
 	printLinked(intPath, extPath)
 	return true, nil
+}
+
+// Skipped reports whether a path the repository holds is one that is never
+// linked: the files a repository keeps for itself, and whatever
+// GOG_IGNORE_FILES_REGEX names.
+func Skipped(repoPath, intPath string) bool {
+	if ignoreFilesRegex.MatchString(strings.TrimPrefix(intPath, repoPath+"/")) {
+		return true
+	}
+	switch intPath {
+	case filepath.Join(repoPath, ".gitignore"),
+		filepath.Join(repoPath, "LICENSE"),
+		filepath.Join(repoPath, "README.md"):
+		return true
+	}
+	return false
 }
 
 // maxGitAddBatch bounds the number of paths passed to a single git
@@ -216,7 +224,7 @@ func addToGit(repoPath string, intPaths ...string) {
 		}
 		for _, p := range batch {
 			if err := git.Run(repoPath, "add", "--force", p); err != nil {
-				printError(p, fmt.Errorf("failed to add %s to git: %w", p, err))
+				printError(fmt.Errorf("failed to add %s to git: %w", p, err))
 			}
 		}
 	}

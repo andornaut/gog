@@ -10,20 +10,22 @@ import (
 	"github.com/andornaut/gog/internal/repository"
 )
 
-func cleanPaths(paths []string) []string {
+// cleanPaths normalizes the paths given to a command. An unusable path fails
+// the command rather than being passed over, so that a mistyped argument cannot
+// leave the command reporting success for work it never did.
+func cleanPaths(paths []string) ([]string, error) {
 	cleanedPaths := make([]string, 0, len(paths))
 	for _, p := range paths {
 		if strings.TrimSpace(p) == "" {
-			continue
+			return nil, fmt.Errorf("invalid path %q (a path cannot be empty)", p)
 		}
 		normalized, err := normalizePath(p)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: skipping invalid path %q: %v\n", p, err)
-			continue
+			return nil, fmt.Errorf("invalid path %q: %w", p, err)
 		}
 		cleanedPaths = append(cleanedPaths, normalized)
 	}
-	return cleanedPaths
+	return cleanedPaths, nil
 }
 
 func normalizePath(p string) (string, error) {

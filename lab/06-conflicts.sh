@@ -74,16 +74,16 @@ gogq repository add one >/dev/null 2>&1
 gogq repository add two >/dev/null 2>&1
 ONE="${HOME}/.local/share/gog/one"; TWO="${HOME}/.local/share/gog/two"
 printf 'one\n' >"${HOME}/.bashrc"
-gogq -r one add ~/.bashrc >/dev/null 2>&1
-gogq -r one git commit -q -m one >/dev/null 2>&1
+gogq add -r one ~/.bashrc >/dev/null 2>&1
+gogq git -r one commit -q -m one >/dev/null 2>&1
 rm "${HOME}/.bashrc"; printf 'two\n' >"${HOME}/.bashrc"
-gogq -r two add ~/.bashrc >/dev/null 2>&1
-gogq -r two git commit -q -m two >/dev/null 2>&1
-out="$(gogq -r one apply 2>&1)"; rc=$?
+gogq add -r two ~/.bashrc >/dev/null 2>&1
+gogq git -r two commit -q -m two >/dev/null 2>&1
+out="$(gogq apply -r one 2>&1)"; rc=$?
 echo "${out}"
 assert_rc 0 "${rc}" "applying the second repository over the first"
 assert_symlink_to "${HOME}/.bashrc" "${ONE}/\$HOME/.bashrc"
-out="$(gogq -r two apply 2>&1)"; rc=$?
+out="$(gogq apply -r two 2>&1)"; rc=$?
 echo "${out}"
 assert_rc 0 "${rc}" "applying the first repository back over the second"
 assert_symlink_to "${HOME}/.bashrc" "${TWO}/\$HOME/.bashrc"

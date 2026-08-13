@@ -74,8 +74,9 @@ for n in a b c; do assert_symlink_to "${HOME}/.${n}" "${REPO}/\$HOME/.${n}"; don
 printf 'd\n' >"${HOME}/.d"
 out="$(gogq add "" ~/.d "   " 2>&1)"; rc=$?
 printf '%s\n' "${out}" | sed "s|${HOME}|~|"
-assert_rc 0 "${rc}" "empty arguments are ignored"
-assert_symlink_to "${HOME}/.d" "${REPO}/\$HOME/.d"
+assert_rc 1 "${rc}" "an empty argument fails the command"
+assert_contains "${out}" "a path cannot be empty" "the empty argument is named"
+assert_not_exists "${REPO}/\$HOME/.d" "nothing is added when an argument is unusable"
 
 echo
 echo "=== 2.6 idempotency, and re-adding changed contents ==="
@@ -219,8 +220,8 @@ gogq repository add one >/dev/null 2>&1
 gogq repository add two >/dev/null 2>&1
 ONE="${HOME}/.local/share/gog/one"; TWO="${HOME}/.local/share/gog/two"
 printf 'shared\n' >"${HOME}/.bashrc"
-gogq -r one add ~/.bashrc >/dev/null 2>&1
-out="$(gogq -r two add ~/.bashrc 2>&1)"; rc=$?
+gogq add -r one ~/.bashrc >/dev/null 2>&1
+out="$(gogq add -r two ~/.bashrc 2>&1)"; rc=$?
 printf '%s\n' "${out}" | sed "s|${HOME}|~|"
 assert_rc 0 "${rc}" "adding a path that another repository already holds"
 assert_file_contents "${TWO}/\$HOME/.bashrc" "shared"
@@ -230,13 +231,13 @@ assert_exists "${ONE}/\$HOME/.bashrc"
   && _ok "no copy is left beside it" || _bad "no copy is left beside it"
 
 echo
-echo "=== 2.14 -r in both positions ==="
+echo "=== 2.14 -r in every position ==="
 new_sandbox add-repoflag
 gogq repository add alpha >/dev/null 2>&1
 gogq repository add beta >/dev/null 2>&1
 printf 'x\n' >"${HOME}/.x"; printf 'y\n' >"${HOME}/.y"
 out="$(gogq -r beta add ~/.x 2>&1)"; rc=$?
-assert_rc 0 "${rc}" "gog -r NAME add"
+assert_rc 0 "${rc}" "the flag may precede the command that owns it"
 assert_symlink_to "${HOME}/.x" "${HOME}/.local/share/gog/beta/\$HOME/.x"
 out="$(gogq add -r beta ~/.y 2>&1)"; rc=$?
 assert_rc 0 "${rc}" "gog add -r NAME"

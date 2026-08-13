@@ -144,10 +144,10 @@ new_sandbox repo-remove-unapplied
 REMOTE="$(make_remote origin)"
 gogq repository add source >/dev/null 2>&1
 printf 'x\n' >"${HOME}/.x"
-gogq -r source add ~/.x >/dev/null 2>&1
-gogq -r source git commit -q -m init >/dev/null 2>&1
-gogq -r source git remote add origin "${REMOTE}" >/dev/null 2>&1
-gogq -r source git push -q -u origin main >/dev/null 2>&1
+gogq add -r source ~/.x >/dev/null 2>&1
+gogq git -r source commit -q -m init >/dev/null 2>&1
+gogq git -r source remote add origin "${REMOTE}" >/dev/null 2>&1
+gogq git -r source push -q -u origin main >/dev/null 2>&1
 # A second repository holding the same file, cloned but never applied
 gogq repository add clone "${REMOTE}" >/dev/null 2>&1
 out="$(gogq repository remove clone 2>&1)"; rc=$?
@@ -164,12 +164,12 @@ gogq repository add one >/dev/null 2>&1
 gogq repository add two >/dev/null 2>&1
 ONE="${HOME}/.local/share/gog/one"; TWO="${HOME}/.local/share/gog/two"
 printf 'a\n' >"${HOME}/.a"
-gogq -r one add ~/.a >/dev/null 2>&1
-gogq -r one git commit -q -m one >/dev/null 2>&1
-gogq -r one git remote add origin "${REMOTE_ONE}" >/dev/null 2>&1
-gogq -r one git push -q -u origin main >/dev/null 2>&1
+gogq add -r one ~/.a >/dev/null 2>&1
+gogq git -r one commit -q -m one >/dev/null 2>&1
+gogq git -r one remote add origin "${REMOTE_ONE}" >/dev/null 2>&1
+gogq git -r one push -q -u origin main >/dev/null 2>&1
 printf 'b\n' >"${HOME}/.b"
-gogq -r two add ~/.b >/dev/null 2>&1
+gogq add -r two ~/.b >/dev/null 2>&1
 out="$(gogq repository remove one 2>&1)"; rc=$?
 printf '%s\n' "${out}" | sed "s|${HOME}|~|"
 assert_rc 0 "${rc}" "removing one repository of an overlay"
@@ -188,11 +188,11 @@ gogq repository add one >/dev/null 2>&1
 gogq repository add two >/dev/null 2>&1
 ONE="${HOME}/.local/share/gog/one"; TWO="${HOME}/.local/share/gog/two"
 printf 'shared\n' >"${HOME}/.bashrc"
-gogq -r one add ~/.bashrc >/dev/null 2>&1
-gogq -r one git commit -q -m one >/dev/null 2>&1
-gogq -r one git remote add origin "${REMOTE_ONE}" >/dev/null 2>&1
-gogq -r one git push -q -u origin main >/dev/null 2>&1
-gogq -r two add ~/.bashrc >/dev/null 2>&1
+gogq add -r one ~/.bashrc >/dev/null 2>&1
+gogq git -r one commit -q -m one >/dev/null 2>&1
+gogq git -r one remote add origin "${REMOTE_ONE}" >/dev/null 2>&1
+gogq git -r one push -q -u origin main >/dev/null 2>&1
+gogq add -r two ~/.bashrc >/dev/null 2>&1
 assert_symlink_to "${HOME}/.bashrc" "${TWO}/\$HOME/.bashrc"
 out="$(gogq repository remove one 2>&1)"; rc=$?
 printf '%s\n' "${out}" | sed "s|${HOME}|~|"

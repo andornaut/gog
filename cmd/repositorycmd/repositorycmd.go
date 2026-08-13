@@ -13,9 +13,16 @@ import (
 
 // Cmd implements ./gog repository
 var Cmd = &cobra.Command{
-	Use:          "repository [command]",
-	Short:        "Manage repositories",
-	SilenceUsage: true,
+	Use:   "repository",
+	Short: "Manage repositories",
+	// A command with nothing to run never has its arguments validated, so an
+	// unknown subcommand would otherwise print help and report success
+	RunE: func(c *cobra.Command, args []string) error {
+		if len(args) > 0 {
+			return fmt.Errorf("unknown command %q for %q", args[0], c.CommandPath())
+		}
+		return c.Help()
+	},
 }
 
 var (
@@ -23,12 +30,24 @@ var (
 	isForced bool
 )
 
+// CompleteNames completes an argument or flag value that names a repository
+func CompleteNames(c *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	names, err := repository.List()
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveError
+	}
+	return names, cobra.ShellCompDirectiveNoFileComp
+}
+
 var add = &cobra.Command{
-	Use:                   "add [name] [url]",
+	Use:                   "add <name> [url]",
 	Short:                 "Add a git repository",
-	Args:                  cobra.RangeArgs(1, 2),
+	Args:                  requireArgs(1, 2, "a repository name and an optional URL"),
 	DisableFlagsInUseLine: true,
 	RunE: func(c *cobra.Command, args []string) error {
+		// Usage is worth printing when the command was invoked wrongly, and only
+		// noise once it is running, so it is silenced here rather than declared
+		c.SilenceUsage = true
 		repoName := args[0]
 		repoURL := ""
 		if len(args) > 1 {
@@ -45,12 +64,16 @@ var add = &cobra.Command{
 }
 
 var getDefault = &cobra.Command{
-	Use:                   "get-default [--path]",
+	Use: "default [--path]",
+	// The former name, kept so that it goes on working where it is already
+	// written down
+	Aliases:               []string{"get-default"},
 	Short:                 "Print the name or path of the default repository",
 	Long:                  "Either the first repository or the one defined by $GOG_DEFAULT_REPOSITORY_NAME",
 	Args:                  cobra.NoArgs,
 	DisableFlagsInUseLine: true,
 	RunE: func(c *cobra.Command, args []string) error {
+		c.SilenceUsage = true
 		repoPath, err := repository.GetDefault()
 		if err != nil {
 			return err
@@ -71,6 +94,7 @@ var list = &cobra.Command{
 	Args:                  cobra.NoArgs,
 	DisableFlagsInUseLine: true,
 	RunE: func(c *cobra.Command, args []string) error {
+		c.SilenceUsage = true
 		names, err := repository.List()
 		if err != nil {
 			return err
@@ -86,11 +110,13 @@ var list = &cobra.Command{
 }
 
 var remove = &cobra.Command{
-	Use:                   "remove [name]",
+	Use:                   "remove <name>",
 	Short:                 "Remove a repository",
-	Args:                  cobra.ExactArgs(1),
+	Args:                  requireArgs(1, 1, "a repository name"),
+	ValidArgsFunction:     CompleteNames,
 	DisableFlagsInUseLine: true,
 	RunE: func(c *cobra.Command, args []string) error {
+		c.SilenceUsage = true
 		repoPath, err := repository.RemovalPath(args[0])
 		if err != nil {
 			return err
@@ -116,6 +142,17 @@ var remove = &cobra.Command{
 		fmt.Printf("Removed repository: %s\n", repoPath)
 		return nil
 	},
+}
+
+// requireArgs validates an operand count. Cobra's own message ("accepts between
+// 1 and 2 arg(s), received 0") names neither the command nor what it wanted.
+func requireArgs(minArgs, maxArgs int, want string) cobra.PositionalArgs {
+	return func(c *cobra.Command, args []string) error {
+		if len(args) < minArgs || len(args) > maxArgs {
+			return fmt.Errorf("%s requires %s", c.CommandPath(), want)
+		}
+		return nil
+	}
 }
 
 func init() {

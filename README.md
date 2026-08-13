@@ -62,6 +62,7 @@ ls -l ~/.config/foorc | awk '{print $9,$10,$11}'
 Link files to Git repositories
 
 Usage:
+  gog [flags]
   gog [command]
 
 Available Commands:
@@ -69,12 +70,13 @@ Available Commands:
   apply       Link a repository's contents to the filesystem
   git         Run a git command in a repository's directory
   help        Help about any command
+  list        Print the paths that a repository holds
   remove      Remove files or directories from a repository
   repository  Manage repositories
 
 Flags:
-  -h, --help                help for gog
-  -r, --repository string   name of repository
+  -h, --help      help for gog
+  -v, --version   version for gog
 
 Use "gog [command] --help" for more information about a command.
 ```
@@ -85,11 +87,12 @@ Use "gog [command] --help" for more information about a command.
 Manage repositories
 
 Usage:
+  gog repository [flags]
   gog repository [command]
 
 Available Commands:
   add         Add a git repository
-  get-default Print the name or path of the default repository
+  default     Print the name or path of the default repository
   list        Print the names or paths of all repositories
   remove      Remove a repository
 
@@ -105,7 +108,7 @@ Use "gog repository [command] --help" for more information about a command.
 Add files or directories to a repository
 
 Usage:
-  gog add [paths...]
+  gog add <paths>...
 
 Flags:
   -h, --help                help for add
@@ -122,7 +125,23 @@ Usage:
 
 Flags:
   -h, --help                help for apply
-  -r, --repository string   name of repository to apply
+  -r, --repository string   name of repository
+```
+
+`gog list --help`
+
+```text
+Print the paths that `gog apply` would link, as they appear outside the
+repository. The files a repository keeps for itself and whatever
+GOG_IGNORE_FILES_REGEX names are left out.
+
+Usage:
+  gog list
+
+Flags:
+  -h, --help                help for list
+  -r, --repository string   name of repository
+  -s, --status              print what applying would do to each path
 ```
 
 ### Notes
@@ -208,6 +227,12 @@ gog git commit -m .bashrc
 
 Use `--` to limit any other subcommand to a path.
 
+Because every argument is handed to git, the flag that selects the repository
+has to lead: `gog git -r work status`. Written anywhere else it belongs to git,
+which is what makes `gog git ls-tree -r HEAD` and `gog git branch -r` mean what
+they say. For the same reason `gog git --help` reaches git; run `gog help git`
+for gog's own.
+
 gog prints the repository it selected (`Repository: dotfiles`) to standard
 error, so that standard output carries only what the command itself produced
 and `gog git` output can be piped or redirected.
@@ -241,7 +266,7 @@ something of yours where a link belongs, it reports the path, leaves it alone,
 carries on with the rest of the repository, and exits non-zero:
 
 ```text
-ERROR /home/example/.local/share/gog/dotfiles/$HOME/.bashrc /home/example/.bashrc already exists (move or remove it, then run the command again)
+Error: /home/example/.bashrc already exists (move or remove it, then run the command again)
 Error: some paths could not be linked
 ```
 
@@ -262,9 +287,26 @@ multiple repositories - even if they contain partially overlapping files.
 
 ```bash
 for repoName in $(gog repository list | sort -r); do
-  gog --repository ${repoName} apply
+  gog apply --repository ${repoName}
 done
 ```
+
+`gog list` prints what a repository holds without touching anything, and
+`--status` says where each path stands:
+
+```text
+$ gog list --status
+linked   /home/example/.bashrc
+missing  /home/example/.vimrc
+replace  /home/example/.inputrc
+conflict /home/example/.gitconfig
+```
+
+The state is what the next `apply` would do: `linked` is already done,
+`missing` and `replace` are paths it would link, and `conflict` is one it would
+report and leave alone. A path is `replace` when what is in the way is
+something gog may discard, which is the same set of cases listed under
+[Files that are already there](#files-that-are-already-there).
 
 ## Configuration
 
@@ -275,7 +317,7 @@ You can use environment variables to customize some settings.
 
 Environment variable | Description
 --- | ---
-GOG_DEFAULT_REPOSITORY_NAME | The repository to use when `--repository NAME` is not specified (default: the first repository in gog's data directory)
+GOG_DEFAULT_REPOSITORY_NAME | The repository to use when `--repository NAME` is not specified (default: the first repository in gog's data directory, which `gog repository default` prints)
 GOG_HOME | The directory where gog stores its files (default: `${XDG_DATA_HOME}/gog` if `XDG_DATA_HOME` is set, otherwise `${HOME}/.local/share/gog`)
 GOG_IGNORE_FILES_REGEX | Do not link repository-relative file paths that match this regular expression
 

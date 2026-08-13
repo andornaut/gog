@@ -79,7 +79,7 @@ printf 'mine\n' >"${HOME}/.vimrc"
 out="$(gogq remove ~/.vimrc 2>&1)"; rc=$?
 echo "${out}"
 assert_rc 0 "${rc}" "remove a path that was never added"
-assert_contains "${out}" "Not tracked by dots" "the repository says it never held the path"
+assert_contains "${out}" "not tracked by dots" "the repository says it never held the path"
 assert_regular "${HOME}/.vimrc"
 assert_file_contents "${HOME}/.vimrc" "mine"
 
@@ -90,7 +90,7 @@ gogq repository add dots >/dev/null
 out="$(gogq remove ~/.nothing-here 2>&1)"; rc=$?
 echo "${out}"
 assert_rc 0 "${rc}" "remove a nonexistent path"
-assert_contains "${out}" "Not tracked by dots" "a nonexistent path is reported the same way"
+assert_contains "${out}" "not tracked by dots" "a nonexistent path is reported the same way"
 
 echo
 echo "=== 4.7 remove a path that belongs to a different repository ==="
@@ -99,11 +99,11 @@ gogq repository add one >/dev/null
 gogq repository add two >/dev/null
 ONE="${HOME}/.local/share/gog/one"
 printf 'original\n' >"${HOME}/.bashrc"
-gogq -r one add ~/.bashrc >/dev/null
-out="$(gogq -r two remove ~/.bashrc 2>&1)"; rc=$?
+gogq add -r one ~/.bashrc >/dev/null
+out="$(gogq remove -r two ~/.bashrc 2>&1)"; rc=$?
 echo "${out}"
 assert_rc 0 "${rc}" "remove from a repository that does not hold the path"
-assert_contains "${out}" "Not tracked by two" "the repository that was asked names itself"
+assert_contains "${out}" "not tracked by two" "the repository that was asked names itself"
 assert_symlink_to "${HOME}/.bashrc" "${ONE}/\$HOME/.bashrc"
 assert_exists "${ONE}/\$HOME/.bashrc"
 
@@ -211,7 +211,7 @@ gogq repository add dots >/dev/null
 out="$(gogq remove 2>&1)"; rc=$?
 echo "${out}"
 assert_rc 1 "${rc}" "remove with no arguments fails"
-out="$(gogq -r nope remove ~/.bashrc 2>&1)"; rc=$?
+out="$(gogq remove -r nope ~/.bashrc 2>&1)"; rc=$?
 echo "${out}"
 assert_rc 1 "${rc}" "remove against an unknown repository fails"
 assert_contains "${out}" "repository not found" "names the missing repository"
@@ -240,7 +240,7 @@ gogq remove ~/.bashrc >/dev/null
 out="$(gogq remove ~/.bashrc 2>&1)"; rc=$?
 echo "${out}"
 assert_rc 0 "${rc}" "second remove of the same path"
-assert_contains "${out}" "Not tracked by dots" "the second removal says the path is no longer held"
+assert_contains "${out}" "not tracked by dots" "the second removal says the path is no longer held"
 assert_regular "${HOME}/.bashrc"
 assert_file_contents "${HOME}/.bashrc" "original"
 

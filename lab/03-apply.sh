@@ -7,9 +7,9 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 publish() {
   local name="$1" remote
   remote="$(make_remote "${name}")"
-  gogq -r "${name}" git remote add origin "${remote}" >/dev/null 2>&1
-  gogq -r "${name}" git commit -q -m published >/dev/null 2>&1
-  gogq -r "${name}" git push -q -u origin main >/dev/null 2>&1
+  gogq git -r "${name}" remote add origin "${remote}" >/dev/null 2>&1
+  gogq git -r "${name}" commit -q -m published >/dev/null 2>&1
+  gogq git -r "${name}" push -q -u origin main >/dev/null 2>&1
   echo "${remote}"
 }
 

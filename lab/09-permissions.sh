@@ -70,25 +70,24 @@ REMOTE="$(make_remote origin)"
 gogq repository add source >/dev/null 2>&1
 mkdir -p "${HOME}/.config/app"
 for i in 1 2 3 4; do printf 'f%d\n' "${i}" >"${HOME}/.config/app/f${i}.conf"; done
-gogq -r source add ~/.config >/dev/null 2>&1
-gogq -r source git commit -q -m init >/dev/null 2>&1
-gogq -r source git remote add origin "${REMOTE}" >/dev/null 2>&1
-gogq -r source git push -q -u origin main >/dev/null 2>&1
+gogq add -r source ~/.config >/dev/null 2>&1
+gogq git -r source commit -q -m init >/dev/null 2>&1
+gogq git -r source remote add origin "${REMOTE}" >/dev/null 2>&1
+gogq git -r source push -q -u origin main >/dev/null 2>&1
 gogq repository add dots "${REMOTE}" >/dev/null 2>&1
 DOTS="${HOME}/.local/share/gog/dots"
-gogq -r source repository remove source >/dev/null 2>&1
 gogq repository remove source -f >/dev/null 2>&1
 assert_regular "${HOME}/.config/app/f1.conf"
 assert_exists "${DOTS}/\$HOME/.config/app/f1.conf"
 printf 'changed\n' >"${HOME}/.config/app/f1.conf"
 chmod 000 "${HOME}/.config/app/f3.conf"
-out="$(gogq -r dots add ~/.config 2>&1)"; rc=$?
+out="$(gogq add -r dots ~/.config 2>&1)"; rc=$?
 chmod 600 "${HOME}/.config/app/f3.conf"
 printf '%s\n' "${out}" | sed "s|${HOME}|~|"
 assert_rc 1 "${rc}" "the add fails"
 assert_contains "${out}" "partial copy" "the failure says the repository holds a partial copy"
 assert_exists "${DOTS}/\$HOME/.config/app/f1.conf"
-out="$(gogq -r dots add ~/.config 2>&1)"; rc=$?
+out="$(gogq add -r dots ~/.config 2>&1)"; rc=$?
 assert_rc 0 "${rc}" "the add converges on a rerun"
 assert_file_contents "${DOTS}/\$HOME/.config/app/f1.conf" "changed"
 

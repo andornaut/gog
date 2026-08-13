@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# repository add, list, get-default, names, prefixes and the data directory
+# repository add, list, default, names, prefixes and the data directory
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 DATA_REL=".local/share/gog"
@@ -52,19 +52,19 @@ out="$(gogq repository list -p 2>&1)"
 assert_contains "${out}" "${DATA}/beta" "-p is the short form"
 
 echo
-echo "=== 1.4 get-default ==="
-out="$(gogq repository get-default 2>&1)"; rc=$?
-echo "--- get-default: ${out}"
-assert_rc 0 "${rc}" "get-default succeeds"
+echo "=== 1.4 default ==="
+out="$(gogq repository default 2>&1)"; rc=$?
+echo "--- default: ${out}"
+assert_rc 0 "${rc}" "default succeeds"
 assert_contains "${out}" "alpha" "the first repository is the default"
-out="$(gogq repository get-default --path 2>&1)"
+out="$(gogq repository default --path 2>&1)"
 assert_contains "${out}" "${DATA}/alpha" "--path prints the path"
-out="$(GOG_DEFAULT_REPOSITORY_NAME=beta gogq repository get-default 2>&1)"
+out="$(GOG_DEFAULT_REPOSITORY_NAME=beta gogq repository default 2>&1)"
 echo "--- with GOG_DEFAULT_REPOSITORY_NAME=beta: ${out}"
 assert_contains "${out}" "beta" "the environment variable chooses the default"
-out="$(GOG_DEFAULT_REPOSITORY_NAME=b gogq repository get-default 2>&1)"
+out="$(GOG_DEFAULT_REPOSITORY_NAME=b gogq repository default 2>&1)"
 assert_contains "${out}" "beta" "a prefix in the environment variable resolves"
-out="$(GOG_DEFAULT_REPOSITORY_NAME=nope gogq repository get-default 2>&1)"; rc=$?
+out="$(GOG_DEFAULT_REPOSITORY_NAME=nope gogq repository default 2>&1)"; rc=$?
 echo "--- with GOG_DEFAULT_REPOSITORY_NAME=nope: ${out}"
 assert_rc 1 "${rc}" "an unknown default fails"
 assert_contains "${out}" "repository not found" "the failure says so"
@@ -114,11 +114,9 @@ assert_not_contains "${out}" "plaindir" "a directory that is not a repository is
 assert_not_contains "${out}" "barerepo" "a bare repository is not listed"
 assert_not_contains "${out}" "empty" "an empty directory is not listed"
 assert_not_contains "${out}" "bad name" "a directory with an invalid name is not listed"
-out="$(gogq repository get-default 2>&1)"
-assert_contains "${out}" "real" "get-default skips the junk"
-out="$(gogq -r plaindir repository list 2>&1)"; rc=$?
-echo "--- -r plaindir: ${out}" | sed "s|${HOME}|~|"
-out="$(gogq -r plaindir apply 2>&1)"; rc=$?
+out="$(gogq repository default 2>&1)"
+assert_contains "${out}" "real" "the default repository skips the junk"
+out="$(gogq apply -r plaindir 2>&1)"; rc=$?
 printf '%s\n' "${out}" | sed "s|${HOME}|~|"
 assert_rc 1 "${rc}" "a directory that is not a repository cannot be used"
 assert_contains "${out}" "must be initialized as a git repository" "the failure says what is wrong"
@@ -131,19 +129,18 @@ gogq repository add dotfiles >/dev/null 2>&1
 gogq repository add dotlocal >/dev/null 2>&1
 gogq repository add other >/dev/null 2>&1
 printf 'x\n' >"${HOME}/.x"
-out="$(gogq -r oth add ~/.x 2>&1)"; rc=$?
+out="$(gogq add -r oth ~/.x 2>&1)"; rc=$?
 assert_rc 0 "${rc}" "a unique prefix resolves"
 assert_symlink_to "${HOME}/.x" "${DATA}/other/\$HOME/.x"
-out="$(gogq -r dot repository list 2>&1)"; rc=$?
 printf 'y\n' >"${HOME}/.y"
-out="$(gogq -r dot add ~/.y 2>&1)"; rc=$?
+out="$(gogq add -r dot ~/.y 2>&1)"; rc=$?
 printf '%s\n' "${out}" | sed "s|${HOME}|~|"
 assert_rc 1 "${rc}" "an ambiguous prefix is refused"
 assert_contains "${out}" "ambiguous" "the failure says why"
-out="$(gogq -r nosuch add ~/.y 2>&1)"; rc=$?
+out="$(gogq add -r nosuch ~/.y 2>&1)"; rc=$?
 assert_rc 1 "${rc}" "an unknown name is refused"
 assert_contains "${out}" "repository not found: nosuch" "the failure names it"
-out="$(gogq -r dotfiles add ~/.y 2>&1)"; rc=$?
+out="$(gogq add -r dotfiles ~/.y 2>&1)"; rc=$?
 assert_rc 0 "${rc}" "an exact name resolves even when it is a prefix of another"
 assert_symlink_to "${HOME}/.y" "${DATA}/dotfiles/\$HOME/.y"
 
@@ -187,7 +184,7 @@ new_sandbox repo-isfile
 DATA="${HOME}/${DATA_REL}"
 mkdir -p "${DATA}"
 printf 'x\n' >"${DATA}/afile"
-out="$(gogq -r afile apply 2>&1)"; rc=$?
+out="$(gogq apply -r afile 2>&1)"; rc=$?
 printf '%s\n' "${out}" | sed "s|${HOME}|~|"
 assert_rc 1 "${rc}" "a data-directory file cannot be used as a repository"
 
@@ -197,9 +194,9 @@ new_sandbox repo-none
 out="$(gogq repository list 2>&1)"; rc=$?
 assert_rc 0 "${rc}" "list of an empty data directory succeeds"
 [ -z "${out}" ] && _ok "it prints nothing" || _bad "it prints nothing (got '${out}')"
-out="$(gogq repository get-default 2>&1)"; rc=$?
+out="$(gogq repository default 2>&1)"; rc=$?
 printf '%s\n' "${out}" | sed "s|${HOME}|~|"
-assert_rc 1 "${rc}" "get-default fails when there is none"
+assert_rc 1 "${rc}" "the default fails when there is none"
 assert_contains "${out}" "no valid git repositories found" "the failure says so"
 assert_contains "${out}" "gog repository add" "and says what to do"
 

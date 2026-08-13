@@ -1,8 +1,10 @@
 package repository
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -54,9 +56,26 @@ func Add(repoName, repoURL string) (string, error) {
 // was given and initializing an empty repository otherwise
 func initRepo(repoPath, repoURL string) error {
 	if repoURL == "" {
-		return git.Init(BaseDir, repoPath)
+		return gitFailure(git.Init(BaseDir, repoPath),
+			fmt.Sprintf("failed to initialize a git repository in %s", repoPath))
 	}
-	return git.Clone(BaseDir, repoPath, repoURL)
+	return gitFailure(git.Clone(BaseDir, repoPath, repoURL),
+		fmt.Sprintf("failed to clone %s", repoURL))
+}
+
+// gitFailure names the step of gog's that failed. A wait status is left out:
+// git ran, and has already explained itself on its own stderr, so restating the
+// status would only add noise above it. Any other failure means git never ran,
+// and nothing but this error says why.
+func gitFailure(err error, step string) error {
+	var exitErr *exec.ExitError
+	switch {
+	case err == nil:
+		return nil
+	case errors.As(err, &exitErr):
+		return errors.New(step)
+	}
+	return fmt.Errorf("%s: %w", step, err)
 }
 
 // RemovalPath returns the path of the repository with the given name. Unlike
@@ -228,11 +247,11 @@ func resolveAddPath(targetPath string) (string, error) {
 		return "", fmt.Errorf("%q is a symbolic link to %s (add that path instead)", targetPath, target)
 	}
 	if err != nil {
-		return "", err
+		return "", describePathError(targetPath, err)
 	}
 	info, err := os.Stat(extPath)
 	if err != nil {
-		return "", err
+		return "", describePathError(targetPath, err)
 	}
 	// A named pipe, socket or device node has no contents to store: git holds
 	// neither its kind nor its contents, and opening one to read it blocks
@@ -241,6 +260,19 @@ func resolveAddPath(targetPath string) (string, error) {
 		return "", fmt.Errorf("%q is a %s (gog manages files and directories)", targetPath, copy.FileKind(info.Mode()))
 	}
 	return extPath, nil
+}
+
+// describePathError states what gog could not do with a path, in the form its
+// other failures take. The underlying error names the system call and the
+// resolved path it was given, neither of which is what the user typed.
+func describePathError(targetPath string, err error) error {
+	switch {
+	case os.IsNotExist(err):
+		return fmt.Errorf("path does not exist: %s", targetPath)
+	case os.IsPermission(err):
+		return fmt.Errorf("cannot read %s: permission denied", targetPath)
+	}
+	return err
 }
 
 func isSymlink(p string) bool {
@@ -265,7 +297,7 @@ func addPath(repoPath, targetPath string) error {
 
 	extFileInfo, err := os.Stat(extPath)
 	if err != nil {
-		return err
+		return describePathError(targetPath, err)
 	}
 
 	// Whether the repository already held this path decides what a failed copy
@@ -312,7 +344,7 @@ func removePath(repoPath, targetPath string) error {
 		if os.IsNotExist(err) {
 			// Reported rather than passed over in silence, because a path this
 			// repository never held looks exactly like one it just gave back
-			fmt.Printf("Not tracked by %s: %s\n", filepath.Base(repoPath), targetPath)
+			fmt.Printf("Skipped: %s (not tracked by %s)\n", targetPath, filepath.Base(repoPath))
 			return nil
 		}
 		return err

@@ -67,12 +67,20 @@ out="$(gogq git log --format=%s 2>&1 | tail -1)"
 assert_contains "${out}" "from stdin" "the commit message came from stdin"
 
 echo
-echo "=== 5.5 -r in both positions, and git's own -r ==="
+echo "=== 5.5 -r as git's first argument, and git's own -r ==="
 setup git-flags
 gogq git commit -q -m init >/dev/null 2>&1
-out="$(gogq -r dots git log --oneline 2>&1)"; rc=$?
+out="$(gogq git -r dots log --oneline 2>&1)"; rc=$?
 echo "${out}"
-assert_rc 0 "${rc}" "gog -r NAME git log"
+assert_rc 0 "${rc}" "gog git -r NAME log"
+assert_contains "${out}" "init" "the named repository was used"
+out="$(gogq git --repository=dots log --oneline 2>&1)"; rc=$?
+assert_rc 0 "${rc}" "--repository=NAME is the long form"
+out="$(gogq git -r 2>&1)"; rc=$?
+assert_rc 1 "${rc}" "-r without a name fails"
+assert_contains "${out}" "flag needs an argument" "and says what is missing"
+out="$(gogq -r dots git log --oneline 2>&1)"; rc=$?
+assert_rc 0 "${rc}" "the flag may precede the command, which is where cobra reads it"
 assert_contains "${out}" "init" "the named repository was used"
 out="$(gogq git ls-tree -r --name-only HEAD 2>&1)"; rc=$?
 echo "${out}"
@@ -185,7 +193,7 @@ echo "[exit ${rc}]"
 
 echo
 echo "=== 5.14 gog git against an unknown repository ==="
-out="$(gogq -r nope git status 2>&1)"; rc=$?
+out="$(gogq git -r nope status 2>&1)"; rc=$?
 echo "${out} [exit ${rc}]"
 assert_rc 1 "${rc}" "gog git against an unknown repository exits 1"
 assert_contains "${out}" "repository not found" "names the missing repository"

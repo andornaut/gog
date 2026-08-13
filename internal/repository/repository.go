@@ -17,7 +17,13 @@ var (
 func GetDefault() (string, error) {
 	defaultName := os.Getenv("GOG_DEFAULT_REPOSITORY_NAME")
 	if defaultName != "" {
-		return RootPath(defaultName)
+		p, err := RootPath(defaultName)
+		if err != nil {
+			// The name was never typed on the command line, so naming where it
+			// came from is what makes the failure actionable
+			return "", fmt.Errorf("%w (named by GOG_DEFAULT_REPOSITORY_NAME)", err)
+		}
+		return p, nil
 	}
 	return getFirst()
 }

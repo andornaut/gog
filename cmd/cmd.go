@@ -112,19 +112,31 @@ func ExitCode(err error) int {
 	return 1
 }
 
-var repositoryFlag string
+var (
+	repositoryFlag string
+	isStatus       bool
+)
 
 var add = &cobra.Command{
-	Use:                   "add [paths...]",
+	Use:                   "add <paths>...",
 	Short:                 "Add files or directories to a repository",
-	Args:                  cobra.MinimumNArgs(1),
+	Args:                  requirePaths,
 	DisableFlagsInUseLine: true,
 	RunE: func(c *cobra.Command, args []string) error {
+		// Usage is worth printing when the command was invoked wrongly, and only
+		// noise once it is running, so it is silenced here rather than declared
+		c.SilenceUsage = true
+		// The arguments are checked before the repository is selected, so that
+		// an unusable one fails before anything is reported about a repository
+		// the command will not use
+		paths, err := cleanPaths(args)
+		if err != nil {
+			return err
+		}
 		repoPath, err := repoPath()
 		if err != nil {
 			return err
 		}
-		paths := cleanPaths(args)
 		if err := repository.AddPaths(repoPath, paths); err != nil {
 			return err
 		}
@@ -138,6 +150,7 @@ var apply = &cobra.Command{
 	Args:                  cobra.NoArgs,
 	DisableFlagsInUseLine: true,
 	RunE: func(c *cobra.Command, args []string) error {
+		c.SilenceUsage = true
 		repoPath, err := repoPath()
 		if err != nil {
 			return err
@@ -147,12 +160,22 @@ var apply = &cobra.Command{
 }
 
 var git_ = &cobra.Command{
-	Use:                   "git [git command and arguments...]",
-	Short:                 "Run a git command in a repository's directory",
+	Use:   "git [-r NAME] [git command and arguments...]",
+	Short: "Run a git command in a repository's directory",
+	Long: "Run a git command in a repository's directory, and exit with git's own\n" +
+		"exit status. Every argument is handed to git, so `--help` reaches git\n" +
+		"rather than gog: run `gog help git` for this text.\n\n" +
+		"-r NAME selects the repository, and has to be the first argument for the\n" +
+		"same reason: anywhere else it belongs to git.",
 	DisableFlagParsing:    true,
 	DisableFlagsInUseLine: true,
 	DisableSuggestions:    true,
 	RunE: func(c *cobra.Command, args []string) error {
+		c.SilenceUsage = true
+		args, err := takeRepositoryFlag(args)
+		if err != nil {
+			return err
+		}
 		repoPath, err := repoPath()
 		if err != nil {
 			return err
@@ -169,18 +192,50 @@ var git_ = &cobra.Command{
 	},
 }
 
-var remove = &cobra.Command{
-	Use:                   "remove [paths...]",
-	Short:                 "Remove files or directories from a repository",
-	Args:                  cobra.MinimumNArgs(1),
+var list = &cobra.Command{
+	Use:   "list",
+	Short: "Print the paths that a repository holds",
+	Long: "Print the paths that `gog apply` would link, as they appear outside the\n" +
+		"repository. The files a repository keeps for itself and whatever\n" +
+		"GOG_IGNORE_FILES_REGEX names are left out.",
+	Args:                  cobra.NoArgs,
 	DisableFlagsInUseLine: true,
 	RunE: func(c *cobra.Command, args []string) error {
+		c.SilenceUsage = true
 		repoPath, err := repoPath()
 		if err != nil {
 			return err
 		}
+		entries, err := link.List(repoPath)
+		if err != nil {
+			return err
+		}
+		for _, entry := range entries {
+			if isStatus {
+				fmt.Printf("%-8s %s\n", entry.State, entry.ExternalPath)
+				continue
+			}
+			fmt.Println(entry.ExternalPath)
+		}
+		return nil
+	},
+}
 
-		paths := cleanPaths(args)
+var remove = &cobra.Command{
+	Use:                   "remove <paths>...",
+	Short:                 "Remove files or directories from a repository",
+	Args:                  requirePaths,
+	DisableFlagsInUseLine: true,
+	RunE: func(c *cobra.Command, args []string) error {
+		c.SilenceUsage = true
+		paths, err := cleanPaths(args)
+		if err != nil {
+			return err
+		}
+		repoPath, err := repoPath()
+		if err != nil {
+			return err
+		}
 		// Checked before anything is restored, so that an unusable path does
 		// not leave the paths before it half-removed
 		if err := repository.ValidateTargetPaths(paths); err != nil {
@@ -195,20 +250,86 @@ var remove = &cobra.Command{
 
 // Cmd implements the root ./gog command
 var Cmd = &cobra.Command{
-	Use:              "gog [command]",
-	Short:            "Link files to Git repositories",
-	SilenceUsage:     true,
-	TraverseChildren: true,
+	// The usage lines cobra derives from this list `gog [flags]` and
+	// `gog [command]` separately, so naming the operand here would repeat one
+	// of them
+	Use:   "gog",
+	Short: "Link files to Git repositories",
+	// A command with nothing to run never has its arguments validated: cobra
+	// prints help and reports success, so a mistyped command does nothing and
+	// says nothing. Reporting it here is what makes an unknown command a failure.
+	RunE: unknownCommand,
+}
+
+// takeRepositoryFlag consumes a leading -r/--repository option and returns the
+// arguments that remain for git.
+//
+// `gog git` hands every argument to git, so the flag that selects the
+// repository is read here rather than by cobra. Only the first argument is
+// considered: git's own -r options belong to its subcommands (`git branch -r`),
+// which cannot be the first argument, and one written anywhere else has to
+// reach git untouched.
+func takeRepositoryFlag(args []string) ([]string, error) {
+	if len(args) == 0 {
+		return args, nil
+	}
+	switch arg := args[0]; {
+	case arg == "-r", arg == "--repository":
+		if len(args) < 2 {
+			return nil, fmt.Errorf("flag needs an argument: %s", arg)
+		}
+		repositoryFlag = args[1]
+		return args[2:], nil
+	case strings.HasPrefix(arg, "--repository="):
+		repositoryFlag = strings.TrimPrefix(arg, "--repository=")
+		return args[1:], nil
+	case strings.HasPrefix(arg, "-r") && len(arg) > 2:
+		repositoryFlag = arg[2:]
+		return args[1:], nil
+	}
+	return args, nil
+}
+
+// unknownCommand reports an argument that names no subcommand, and prints help
+// when there is no argument at all
+func unknownCommand(c *cobra.Command, args []string) error {
+	if len(args) > 0 {
+		return fmt.Errorf("unknown command %q for %q", args[0], c.CommandPath())
+	}
+	return c.Help()
+}
+
+// requirePaths validates the operands of the commands that take paths. Cobra's
+// own message ("requires at least 1 arg(s), only received 0") names neither the
+// command nor what it wanted.
+func requirePaths(c *cobra.Command, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("%s requires at least one path", c.CommandPath())
+	}
+	return nil
 }
 
 func init() {
-	// -r is registered on each subcommand AND on the root (not as a persistent flag)
-	// so that both `gog -r NAME <cmd>` and `gog <cmd> -r NAME` work. It is not
-	// persistent because that would inherit it to `git`, which has its own -r flag
-	// and uses DisableFlagParsing to pass arguments through.
-	add.Flags().StringVarP(&repositoryFlag, "repository", "r", "", "name of repository")
-	apply.Flags().StringVarP(&repositoryFlag, "repository", "r", "", "name of repository")
-	remove.Flags().StringVarP(&repositoryFlag, "repository", "r", "", "name of repository")
-	Cmd.Flags().StringVarP(&repositoryFlag, "repository", "r", "", "name of repository")
-	Cmd.AddCommand(add, apply, git_, remove, repositorycmd.Cmd)
+	// -r belongs to the commands that select a repository, and is not persistent
+	// because that would inherit it to `git`, which has its own -r flag and uses
+	// DisableFlagParsing to pass arguments through. It is not registered on the
+	// root either: `gog -r NAME repository list` would then be accepted and
+	// ignored, since no `repository` subcommand selects a repository that way.
+	for _, c := range []*cobra.Command{add, apply, list, remove} {
+		c.Flags().StringVarP(&repositoryFlag, "repository", "r", "", "name of repository")
+		if err := c.RegisterFlagCompletionFunc("repository", repositorycmd.CompleteNames); err != nil {
+			panic(err)
+		}
+	}
+	list.Flags().BoolVarP(&isStatus, "status", "s", false, "print what applying would do to each path")
+	// `git` parses its own arguments, so cobra's help flag would be listed
+	// without being honored: --help reaches git like everything else
+	git_.Flags().BoolP("help", "h", false, "")
+	if err := git_.Flags().MarkHidden("help"); err != nil {
+		panic(err)
+	}
+	// The generated completion command is noise in the listing of a program
+	// with this few commands, and still works when it is not listed
+	Cmd.CompletionOptions.HiddenDefaultCmd = true
+	Cmd.AddCommand(add, apply, git_, list, remove, repositorycmd.Cmd)
 }

@@ -61,7 +61,7 @@ echo
 echo "=== 11.6 an existing repository is refused, and left alone ==="
 gogq repository add dots >/dev/null 2>&1
 printf 'x\n' >"${HOME}/.x"
-gogq -r dots add ~/.x >/dev/null 2>&1
+gogq add -r dots ~/.x >/dev/null 2>&1
 out="$(gogq repository add dots 2>&1)"; rc=$?
 printf '%s\n' "${out}" | sed "s|${SANDBOX}|SANDBOX|g" | tail -1
 assert_rc 1 "${rc}" "an existing repository is refused"

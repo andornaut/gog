@@ -12,13 +12,15 @@ import (
 // process, so a package-level count is enough.
 var failures int
 
-func printError(p string, err error) {
+// printError reports a failure in the form every other gog failure takes. Every
+// message names the path it concerns, so the path is not repeated here.
+func printError(err error) {
 	failures++
-	fmt.Fprintf(os.Stderr, "ERROR %s %s\n", p, err)
+	fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 }
 
 func printLinked(intPath string, extPath string) {
-	fmt.Printf("%s -> %s\n", extPath, escapeHomeVar(intPath))
+	fmt.Printf("Linked: %s -> %s\n", extPath, escapeHomeVar(intPath))
 }
 
 func printRestored(extPath string) {
