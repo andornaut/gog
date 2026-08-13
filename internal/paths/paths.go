@@ -2,6 +2,7 @@
 package paths
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -10,7 +11,14 @@ import (
 // a path boundary prevents a sibling such as /home/alicebob from matching
 // /home/alice. The trailing slash on base is trimmed so that the root
 // directory "/" matches its contents.
+//
+// An empty base contains nothing. Without this, it would read as a prefix of
+// every absolute path, and a directory that was never resolved would appear to
+// hold the whole filesystem.
 func Within(base, p string) bool {
+	if base == "" {
+		return false
+	}
 	return p == base || strings.HasPrefix(p, strings.TrimSuffix(base, "/")+"/")
 }
 
@@ -32,4 +40,14 @@ func Resolve(p string) string {
 		return p
 	}
 	return filepath.Join(Resolve(parent), filepath.Base(p))
+}
+
+// IsSymlink reports whether p is a symbolic link, and false if it cannot be
+// examined at all
+func IsSymlink(p string) bool {
+	fileInfo, err := os.Lstat(p)
+	if err != nil {
+		return false
+	}
+	return fileInfo.Mode()&os.ModeSymlink == os.ModeSymlink
 }

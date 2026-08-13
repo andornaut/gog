@@ -57,3 +57,47 @@ func TestResolveExistingPrefix(t *testing.T) {
 		t.Errorf("Resolve() = %q, want %q", got, want)
 	}
 }
+
+// A base that was never resolved holds nothing. Without this it reads as a
+// prefix of every absolute path, and every path looks like it is inside it.
+func TestWithinEmptyBase(t *testing.T) {
+	for _, p := range []string{"/home/alice/.bashrc", "/", "", "relative"} {
+		if Within("", p) {
+			t.Errorf("Within(\"\", %q) = true, want false", p)
+		}
+	}
+}
+
+func TestIsSymlink(t *testing.T) {
+	root := t.TempDir()
+	regular := filepath.Join(root, "regular")
+	if err := os.WriteFile(regular, []byte("test"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "symlink")
+	if err := os.Symlink(regular, link); err != nil {
+		t.Fatal(err)
+	}
+	broken := filepath.Join(root, "broken")
+	if err := os.Symlink(filepath.Join(root, "gone"), broken); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name string
+		path string
+		want bool
+	}{
+		{name: "a regular file", path: regular},
+		{name: "a symbolic link", path: link, want: true},
+		{name: "a broken symbolic link is still a link", path: broken, want: true},
+		{name: "a path that does not exist", path: filepath.Join(root, "gone")},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsSymlink(tt.path); got != tt.want {
+				t.Errorf("IsSymlink(%q) = %v, want %v", tt.path, got, tt.want)
+			}
+		})
+	}
+}

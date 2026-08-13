@@ -123,9 +123,6 @@ var add = &cobra.Command{
 	Args:                  requirePaths,
 	DisableFlagsInUseLine: true,
 	RunE: func(c *cobra.Command, args []string) error {
-		// Usage is worth printing when the command was invoked wrongly, and only
-		// noise once it is running, so it is silenced here rather than declared
-		c.SilenceUsage = true
 		// The arguments are checked before the repository is selected, so that
 		// an unusable one fails before anything is reported about a repository
 		// the command will not use
@@ -150,7 +147,6 @@ var apply = &cobra.Command{
 	Args:                  cobra.NoArgs,
 	DisableFlagsInUseLine: true,
 	RunE: func(c *cobra.Command, args []string) error {
-		c.SilenceUsage = true
 		repoPath, err := repoPath()
 		if err != nil {
 			return err
@@ -171,7 +167,6 @@ var git_ = &cobra.Command{
 	DisableFlagsInUseLine: true,
 	DisableSuggestions:    true,
 	RunE: func(c *cobra.Command, args []string) error {
-		c.SilenceUsage = true
 		args, err := takeRepositoryFlag(args)
 		if err != nil {
 			return err
@@ -201,7 +196,6 @@ var list = &cobra.Command{
 	Args:                  cobra.NoArgs,
 	DisableFlagsInUseLine: true,
 	RunE: func(c *cobra.Command, args []string) error {
-		c.SilenceUsage = true
 		repoPath, err := repoPath()
 		if err != nil {
 			return err
@@ -227,7 +221,6 @@ var remove = &cobra.Command{
 	Args:                  requirePaths,
 	DisableFlagsInUseLine: true,
 	RunE: func(c *cobra.Command, args []string) error {
-		c.SilenceUsage = true
 		paths, err := cleanPaths(args)
 		if err != nil {
 			return err
@@ -255,6 +248,13 @@ var Cmd = &cobra.Command{
 	// of them
 	Use:   "gog",
 	Short: "Link files to Git repositories",
+	// Runs once the arguments have been accepted and before any command does
+	// its work, which is both where gog's environment has to be resolved and
+	// where a failure stops being a wrong invocation worth printing usage for
+	PersistentPreRunE: func(c *cobra.Command, args []string) error {
+		c.SilenceUsage = true
+		return repository.Configure()
+	},
 	// A command with nothing to run never has its arguments validated: cobra
 	// prints help and reports success, so a mistyped command does nothing and
 	// says nothing. Reporting it here is what makes an unknown command a failure.

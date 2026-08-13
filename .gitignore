@@ -2,5 +2,3 @@ dist/
 gog
 coverage.txt
 coverage.html
-lab/bin/
-lab/sandboxes/

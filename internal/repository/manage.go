@@ -239,7 +239,7 @@ func resolveAddPath(targetPath string) (string, error) {
 	// itself, so the target is named and the link is left alone. This is
 	// decided before the resolution error is reported, so that a broken link
 	// is named as a link rather than as its missing target.
-	if isSymlink(targetPath) && (err != nil || !paths.Within(BaseDir, extPath)) {
+	if paths.IsSymlink(targetPath) && (err != nil || !paths.Within(BaseDir, extPath)) {
 		target, readErr := os.Readlink(targetPath)
 		if readErr != nil {
 			return "", fmt.Errorf("%q is a symbolic link (add its target instead)", targetPath)
@@ -273,14 +273,6 @@ func describePathError(targetPath string, err error) error {
 		return fmt.Errorf("cannot read %s: permission denied", targetPath)
 	}
 	return err
-}
-
-func isSymlink(p string) bool {
-	fileInfo, err := os.Lstat(p)
-	if err != nil {
-		return false
-	}
-	return fileInfo.Mode()&os.ModeSymlink == os.ModeSymlink
 }
 
 func addPath(repoPath, targetPath string) error {

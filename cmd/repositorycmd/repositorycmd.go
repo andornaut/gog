@@ -45,9 +45,6 @@ var add = &cobra.Command{
 	Args:                  requireArgs(1, 2, "a repository name and an optional URL"),
 	DisableFlagsInUseLine: true,
 	RunE: func(c *cobra.Command, args []string) error {
-		// Usage is worth printing when the command was invoked wrongly, and only
-		// noise once it is running, so it is silenced here rather than declared
-		c.SilenceUsage = true
 		repoName := args[0]
 		repoURL := ""
 		if len(args) > 1 {
@@ -73,7 +70,6 @@ var getDefault = &cobra.Command{
 	Args:                  cobra.NoArgs,
 	DisableFlagsInUseLine: true,
 	RunE: func(c *cobra.Command, args []string) error {
-		c.SilenceUsage = true
 		repoPath, err := repository.GetDefault()
 		if err != nil {
 			return err
@@ -94,7 +90,6 @@ var list = &cobra.Command{
 	Args:                  cobra.NoArgs,
 	DisableFlagsInUseLine: true,
 	RunE: func(c *cobra.Command, args []string) error {
-		c.SilenceUsage = true
 		names, err := repository.List()
 		if err != nil {
 			return err
@@ -116,7 +111,6 @@ var remove = &cobra.Command{
 	ValidArgsFunction:     CompleteNames,
 	DisableFlagsInUseLine: true,
 	RunE: func(c *cobra.Command, args []string) error {
-		c.SilenceUsage = true
 		repoPath, err := repository.RemovalPath(args[0])
 		if err != nil {
 			return err

@@ -39,6 +39,9 @@ type Entry struct {
 // repository meets them. The files that are never linked are left out, so the
 // listing is what `apply` would act on rather than what the directory contains.
 func List(repoPath string) ([]Entry, error) {
+	if err := configure(); err != nil {
+		return nil, err
+	}
 	var entries []Entry
 	err := filepath.Walk(repoPath, func(p string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -52,7 +55,7 @@ func List(repoPath string) ([]Entry, error) {
 			// directory is skipped would skip its siblings as well
 			return nil
 		}
-		if info.IsDir() || Skipped(repoPath, p) {
+		if info.IsDir() || skipped(repoPath, p) {
 			return nil
 		}
 		extPath := repository.ToExternalPath(repoPath, p)

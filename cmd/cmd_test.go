@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -167,5 +169,60 @@ func TestResolveGitPathsDoesNotMutateItsArgument(t *testing.T) {
 	resolveGitPaths(repoPath, args)
 	if args[1] != linkPath {
 		t.Errorf("args[1] = %q, want %q", args[1], linkPath)
+	}
+}
+
+// `gog git` hands every argument to git, so the flag that selects the
+// repository is read here rather than by cobra, and only where git could not
+// mean it
+func TestTakeRepositoryFlag(t *testing.T) {
+	tests := []struct {
+		name     string
+		args     []string
+		wantName string
+		wantArgs []string
+	}{
+		{name: "a separate value", args: []string{"-r", "work", "status"}, wantName: "work", wantArgs: []string{"status"}},
+		{name: "the long form", args: []string{"--repository", "work", "status"}, wantName: "work", wantArgs: []string{"status"}},
+		{name: "an attached value", args: []string{"-rwork", "status"}, wantName: "work", wantArgs: []string{"status"}},
+		{name: "the long form with an equals sign", args: []string{"--repository=work", "status"}, wantName: "work", wantArgs: []string{"status"}},
+		{name: "git's own -r is left alone", args: []string{"branch", "-r"}, wantArgs: []string{"branch", "-r"}},
+		{name: "and so is one that follows a subcommand", args: []string{"ls-tree", "-r", "HEAD"}, wantArgs: []string{"ls-tree", "-r", "HEAD"}},
+		{name: "no arguments at all", args: []string{}, wantArgs: []string{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repositoryFlag = ""
+			got, err := takeRepositoryFlag(tt.args)
+			if err != nil {
+				t.Fatalf("takeRepositoryFlag(%q) = %v", tt.args, err)
+			}
+			if repositoryFlag != tt.wantName {
+				t.Errorf("selected repository %q, want %q", repositoryFlag, tt.wantName)
+			}
+			if !slices.Equal(got, tt.wantArgs) {
+				t.Errorf("takeRepositoryFlag(%q) = %q, want %q", tt.args, got, tt.wantArgs)
+			}
+		})
+	}
+}
+
+func TestTakeRepositoryFlagWithoutAName(t *testing.T) {
+	repositoryFlag = ""
+	if _, err := takeRepositoryFlag([]string{"-r"}); err == nil {
+		t.Error("takeRepositoryFlag() accepted a flag with nothing after it")
+	}
+}
+
+// Only `gog git` reports a status of its own; every other failure is gog's
+func TestExitCode(t *testing.T) {
+	if got := ExitCode(&exitCodeError{code: 128}); got != 128 {
+		t.Errorf("ExitCode() = %d, want 128", got)
+	}
+	if got := ExitCode(fmt.Errorf("wrapped: %w", &exitCodeError{code: 3})); got != 3 {
+		t.Errorf("ExitCode() of a wrapped status = %d, want 3", got)
+	}
+	if got := ExitCode(errors.New("gog's own failure")); got != 1 {
+		t.Errorf("ExitCode() = %d, want 1", got)
 	}
 }

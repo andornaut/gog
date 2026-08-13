@@ -15,8 +15,29 @@ import (
 	"github.com/andornaut/gog/internal/repository"
 )
 
-// ignoreFilesRegex does not match anything by default
-var ignoreFilesRegex = regexp.MustCompile("a^")
+// ignoreFilesRegex is what GOG_IGNORE_FILES_REGEX names, and by default
+// matches nothing
+var ignoreFilesRegex = matchNothing
+
+// matchNothing is a pattern that no path satisfies
+var matchNothing = regexp.MustCompile("a^")
+
+// configure reads the environment that linking depends on. Each entry point
+// calls it, rather than an init that cannot report a failure and would fail
+// every command over a pattern that only the linking commands read.
+func configure() error {
+	pattern := os.Getenv("GOG_IGNORE_FILES_REGEX")
+	if pattern == "" {
+		ignoreFilesRegex = matchNothing
+		return nil
+	}
+	compiled, err := regexp.Compile(pattern)
+	if err != nil {
+		return fmt.Errorf("invalid GOG_IGNORE_FILES_REGEX %q: %w", pattern, err)
+	}
+	ignoreFilesRegex = compiled
+	return nil
+}
 
 // ErrIncomplete reports that some paths could not be linked. Each failure is
 // printed as it happens; this is returned so that the command exits non-zero
@@ -43,6 +64,9 @@ func Unlink(repoPath string, paths []string) error {
 
 // Link links the given paths
 func Link(repoPath string, paths []string) error {
+	if err := configure(); err != nil {
+		return err
+	}
 	before := failures
 	return reportFailures(before, syncLinks(repoPath, paths, Dir, File))
 }
@@ -76,6 +100,9 @@ func syncLinks(repoPath string, paths []string, updateDir, updateFile syncFunc) 
 // Dir recursively creates symbolic links from a repository directory's files
 // to the root filesystem
 func Dir(repoPath, intPath string) error {
+	if err := configure(); err != nil {
+		return err
+	}
 	before := failures
 	var linked []string
 	walkErr := filepath.Walk(intPath, func(p string, info os.FileInfo, err error) error {
@@ -92,7 +119,7 @@ func Dir(repoPath, intPath string) error {
 
 		if info.IsDir() {
 			extPath := repository.ToExternalPath(repoPath, p)
-			if isSymlink(extPath) {
+			if paths.IsSymlink(extPath) {
 				// Creating the directory would otherwise write through the link
 				// into whatever it points at
 				if ok, discardErr := discardable(extPath); !ok {
@@ -138,7 +165,7 @@ func File(repoPath, intPath string) error {
 // filesystem. It returns true if the file is linked and should be added to
 // git. It usually prints an error message and returns (false, nil) on failure.
 func linkFile(repoPath, intPath string) (bool, error) {
-	if Skipped(repoPath, intPath) {
+	if skipped(repoPath, intPath) {
 		return false, nil
 	}
 
@@ -192,10 +219,10 @@ func linkFile(repoPath, intPath string) (bool, error) {
 	return true, nil
 }
 
-// Skipped reports whether a path the repository holds is one that is never
+// skipped reports whether a path the repository holds is one that is never
 // linked: the files a repository keeps for itself, and whatever
 // GOG_IGNORE_FILES_REGEX names.
-func Skipped(repoPath, intPath string) bool {
+func skipped(repoPath, intPath string) bool {
 	if ignoreFilesRegex.MatchString(strings.TrimPrefix(intPath, repoPath+"/")) {
 		return true
 	}
@@ -258,20 +285,12 @@ func refusal(p string, err error) error {
 	return fmt.Errorf("%s already exists (move or remove it, then run the command again)", p)
 }
 
-func isSymlink(p string) bool {
-	fileInfo, err := os.Lstat(p)
-	if err != nil {
-		return false
-	}
-	return fileInfo.Mode()&os.ModeSymlink == os.ModeSymlink
-}
-
 // isGogOwnedLink reports whether p is a symbolic link that resolves into gog's
 // data directory. Such a link was created by gog itself - by a previous run or
 // by another repository that also tracks this path - so it is bookkeeping
 // rather than the user's data, and replacing it discards nothing.
 func isGogOwnedLink(p string) bool {
-	if !isSymlink(p) {
+	if !paths.IsSymlink(p) {
 		return false
 	}
 	resolved, err := filepath.EvalSymlinks(p)
@@ -334,16 +353,4 @@ func equalContents(a, b string) bool {
 
 func isEnd(err error) bool {
 	return errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF)
-}
-
-func init() {
-	ignoreFilesStr := os.Getenv("GOG_IGNORE_FILES_REGEX")
-	if ignoreFilesStr != "" {
-		var err error
-		ignoreFilesRegex, err = regexp.Compile(ignoreFilesStr)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: invalid GOG_IGNORE_FILES_REGEX %q: %v\n", ignoreFilesStr, err)
-			os.Exit(1)
-		}
-	}
 }
