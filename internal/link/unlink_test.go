@@ -2,7 +2,6 @@ package link
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -10,247 +9,148 @@ import (
 	"github.com/andornaut/gog/internal/repository"
 )
 
-// TestUnlinkFileRestoresFromSymlink verifies symlink is replaced with actual file
-func TestUnlinkFileRestoresFromSymlink(t *testing.T) {
-	repoPath, _ := newSandbox(t)
-
-	// Create a test file in the repo
-	testContent := []byte("test content for unlink")
-	intPath := filepath.Join(repoPath, "$HOME", ".bashrc")
-	if err := os.MkdirAll(filepath.Dir(intPath), 0755); err != nil {
-		t.Fatalf("Failed to create dir: %v", err)
-	}
-	if err := os.WriteFile(intPath, testContent, 0644); err != nil {
-		t.Fatalf("Failed to create test file: %v", err)
-	}
-
-	extPath := repository.ToExternalPath(repoPath, intPath)
-
-	// Create symlink
-	if err := os.MkdirAll(filepath.Dir(extPath), 0755); err != nil {
-		t.Fatalf("Failed to create ext dir: %v", err)
-	}
+func TestUnlinkFileRestoresWhatTheLinkPointedAt(t *testing.T) {
+	repoPath, homeDir := newSandbox(t)
+	intPath := write(t, repoPath, "$HOME/.bashrc", "bashrc\n")
+	extPath := filepath.Join(homeDir, ".bashrc")
 	if err := os.Symlink(intPath, extPath); err != nil {
-		t.Fatalf("Failed to create symlink: %v", err)
+		t.Fatal(err)
 	}
 
-	// Verify it's a symlink
-	if !paths.IsSymlink(extPath) {
-		t.Fatal("Expected symlink to be created")
+	if err := UnlinkFile(repoPath, intPath); err != nil {
+		t.Fatalf("UnlinkFile() = %v", err)
 	}
 
-	// Add file to git (required for git rm to work)
-	cmd := exec.Command("git", "add", "-f", intPath)
-	cmd.Dir = repoPath
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("Failed to add file to git: %v", err)
-	}
-
-	// Unlink the file
-	err := UnlinkFile(repoPath, intPath)
-	if err != nil {
-		t.Fatalf("UnlinkFile() failed: %v", err)
-	}
-
-	// Verify symlink is replaced with regular file
 	if paths.IsSymlink(extPath) {
-		t.Error("Path should no longer be a symlink")
+		t.Errorf("%s is still a symbolic link", extPath)
 	}
-
-	// Verify file contains correct content
-	content, err := os.ReadFile(extPath)
-	if err != nil {
-		t.Fatalf("Failed to read unlinked file: %v", err)
-	}
-
-	if string(content) != string(testContent) {
-		t.Errorf("Unlinked file content = %q, want %q", content, testContent)
+	if contents, err := os.ReadFile(extPath); err != nil || string(contents) != "bashrc\n" {
+		t.Errorf("%s holds %q (%v), want the repository's contents", extPath, contents, err)
 	}
 }
 
-// TestUnlinkFileSkipsNonSymlink verifies no-op when path is not a symlink
-func TestUnlinkFileSkipsNonSymlink(t *testing.T) {
-	repoPath, _ := newSandbox(t)
-
-	// Create a test file in the repo
-	intPath := filepath.Join(repoPath, "$HOME", ".bashrc")
-	if err := os.MkdirAll(filepath.Dir(intPath), 0755); err != nil {
-		t.Fatalf("Failed to create dir: %v", err)
+// `gog remove` means the same thing whether gog's link is still there, was
+// replaced with a file of the user's, or was deleted, so anything that is not
+// this repository's link is left exactly as it is
+func TestUnlinkFileLeavesAloneWhatIsNotItsLink(t *testing.T) {
+	tests := []struct {
+		name string
+		// prepare puts something at extPath, or nothing when it is nil
+		prepare  func(t *testing.T, extPath string)
+		want     string
+		wantLink bool
+	}{
+		{
+			name: "a file of the user's",
+			prepare: func(t *testing.T, extPath string) {
+				if err := os.WriteFile(extPath, []byte("mine\n"), 0644); err != nil {
+					t.Fatal(err)
+				}
+			},
+			want: "mine\n",
+		},
+		{
+			name: "a link to another repository's copy",
+			prepare: func(t *testing.T, extPath string) {
+				other := write(t, filepath.Join(repository.BaseDir, "other"), "$HOME/.bashrc", "theirs\n")
+				if err := os.Symlink(other, extPath); err != nil {
+					t.Fatal(err)
+				}
+			},
+			want:     "theirs\n",
+			wantLink: true,
+		},
+		{name: "nothing at all"},
 	}
-	if err := os.WriteFile(intPath, []byte("test content"), 0644); err != nil {
-		t.Fatalf("Failed to create test file: %v", err)
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repoPath, homeDir := newSandbox(t)
+			intPath := write(t, repoPath, "$HOME/.bashrc", "bashrc\n")
+			extPath := filepath.Join(homeDir, ".bashrc")
+			if tt.prepare != nil {
+				tt.prepare(t, extPath)
+			}
 
-	extPath := repository.ToExternalPath(repoPath, intPath)
+			if err := UnlinkFile(repoPath, intPath); err != nil {
+				t.Fatalf("UnlinkFile() = %v", err)
+			}
 
-	// Create regular file (not a symlink)
-	regularContent := []byte("regular file content")
-	if err := os.MkdirAll(filepath.Dir(extPath), 0755); err != nil {
-		t.Fatalf("Failed to create ext dir: %v", err)
-	}
-	if err := os.WriteFile(extPath, regularContent, 0644); err != nil {
-		t.Fatalf("Failed to create regular file: %v", err)
-	}
-
-	// Attempt to unlink (should be no-op)
-	err := UnlinkFile(repoPath, intPath)
-	if err != nil {
-		t.Fatalf("UnlinkFile() should return nil for non-symlinks, got: %v", err)
-	}
-
-	// Verify file is unchanged
-	content, err := os.ReadFile(extPath)
-	if err != nil {
-		t.Fatalf("Failed to read file: %v", err)
-	}
-
-	if string(content) != string(regularContent) {
-		t.Error("Regular file should not be modified")
-	}
-}
-
-// TestUnlinkFileSkipsWrongTarget verifies no-op when symlink points elsewhere
-func TestUnlinkFileSkipsWrongTarget(t *testing.T) {
-	repoPath, _ := newSandbox(t)
-
-	// Create a test file in the repo
-	intPath := filepath.Join(repoPath, "$HOME", ".bashrc")
-	if err := os.MkdirAll(filepath.Dir(intPath), 0755); err != nil {
-		t.Fatalf("Failed to create dir: %v", err)
-	}
-	if err := os.WriteFile(intPath, []byte("test content"), 0644); err != nil {
-		t.Fatalf("Failed to create test file: %v", err)
-	}
-
-	extPath := repository.ToExternalPath(repoPath, intPath)
-
-	// Create a different target file
-	otherTarget := filepath.Join(repoPath, "other-file")
-	if err := os.WriteFile(otherTarget, []byte("other content"), 0644); err != nil {
-		t.Fatalf("Failed to create other file: %v", err)
-	}
-
-	// Create symlink pointing to different file
-	if err := os.MkdirAll(filepath.Dir(extPath), 0755); err != nil {
-		t.Fatalf("Failed to create ext dir: %v", err)
-	}
-	if err := os.Symlink(otherTarget, extPath); err != nil {
-		t.Fatalf("Failed to create symlink: %v", err)
-	}
-
-	// Attempt to unlink (should be no-op because symlink points elsewhere)
-	err := UnlinkFile(repoPath, intPath)
-	if err != nil {
-		t.Fatalf("UnlinkFile() should return nil for wrong target, got: %v", err)
-	}
-
-	// Verify symlink still exists and points to otherTarget
-	if !paths.IsSymlink(extPath) {
-		t.Error("Symlink should still exist")
-	}
-
-	target, err := os.Readlink(extPath)
-	if err != nil {
-		t.Fatalf("Failed to read symlink: %v", err)
-	}
-
-	if target != otherTarget {
-		t.Errorf("Symlink target changed, got %q, want %q", target, otherTarget)
+			contents, err := os.ReadFile(extPath)
+			if tt.want == "" {
+				if !os.IsNotExist(err) {
+					t.Errorf("%s holds %q (%v), want nothing", extPath, contents, err)
+				}
+				return
+			}
+			if err != nil || string(contents) != tt.want {
+				t.Errorf("%s holds %q (%v), want %q", extPath, contents, err, tt.want)
+			}
+			if got := paths.IsSymlink(extPath); got != tt.wantLink {
+				t.Errorf("%s is a symbolic link = %v, want %v", extPath, got, tt.wantLink)
+			}
+		})
 	}
 }
 
-// TestUnlinkFileSkipsNonexistent verifies no-op when external file doesn't exist
-func TestUnlinkFileSkipsNonexistent(t *testing.T) {
-	repoPath, _ := newSandbox(t)
-
-	// Create a test file in the repo
-	intPath := filepath.Join(repoPath, "$HOME", ".bashrc")
-	if err := os.MkdirAll(filepath.Dir(intPath), 0755); err != nil {
-		t.Fatalf("Failed to create dir: %v", err)
-	}
-	if err := os.WriteFile(intPath, []byte("test content"), 0644); err != nil {
-		t.Fatalf("Failed to create test file: %v", err)
-	}
-
-	// Don't create external file - it doesn't exist
-
-	// Attempt to unlink (should be no-op)
-	err := UnlinkFile(repoPath, intPath)
-	if err != nil {
-		t.Fatalf("UnlinkFile() should return nil for nonexistent file, got: %v", err)
-	}
-}
-
-// TestUnlinkDirProcessesAllFiles verifies directory unlinking is recursive
-func TestUnlinkDirProcessesAllFiles(t *testing.T) {
-	repoPath, _ := newSandbox(t)
-
-	// Create test directory structure in repo
-	testDir := filepath.Join(repoPath, "$HOME", ".config")
-	if err := os.MkdirAll(testDir, 0755); err != nil {
-		t.Fatalf("Failed to create test dir: %v", err)
-	}
-
-	// Create multiple files
+func TestUnlinkDirRestoresEveryFileInTheTree(t *testing.T) {
+	repoPath, homeDir := newSandbox(t)
 	files := map[string]string{
-		"file1.txt":        "content 1",
-		"file2.txt":        "content 2",
-		"subdir/file3.txt": "content 3",
+		".config/one":     "one\n",
+		".config/sub/two": "two\n",
 	}
-
-	for name, content := range files {
-		intPath := filepath.Join(testDir, name)
-		if err := os.MkdirAll(filepath.Dir(intPath), 0755); err != nil {
-			t.Fatalf("Failed to create dir: %v", err)
-		}
-		if err := os.WriteFile(intPath, []byte(content), 0644); err != nil {
-			t.Fatalf("Failed to create file %s: %v", name, err)
-		}
-	}
-
-	// Create symlinks for all files
-	extBaseDir := repository.ToExternalPath(repoPath, testDir)
-	for name := range files {
-		intPath := filepath.Join(testDir, name)
-		extPath := filepath.Join(extBaseDir, name)
-
+	for rel, contents := range files {
+		intPath := write(t, repoPath, filepath.Join("$HOME", rel), contents)
+		extPath := filepath.Join(homeDir, rel)
 		if err := os.MkdirAll(filepath.Dir(extPath), 0755); err != nil {
-			t.Fatalf("Failed to create ext dir: %v", err)
+			t.Fatal(err)
 		}
 		if err := os.Symlink(intPath, extPath); err != nil {
-			t.Fatalf("Failed to create symlink for %s: %v", name, err)
+			t.Fatal(err)
 		}
 	}
 
-	// Add files to git (required for git rm to work)
-	cmd := exec.Command("git", "add", "-f", testDir)
-	cmd.Dir = repoPath
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("Failed to add files to git: %v", err)
+	if err := UnlinkDir(repoPath, filepath.Join(repoPath, "$HOME", ".config")); err != nil {
+		t.Fatalf("UnlinkDir() = %v", err)
 	}
 
-	// Unlink the entire directory
-	err := UnlinkDir(repoPath, testDir)
-	if err != nil {
-		t.Fatalf("UnlinkDir() failed: %v", err)
-	}
-
-	// Verify all symlinks were replaced with regular files
-	for name, expectedContent := range files {
-		extPath := filepath.Join(extBaseDir, name)
-
+	for rel, want := range files {
+		extPath := filepath.Join(homeDir, rel)
 		if paths.IsSymlink(extPath) {
-			t.Errorf("File %s should no longer be a symlink", name)
+			t.Errorf("%s is still a symbolic link", extPath)
 		}
-
-		content, err := os.ReadFile(extPath)
-		if err != nil {
-			t.Errorf("Failed to read %s: %v", name, err)
-			continue
+		if contents, err := os.ReadFile(extPath); err != nil || string(contents) != want {
+			t.Errorf("%s holds %q (%v), want %q", extPath, contents, err, want)
 		}
+	}
+}
 
-		if string(content) != expectedContent {
-			t.Errorf("File %s content = %q, want %q", name, content, expectedContent)
+// Unlink is given paths as they are named outside the repository, and hands
+// each to UnlinkDir or UnlinkFile by what the repository holds at it
+func TestUnlinkDispatchesOnWhatTheRepositoryHolds(t *testing.T) {
+	repoPath, homeDir := newSandbox(t)
+	for _, rel := range []string{".bashrc", ".config/conf"} {
+		intPath := write(t, repoPath, filepath.Join("$HOME", rel), rel+"\n")
+		extPath := filepath.Join(homeDir, rel)
+		if err := os.MkdirAll(filepath.Dir(extPath), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(intPath, extPath); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	err := Unlink(repoPath, []string{
+		filepath.Join(homeDir, ".bashrc"),
+		filepath.Join(homeDir, ".config"),
+		filepath.Join(homeDir, ".vimrc"),
+	})
+
+	if err != nil {
+		t.Fatalf("Unlink() = %v", err)
+	}
+	for _, rel := range []string{".bashrc", ".config/conf"} {
+		if paths.IsSymlink(filepath.Join(homeDir, rel)) {
+			t.Errorf("%s is still a symbolic link", rel)
 		}
 	}
 }

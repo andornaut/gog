@@ -9,137 +9,75 @@ const (
 	testRepoPath = testHomeDir + "/.local/share/gog/testrepo"
 )
 
-// TestToExternalPathRejectsArbitraryEnvVars tests critical security fix:
-// ensures that only $HOME is expanded, not arbitrary environment variables
-func TestToExternalPathRejectsArbitraryEnvVars(t *testing.T) {
-	originalHomeDir := homeDir
-	defer func() { homeDir = originalHomeDir }()
+// setHomeDir points the package at a home directory for the duration of the
+// test
+func setHomeDir(t *testing.T, home string) {
+	t.Helper()
+	original := SetHomeDirForTest(home)
+	t.Cleanup(func() { SetHomeDirForTest(original) })
+}
 
-	homeDir = testHomeDir
-	repoPath := testRepoPath
+// Only $HOME is expanded. Expanding whatever a component names would let the
+// environment decide where a repository writes.
+func TestToExternalPath(t *testing.T) {
+	setHomeDir(t, testHomeDir)
 
 	tests := []struct {
-		name     string
-		p        string
-		expected string
+		name string
+		p    string
+		want string
 	}{
-		{
-			name:     "$HOME expansion works",
-			p:        repoPath + "/$HOME/.bashrc",
-			expected: "/home/testuser/.bashrc",
-		},
-		{
-			name:     "$PATH not expanded (security)",
-			p:        repoPath + "/$PATH/file",
-			expected: "/$PATH/file",
-		},
-		{
-			name:     "$USER not expanded (security)",
-			p:        repoPath + "/$USER/.config",
-			expected: "/$USER/.config",
-		},
+		{name: "$HOME is expanded", p: testRepoPath + "/$HOME/.bashrc", want: "/home/testuser/.bashrc"},
+		{name: "$PATH is not", p: testRepoPath + "/$PATH/file", want: "/$PATH/file"},
+		{name: "$USER is not", p: testRepoPath + "/$USER/.config", want: "/$USER/.config"},
+		{name: "a name that merely begins with $HOME is not", p: testRepoPath + "/$HOMEWORK/file", want: "/$HOMEWORK/file"},
+		{name: "anything else belongs to the filesystem root", p: testRepoPath + "/etc/hosts", want: "/etc/hosts"},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := ToExternalPath(repoPath, tt.p)
-			if result != tt.expected {
-				t.Errorf("got %q, want %q", result, tt.expected)
+			if got := ToExternalPath(testRepoPath, tt.p); got != tt.want {
+				t.Errorf("ToExternalPath(%q) = %q, want %q", tt.p, got, tt.want)
 			}
 		})
 	}
 }
 
-// TestToInternalPathMatchesHomeOnPathBoundary ensures that a sibling of the
-// home directory (e.g. /home/testuserother) is not treated as being within it
-func TestToInternalPathMatchesHomeOnPathBoundary(t *testing.T) {
-	originalHomeDir := homeDir
-	defer func() { homeDir = originalHomeDir }()
-
-	homeDir = testHomeDir
-	repoPath := testRepoPath
+// A path under the home directory is stored by the portable $HOME component,
+// and the home directory is matched on a path boundary so that a sibling of it
+// is not read as being within it
+func TestToInternalPath(t *testing.T) {
+	setHomeDir(t, testHomeDir)
 
 	tests := []struct {
-		name     string
-		p        string
-		expected string
+		name string
+		p    string
+		want string
 	}{
-		{
-			name:     "path within home is converted",
-			p:        "/home/testuser/.bashrc",
-			expected: repoPath + "/$HOME/.bashrc",
-		},
-		{
-			name:     "sibling of home is not converted",
-			p:        "/home/testuserother/.bashrc",
-			expected: repoPath + "/home/testuserother/.bashrc",
-		},
+		{name: "within home", p: "/home/testuser/.bashrc", want: testRepoPath + "/$HOME/.bashrc"},
+		{name: "a sibling of home", p: "/home/testuserother/.bashrc", want: testRepoPath + "/home/testuserother/.bashrc"},
+		{name: "outside home", p: "/etc/hosts", want: testRepoPath + "/etc/hosts"},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := ToInternalPath(repoPath, tt.p)
-			if result != tt.expected {
-				t.Errorf("got %q, want %q", result, tt.expected)
+			if got := ToInternalPath(testRepoPath, tt.p); got != tt.want {
+				t.Errorf("ToInternalPath(%q) = %q, want %q", tt.p, got, tt.want)
 			}
 		})
 	}
 }
 
-// TestToExternalPathMatchesHomeVarOnPathBoundary ensures that a path
-// component that merely starts with $HOME (e.g. $HOMEWORK) is not expanded
-func TestToExternalPathMatchesHomeVarOnPathBoundary(t *testing.T) {
-	originalHomeDir := homeDir
-	defer func() { homeDir = originalHomeDir }()
-
-	homeDir = testHomeDir
-	repoPath := testRepoPath
-
-	result := ToExternalPath(repoPath, repoPath+"/$HOMEWORK/file")
-	expected := "/$HOMEWORK/file"
-	if result != expected {
-		t.Errorf("got %q, want %q", result, expected)
-	}
-}
-
-// TestPathConversionRootHome ensures a root home directory ("/") still maps
-// paths under $HOME and round-trips without producing double slashes
-func TestPathConversionRootHome(t *testing.T) {
-	originalHomeDir := homeDir
-	defer func() { homeDir = originalHomeDir }()
-
-	homeDir = "/"
+// A home directory of "/" puts every path under $HOME, and must not produce a
+// doubled separator on the way back
+func TestPathConversionWithRootAsHome(t *testing.T) {
+	setHomeDir(t, "/")
 	repoPath := "/data/gog/testrepo"
 
 	internal := ToInternalPath(repoPath, "/etc/foo")
-	if internal != repoPath+"/$HOME/etc/foo" {
-		t.Errorf("ToInternalPath() = %q, want %q", internal, repoPath+"/$HOME/etc/foo")
+
+	if want := repoPath + "/$HOME/etc/foo"; internal != want {
+		t.Errorf("ToInternalPath() = %q, want %q", internal, want)
 	}
-	external := ToExternalPath(repoPath, internal)
-	if external != "/etc/foo" {
-		t.Errorf("ToExternalPath() = %q, want %q", external, "/etc/foo")
-	}
-}
-
-// TestPathConversionRoundTrip verifies path conversion is reversible
-func TestPathConversionRoundTrip(t *testing.T) {
-	originalHomeDir := homeDir
-	defer func() { homeDir = originalHomeDir }()
-
-	homeDir = testHomeDir
-	repoPath := testRepoPath
-
-	testPaths := []string{
-		"/home/testuser/.bashrc",
-		"/home/testuser/.config/nvim/init.vim",
-		"/etc/config",
-	}
-
-	for _, original := range testPaths {
-		internal := ToInternalPath(repoPath, original)
-		external := ToExternalPath(repoPath, internal)
-		if external != original {
-			t.Errorf("Round trip failed: %q -> %q -> %q", original, internal, external)
-		}
+	if got := ToExternalPath(repoPath, internal); got != "/etc/foo" {
+		t.Errorf("ToExternalPath() = %q, want /etc/foo", got)
 	}
 }

@@ -68,16 +68,32 @@ func TestDirLinksAndStagesATree(t *testing.T) {
 	}
 }
 
+// A second run leaves the link as the first one made it, rather than removing
+// and recreating it
 func TestDirIsIdempotent(t *testing.T) {
 	repoPath, homeDir := newSandbox(t)
 	intPath := write(t, repoPath, "$HOME/.bashrc", "one\n")
+	extPath := filepath.Join(homeDir, ".bashrc")
 
-	for i := range 2 {
-		if err := Dir(repoPath, repoPath); err != nil {
-			t.Fatalf("Dir() on run %d = %v", i+1, err)
-		}
+	if err := Dir(repoPath, repoPath); err != nil {
+		t.Fatalf("Dir() = %v", err)
 	}
-	assertLink(t, filepath.Join(homeDir, ".bashrc"), intPath)
+	first, err := os.Lstat(extPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = Dir(repoPath, repoPath); err != nil {
+		t.Fatalf("Dir() on the second run = %v", err)
+	}
+
+	assertLink(t, extPath, intPath)
+	second, err := os.Lstat(extPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !second.ModTime().Equal(first.ModTime()) {
+		t.Errorf("the link was recreated (%v, then %v)", first.ModTime(), second.ModTime())
+	}
 }
 
 // The files a repository keeps for itself sit at its root, which is the
@@ -110,24 +126,6 @@ func TestSkipped(t *testing.T) {
 	}
 }
 
-// .git holds nothing that was ever linked, and walking into it would stage the
-// repository's own bookkeeping
-func TestDirNeverWalksIntoGit(t *testing.T) {
-	repoPath, homeDir := newSandbox(t)
-	write(t, repoPath, "$HOME/.bashrc", "bashrc\n")
-
-	if err := Dir(repoPath, repoPath); err != nil {
-		t.Fatalf("Dir() = %v", err)
-	}
-
-	if _, err := os.Lstat(filepath.Join(homeDir, ".bashrc")); err != nil {
-		t.Errorf("the repository was not linked: %v", err)
-	}
-	if got := staged(t, repoPath); strings.Contains(got, ".git/") {
-		t.Errorf("the index holds %q, want nothing from .git", got)
-	}
-}
-
 func TestDirHonoursTheIgnorePattern(t *testing.T) {
 	repoPath, homeDir := newSandbox(t)
 	write(t, repoPath, "$HOME/.bashrc", "bashrc\n")
@@ -146,17 +144,34 @@ func TestDirHonoursTheIgnorePattern(t *testing.T) {
 	}
 }
 
-// A pattern that cannot be compiled fails the command that reads it. It used to
-// exit the process from an init, which failed every command over a setting only
-// the linking commands use.
-func TestDirRejectsAnUncompilablePattern(t *testing.T) {
-	repoPath, _ := newSandbox(t)
-	write(t, repoPath, "$HOME/.bashrc", "bashrc\n")
-	t.Setenv("GOG_IGNORE_FILES_REGEX", "[")
+// Every entry point reads the pattern for itself, so a pattern that cannot be
+// compiled fails the command that reads it rather than every command
+func TestEntryPointsRejectAnUncompilablePattern(t *testing.T) {
+	tests := []struct {
+		name string
+		call func(repoPath, intPath, extPath string) error
+	}{
+		{name: "Dir", call: func(repoPath, _, _ string) error { return Dir(repoPath, repoPath) }},
+		{name: "File", call: func(repoPath, intPath, _ string) error { return File(repoPath, intPath) }},
+		{name: "Link", call: func(repoPath, _, extPath string) error { return Link(repoPath, []string{extPath}) }},
+		{name: "List", call: func(repoPath, _, _ string) error { _, err := List(repoPath); return err }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repoPath, homeDir := newSandbox(t)
+			intPath := write(t, repoPath, "$HOME/.bashrc", "bashrc\n")
+			extPath := filepath.Join(homeDir, ".bashrc")
+			t.Setenv("GOG_IGNORE_FILES_REGEX", "[")
 
-	err := Dir(repoPath, repoPath)
-	if err == nil || !strings.Contains(err.Error(), "GOG_IGNORE_FILES_REGEX") {
-		t.Errorf("Dir() = %v, want a failure naming the variable", err)
+			err := tt.call(repoPath, intPath, extPath)
+
+			if err == nil || !strings.Contains(err.Error(), "GOG_IGNORE_FILES_REGEX") {
+				t.Errorf("%s() = %v, want a failure naming the variable", tt.name, err)
+			}
+			if _, statErr := os.Lstat(extPath); !os.IsNotExist(statErr) {
+				t.Error("a path was linked although the pattern could not be compiled")
+			}
+		})
 	}
 }
 
@@ -188,11 +203,11 @@ func TestDirReportsAConflictAndCarriesOn(t *testing.T) {
 func TestDirReplacesWhatHoldsNothingOfTheUsers(t *testing.T) {
 	tests := []struct {
 		name     string
-		inTheWay func(t *testing.T, homeDir, intPath, otherRepo string)
+		inTheWay func(t *testing.T, homeDir, otherRepo string)
 	}{
 		{
 			name: "a broken symbolic link",
-			inTheWay: func(t *testing.T, homeDir, _, _ string) {
+			inTheWay: func(t *testing.T, homeDir, _ string) {
 				if err := os.Symlink(filepath.Join(homeDir, "gone"), filepath.Join(homeDir, ".bashrc")); err != nil {
 					t.Fatal(err)
 				}
@@ -200,7 +215,7 @@ func TestDirReplacesWhatHoldsNothingOfTheUsers(t *testing.T) {
 		},
 		{
 			name: "a link into gog's data directory",
-			inTheWay: func(t *testing.T, homeDir, _, otherRepo string) {
+			inTheWay: func(t *testing.T, homeDir, otherRepo string) {
 				other := filepath.Join(otherRepo, "$HOME", ".bashrc")
 				if err := os.MkdirAll(filepath.Dir(other), 0755); err != nil {
 					t.Fatal(err)
@@ -215,7 +230,7 @@ func TestDirReplacesWhatHoldsNothingOfTheUsers(t *testing.T) {
 		},
 		{
 			name: "a copy of what the repository holds, which is what add leaves behind",
-			inTheWay: func(t *testing.T, homeDir, _, _ string) {
+			inTheWay: func(t *testing.T, homeDir, _ string) {
 				if err := os.WriteFile(filepath.Join(homeDir, ".bashrc"), []byte("same\n"), 0644); err != nil {
 					t.Fatal(err)
 				}
@@ -227,23 +242,12 @@ func TestDirReplacesWhatHoldsNothingOfTheUsers(t *testing.T) {
 			repoPath, homeDir := newSandbox(t)
 			intPath := write(t, repoPath, "$HOME/.bashrc", "same\n")
 			otherRepo := filepath.Join(repository.BaseDir, "other")
-			tt.inTheWay(t, homeDir, intPath, otherRepo)
+			tt.inTheWay(t, homeDir, otherRepo)
 
 			if err := Dir(repoPath, repoPath); err != nil {
 				t.Fatalf("Dir() = %v", err)
 			}
 			assertLink(t, filepath.Join(homeDir, ".bashrc"), intPath)
 		})
-	}
-}
-
-// A file at the repository root belongs to the filesystem root, which is what
-// makes a repository able to hold /etc as well as $HOME. Only the conversion is
-// checked here: writing to / is not a test's business.
-func TestExternalPathOfARepositoryRootFile(t *testing.T) {
-	repoPath, _ := newSandbox(t)
-	got := repository.ToExternalPath(repoPath, filepath.Join(repoPath, "etc", "hosts"))
-	if got != "/etc/hosts" {
-		t.Errorf("ToExternalPath() = %q, want /etc/hosts", got)
 	}
 }

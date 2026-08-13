@@ -20,14 +20,10 @@ func newSandbox(t *testing.T) (repoPath, homeDir string) {
 	baseDir := filepath.Join(root, "data")
 	repoPath = filepath.Join(baseDir, "dots")
 	homeDir = filepath.Join(root, "home")
-	for _, p := range []string{repoPath, homeDir} {
-		if err := os.MkdirAll(p, 0755); err != nil {
-			t.Fatal(err)
-		}
+	if err := os.MkdirAll(homeDir, 0755); err != nil {
+		t.Fatal(err)
 	}
-	runGit(t, repoPath, "init", "-q")
-	runGit(t, repoPath, "config", "user.email", "test@example.com")
-	runGit(t, repoPath, "config", "user.name", "Test User")
+	newRepo(t, repoPath)
 
 	// Whatever the developer has set would otherwise choose the repository
 	t.Setenv("GOG_DEFAULT_REPOSITORY_NAME", "")
@@ -40,6 +36,17 @@ func newSandbox(t *testing.T) (repoPath, homeDir string) {
 		SetHomeDirForTest(originalHome)
 	})
 	return repoPath, homeDir
+}
+
+// newRepo initializes a repository that can commit without a global git config
+func newRepo(t *testing.T, repoPath string) {
+	t.Helper()
+	if err := os.MkdirAll(repoPath, 0755); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, repoPath, "init", "-q")
+	runGit(t, repoPath, "config", "user.email", "test@example.com")
+	runGit(t, repoPath, "config", "user.name", "Test User")
 }
 
 func runGit(t *testing.T, repoPath string, args ...string) string {

@@ -9,7 +9,7 @@ import (
 
 // configureIn runs Configure against the given home directory, restoring what
 // the package held afterwards
-func configureIn(t *testing.T, home string, andThen ...func()) error {
+func configureIn(t *testing.T, home string) error {
 	t.Helper()
 	originalBase, originalHome := BaseDir, homeDir
 	t.Cleanup(func() {
@@ -21,13 +21,10 @@ func configureIn(t *testing.T, home string, andThen ...func()) error {
 	// directory lands, and Configure creates it
 	t.Setenv("GOG_HOME", "")
 	t.Setenv("XDG_DATA_HOME", "")
-	for _, set := range andThen {
-		set()
-	}
 	return Configure()
 }
 
-func TestConfigureResolvesTheDataDirectory(t *testing.T) {
+func TestConfigureResolvesAndCreatesTheDataDirectory(t *testing.T) {
 	home := t.TempDir()
 
 	if err := configureIn(t, home); err != nil {
@@ -46,33 +43,35 @@ func TestConfigureResolvesTheDataDirectory(t *testing.T) {
 	}
 }
 
-// $HOME is normalized so that path-boundary comparisons hold and so that paths
+// $HOME is normalized so that path-boundary comparisons hold, and so that paths
 // under it are stored by the portable $HOME component rather than by name
 func TestConfigureNormalizesTheHomeDirectory(t *testing.T) {
-	home := t.TempDir()
-
-	if err := configureIn(t, home+"/"); err != nil {
-		t.Fatalf("Configure() = %v", err)
-	}
-
-	if homeDir != home {
-		t.Errorf("homeDir = %q, want the trailing slash gone (%q)", homeDir, home)
-	}
-}
-
-func TestConfigureRelativeHomeDirectory(t *testing.T) {
-	root := t.TempDir()
-	t.Chdir(root)
-	if err := os.MkdirAll(filepath.Join(root, "home"), 0755); err != nil {
+	t.Chdir(t.TempDir())
+	cwd, err := os.Getwd()
+	if err != nil {
 		t.Fatal(err)
 	}
-
-	if err := configureIn(t, "home"); err != nil {
-		t.Fatalf("Configure() = %v", err)
+	if err := os.Mkdir(filepath.Join(cwd, "home"), 0755); err != nil {
+		t.Fatal(err)
 	}
+	want := filepath.Join(cwd, "home")
 
-	if !filepath.IsAbs(homeDir) {
-		t.Errorf("homeDir = %q, want an absolute path", homeDir)
+	tests := []struct {
+		name string
+		home string
+	}{
+		{name: "a trailing slash is dropped", home: want + "/"},
+		{name: "a relative path is resolved", home: "home"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := configureIn(t, tt.home); err != nil {
+				t.Fatalf("Configure() = %v", err)
+			}
+			if homeDir != want {
+				t.Errorf("homeDir = %q, want %q", homeDir, want)
+			}
+		})
 	}
 }
 
@@ -104,28 +103,53 @@ func TestConfigureRefusesAnUnusableHomeDirectory(t *testing.T) {
 	}
 }
 
-func TestConfigureHonoursGogHome(t *testing.T) {
-	home := t.TempDir()
-	want := filepath.Join(t.TempDir(), "elsewhere")
-
-	if err := configureIn(t, home, func() { t.Setenv("GOG_HOME", want) }); err != nil {
-		t.Fatalf("Configure() = %v", err)
+// The data directory is chosen from the environment and normalized: a trailing
+// slash or a relative path would break the path-boundary comparisons that
+// decide what gog owns
+func TestGetBaseDir(t *testing.T) {
+	tests := []struct {
+		name     string
+		gogHome  string
+		dataHome string
+		want     string
+	}{
+		{name: "the default", want: "/home/testuser/.local/share/gog"},
+		{name: "XDG_DATA_HOME", dataHome: "/data", want: "/data/gog"},
+		{name: "GOG_HOME wins over XDG_DATA_HOME", gogHome: "/elsewhere", dataHome: "/data", want: "/elsewhere"},
+		{name: "a trailing slash is dropped", gogHome: "/data/gog/", want: "/data/gog"},
 	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("GOG_HOME", tt.gogHome)
+			t.Setenv("XDG_DATA_HOME", tt.dataHome)
 
-	if BaseDir != want {
-		t.Errorf("BaseDir = %q, want %q", BaseDir, want)
+			got, err := getBaseDir("/home/testuser")
+
+			if err != nil {
+				t.Fatalf("getBaseDir() = %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("getBaseDir() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 
-func TestConfigureHonoursXdgDataHome(t *testing.T) {
-	home := t.TempDir()
-	dataHome := t.TempDir()
-
-	if err := configureIn(t, home, func() { t.Setenv("XDG_DATA_HOME", dataHome) }); err != nil {
-		t.Fatalf("Configure() = %v", err)
+func TestGetBaseDirResolvesARelativeGogHome(t *testing.T) {
+	t.Chdir(t.TempDir())
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
 	}
+	t.Setenv("GOG_HOME", "relative-gog")
+	t.Setenv("XDG_DATA_HOME", "")
 
-	if want := filepath.Join(dataHome, "gog"); BaseDir != want {
-		t.Errorf("BaseDir = %q, want %q", BaseDir, want)
+	got, err := getBaseDir("/home/testuser")
+
+	if err != nil {
+		t.Fatalf("getBaseDir() = %v", err)
+	}
+	if want := filepath.Join(cwd, "relative-gog"); got != want {
+		t.Errorf("getBaseDir() = %q, want %q", got, want)
 	}
 }

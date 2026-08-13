@@ -1,633 +1,316 @@
 package copy
 
 import (
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
-// TestFileCopiesToDestination verifies basic file copying
-func TestFileCopiesToDestination(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "gog-copy-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
+// copyNothing is a SkipFunc that skips nothing, so that a test exercises only
+// what Dir itself decides
+func copyNothing(_, _ string) bool { return false }
 
-	// Create source file
-	srcPath := filepath.Join(tmpDir, "source.txt")
-	testContent := []byte("test content for copy")
-	if writeErr := os.WriteFile(srcPath, testContent, 0644); writeErr != nil {
-		t.Fatalf("Failed to create source file: %v", writeErr)
+func write(t *testing.T, p, contents string, mode os.FileMode) string {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
+		t.Fatal(err)
 	}
-
-	// Copy file
-	dstPath := filepath.Join(tmpDir, "dest.txt")
-	err = File(srcPath, dstPath)
-	if err != nil {
-		t.Fatalf("File() failed: %v", err)
+	if err := os.WriteFile(p, []byte(contents), mode); err != nil {
+		t.Fatal(err)
 	}
+	return p
+}
 
-	// Verify destination file exists with correct content
-	dstContent, err := os.ReadFile(dstPath)
-	if err != nil {
-		t.Fatalf("Failed to read destination file: %v", err)
-	}
-
-	if string(dstContent) != string(testContent) {
-		t.Errorf("Destination content = %q, want %q", dstContent, testContent)
+func assertContents(t *testing.T, p, want string) {
+	t.Helper()
+	contents, err := os.ReadFile(p)
+	if err != nil || string(contents) != want {
+		t.Errorf("%s holds %q (%v), want %q", p, contents, err, want)
 	}
 }
 
-// TestFilePreservesPermissions verifies file permissions are preserved
-func TestFilePreservesPermissions(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "gog-copy-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	// Create source file with specific permissions
-	srcPath := filepath.Join(tmpDir, "source.txt")
-	if writeErr := os.WriteFile(srcPath, []byte("test"), 0600); writeErr != nil {
-		t.Fatalf("Failed to create source file: %v", writeErr)
-	}
-
-	// Copy file
-	dstPath := filepath.Join(tmpDir, "dest.txt")
-	err = File(srcPath, dstPath)
-	if err != nil {
-		t.Fatalf("File() failed: %v", err)
-	}
-
-	// Verify permissions are preserved
-	srcInfo, err := os.Stat(srcPath)
-	if err != nil {
-		t.Fatalf("Failed to stat source: %v", err)
-	}
-
-	dstInfo, err := os.Stat(dstPath)
-	if err != nil {
-		t.Fatalf("Failed to stat destination: %v", err)
-	}
-
-	if srcInfo.Mode() != dstInfo.Mode() {
-		t.Errorf("Permissions not preserved: src=%v, dst=%v", srcInfo.Mode(), dstInfo.Mode())
+func assertAbsent(t *testing.T, p string) {
+	t.Helper()
+	if _, err := os.Lstat(p); !os.IsNotExist(err) {
+		t.Errorf("%s exists (%v), want nothing", p, err)
 	}
 }
 
-// TestFileOverwritesExisting verifies existing files are overwritten
-func TestFileOverwritesExisting(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "gog-copy-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
+func TestFileCopiesContentsAndMode(t *testing.T) {
+	root := t.TempDir()
+	src := write(t, filepath.Join(root, "source"), "contents\n", 0600)
+	dst := filepath.Join(root, "destination")
 
-	// Create source file
-	srcPath := filepath.Join(tmpDir, "source.txt")
-	newContent := []byte("new content")
-	if writeErr := os.WriteFile(srcPath, newContent, 0644); writeErr != nil {
-		t.Fatalf("Failed to create source file: %v", writeErr)
+	if err := File(src, dst); err != nil {
+		t.Fatalf("File() = %v", err)
 	}
 
-	// Create existing destination file
-	dstPath := filepath.Join(tmpDir, "dest.txt")
-	oldContent := []byte("old content")
-	if writeErr := os.WriteFile(dstPath, oldContent, 0644); writeErr != nil {
-		t.Fatalf("Failed to create destination file: %v", writeErr)
-	}
-
-	// Copy file (should overwrite)
-	err = File(srcPath, dstPath)
-	if err != nil {
-		t.Fatalf("File() failed: %v", err)
-	}
-
-	// Verify destination has new content
-	dstContent, err := os.ReadFile(dstPath)
-	if err != nil {
-		t.Fatalf("Failed to read destination: %v", err)
-	}
-
-	if string(dstContent) != string(newContent) {
-		t.Errorf("Destination not overwritten: got %q, want %q", dstContent, newContent)
+	assertContents(t, dst, "contents\n")
+	info, err := os.Stat(dst)
+	if err != nil || info.Mode() != 0600 {
+		t.Errorf("%s has mode %v (%v), want 0600", dst, info.Mode(), err)
 	}
 }
 
-// TestFileFailsForNonexistentSource verifies error when source doesn't exist
-func TestFileFailsForNonexistentSource(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "gog-copy-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
+func TestFileReplacesTheDestination(t *testing.T) {
+	root := t.TempDir()
+	src := write(t, filepath.Join(root, "source"), "new\n", 0644)
+	dst := write(t, filepath.Join(root, "destination"), "old\n", 0644)
+
+	if err := File(src, dst); err != nil {
+		t.Fatalf("File() = %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
 
-	srcPath := filepath.Join(tmpDir, "nonexistent.txt")
-	dstPath := filepath.Join(tmpDir, "dest.txt")
+	assertContents(t, dst, "new\n")
+}
 
-	err = File(srcPath, dstPath)
-	if err == nil {
-		t.Error("File() should return error for nonexistent source")
+func TestFileFailsWhenTheSourceDoesNotExist(t *testing.T) {
+	root := t.TempDir()
+
+	if err := File(filepath.Join(root, "gone"), filepath.Join(root, "destination")); err == nil {
+		t.Error("File() reported success for a source that does not exist")
 	}
 }
 
-// TestDirCopiesRecursively verifies directory tree copying
-func TestDirCopiesRecursively(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "gog-copy-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
+func TestDirCopiesATreeAndItsModes(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "src")
+	if err := os.MkdirAll(filepath.Join(src, "sub"), 0700); err != nil {
+		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	write(t, filepath.Join(src, "one"), "one\n", 0644)
+	write(t, filepath.Join(src, "sub", "two"), "two\n", 0644)
+	write(t, filepath.Join(src, "sub", "nested", "three"), "three\n", 0644)
+	dst := filepath.Join(root, "dst")
 
-	// Create source directory structure
-	srcDir := filepath.Join(tmpDir, "src")
-	if mkdirErr := os.MkdirAll(srcDir, 0755); mkdirErr != nil {
-		t.Fatalf("Failed to create source dir: %v", mkdirErr)
-	}
-
-	// Create files in structure
-	files := map[string]string{
-		"file1.txt":               "content 1",
-		"subdir/file2.txt":        "content 2",
-		"subdir/nested/file3.txt": "content 3",
+	if err := Dir(src, dst, copyNothing); err != nil {
+		t.Fatalf("Dir() = %v", err)
 	}
 
-	for name, content := range files {
-		path := filepath.Join(srcDir, name)
-		if mkdirErr := os.MkdirAll(filepath.Dir(path), 0755); mkdirErr != nil {
-			t.Fatalf("Failed to create dir: %v", mkdirErr)
-		}
-		if writeErr := os.WriteFile(path, []byte(content), 0644); writeErr != nil {
-			t.Fatalf("Failed to create file %s: %v", name, writeErr)
-		}
-	}
-
-	// Copy directory
-	dstDir := filepath.Join(tmpDir, "dst")
-	err = Dir(srcDir, dstDir, func(src, dst string) bool { return false })
-	if err != nil {
-		t.Fatalf("Dir() failed: %v", err)
-	}
-
-	// Verify all files were copied
-	for name, expectedContent := range files {
-		dstPath := filepath.Join(dstDir, name)
-		content, err := os.ReadFile(dstPath)
-		if err != nil {
-			t.Errorf("Failed to read %s: %v", name, err)
-			continue
-		}
-
-		if string(content) != expectedContent {
-			t.Errorf("File %s content = %q, want %q", name, content, expectedContent)
-		}
+	assertContents(t, filepath.Join(dst, "one"), "one\n")
+	assertContents(t, filepath.Join(dst, "sub", "two"), "two\n")
+	assertContents(t, filepath.Join(dst, "sub", "nested", "three"), "three\n")
+	info, err := os.Stat(filepath.Join(dst, "sub"))
+	if err != nil || info.Mode().Perm() != 0700 {
+		t.Errorf("sub has mode %v (%v), want 0700", info.Mode().Perm(), err)
 	}
 }
 
-// TestDirSkipsFunctionWorks verifies skip function is respected
-func TestDirSkipsFunctionWorks(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "gog-copy-test-*")
+func TestDirHonoursTheSkipFunc(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "src")
+	write(t, filepath.Join(src, "keep"), "keep\n", 0644)
+	write(t, filepath.Join(src, "skip"), "skip\n", 0644)
+	dst := filepath.Join(root, "dst")
+
+	err := Dir(src, dst, func(srcPath, _ string) bool {
+		return filepath.Base(srcPath) == "skip"
+	})
+
 	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
+		t.Fatalf("Dir() = %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	assertContents(t, filepath.Join(dst, "keep"), "keep\n")
+	assertAbsent(t, filepath.Join(dst, "skip"))
+}
 
-	// Create source directory with files
-	srcDir := filepath.Join(tmpDir, "src")
-	if mkdirErr := os.MkdirAll(srcDir, 0755); mkdirErr != nil {
-		t.Fatalf("Failed to create source dir: %v", mkdirErr)
-	}
+func TestDirFailsWhenTheSourceIsNotADirectory(t *testing.T) {
+	root := t.TempDir()
+	src := write(t, filepath.Join(root, "file"), "x\n", 0644)
 
-	// Create files
-	keepFile := filepath.Join(srcDir, "keep.txt")
-	skipFile := filepath.Join(srcDir, "skip.txt")
-
-	if writeErr := os.WriteFile(keepFile, []byte("keep"), 0644); writeErr != nil {
-		t.Fatalf("Failed to create keep file: %v", writeErr)
-	}
-	if writeErr := os.WriteFile(skipFile, []byte("skip"), 0644); writeErr != nil {
-		t.Fatalf("Failed to create skip file: %v", writeErr)
-	}
-
-	// Copy directory with skip function
-	dstDir := filepath.Join(tmpDir, "dst")
-	skipFunc := func(src, dst string) bool {
-		return filepath.Base(src) == "skip.txt"
-	}
-
-	err = Dir(srcDir, dstDir, skipFunc)
-	if err != nil {
-		t.Fatalf("Dir() failed: %v", err)
-	}
-
-	// Verify keep.txt was copied
-	dstKeep := filepath.Join(dstDir, "keep.txt")
-	if _, err := os.Stat(dstKeep); err != nil {
-		t.Error("keep.txt should be copied")
-	}
-
-	// Verify skip.txt was NOT copied
-	dstSkip := filepath.Join(dstDir, "skip.txt")
-	if _, err := os.Stat(dstSkip); !os.IsNotExist(err) {
-		t.Error("skip.txt should not be copied")
+	if err := Dir(src, filepath.Join(root, "dst"), copyNothing); err == nil {
+		t.Error("Dir() reported success for a source that is not a directory")
 	}
 }
 
-// TestDirFailsForNonDirectory verifies error when source is not a directory
-func TestDirFailsForNonDirectory(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "gog-copy-test-*")
+// A directory that holds nothing to copy leaves no trace at the destination,
+// so that an empty directory does not become an entry git cannot track
+func TestDirCreatesNoDirectoryWithNothingToHold(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "src")
+	if err := os.MkdirAll(filepath.Join(src, "empty", "alsoempty"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(src, "full", "file"), "file\n", 0644)
+	dst := filepath.Join(root, "dst")
+
+	if err := Dir(src, dst, copyNothing); err != nil {
+		t.Fatalf("Dir() = %v", err)
+	}
+
+	assertContents(t, filepath.Join(dst, "full", "file"), "file\n")
+	assertAbsent(t, filepath.Join(dst, "empty"))
+
+	// A source that holds nothing at all creates no destination either
+	emptySrc := filepath.Join(root, "empty-src")
+	if err := os.Mkdir(emptySrc, 0755); err != nil {
+		t.Fatal(err)
+	}
+	emptyDst := filepath.Join(root, "empty-dst")
+
+	if err := Dir(emptySrc, emptyDst, copyNothing); err != nil {
+		t.Fatalf("Dir() = %v", err)
+	}
+
+	assertAbsent(t, emptyDst)
+}
+
+// A named pipe, socket or device node is skipped rather than opened, which is
+// what lets a directory such as ~/.gnupg be copied while the sockets in it are
+// left alone. Opening one blocks until a writer appears, or fails outright.
+func TestDirSkipsAnIrregularFile(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "src")
+	write(t, filepath.Join(src, "keep"), "keep\n", 0644)
+	listener, err := net.Listen("unix", filepath.Join(src, "socket"))
 	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
+		t.Skipf("cannot create a unix socket: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = listener.Close() }()
+	dst := filepath.Join(root, "dst")
 
-	// Create a regular file
-	srcFile := filepath.Join(tmpDir, "file.txt")
-	if writeErr := os.WriteFile(srcFile, []byte("test"), 0644); writeErr != nil {
-		t.Fatalf("Failed to create file: %v", writeErr)
+	if err := Dir(src, dst, copyNothing); err != nil {
+		t.Fatalf("Dir() = %v", err)
 	}
 
-	dstDir := filepath.Join(tmpDir, "dst")
+	assertContents(t, filepath.Join(dst, "keep"), "keep\n")
+	assertAbsent(t, filepath.Join(dst, "socket"))
+}
 
-	// Attempt to copy file as directory
-	err = Dir(srcFile, dstDir, func(src, dst string) bool { return false })
-	if err == nil {
-		t.Error("Dir() should return error when source is not a directory")
+// A symbolic link is skipped rather than followed: copying its target would
+// store the contents while discarding the link, and because none is followed
+// the walk cannot enter a cycle or reach outside the tree
+func TestDirSkipsSymbolicLinks(t *testing.T) {
+	tests := []struct {
+		name string
+		// prepare creates the link and returns its path relative to the source
+		prepare func(t *testing.T, root, src string) string
+		// alsoCopied is a source-relative path that must reach the destination
+		alsoCopied string
+	}{
+		{
+			name: "to a file",
+			prepare: func(t *testing.T, _, src string) string {
+				link(t, write(t, filepath.Join(src, "target"), "target\n", 0644), filepath.Join(src, "link"))
+				return "link"
+			},
+			alsoCopied: "target",
+		},
+		{
+			name: "to a directory",
+			prepare: func(t *testing.T, _, src string) string {
+				write(t, filepath.Join(src, "targetdir", "file"), "file\n", 0644)
+				link(t, filepath.Join(src, "targetdir"), filepath.Join(src, "linkdir"))
+				return "linkdir"
+			},
+			alsoCopied: "targetdir/file",
+		},
+		{
+			name: "whose target is missing",
+			prepare: func(t *testing.T, root, src string) string {
+				link(t, filepath.Join(root, "gone"), filepath.Join(src, "broken"))
+				return "broken"
+			},
+		},
+		{
+			name: "to its own directory",
+			prepare: func(t *testing.T, _, src string) string {
+				link(t, src, filepath.Join(src, "loop"))
+				return "loop"
+			},
+		},
+		{
+			name: "to an ancestor within the source",
+			prepare: func(t *testing.T, _, src string) string {
+				write(t, filepath.Join(src, "a", "b", "file"), "file\n", 0644)
+				link(t, filepath.Join(src, "a"), filepath.Join(src, "a", "b", "loop"))
+				return "a/b/loop"
+			},
+			alsoCopied: "a/b/file",
+		},
+		{
+			name: "to a path outside the source",
+			prepare: func(t *testing.T, root, src string) string {
+				write(t, filepath.Join(root, "outside", "elsewhere"), "elsewhere\n", 0644)
+				link(t, filepath.Join(root, "outside"), filepath.Join(src, "escape"))
+				return "escape"
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			src := filepath.Join(root, "src")
+			write(t, filepath.Join(src, "keep"), "keep\n", 0644)
+			rel := tt.prepare(t, root, src)
+			dst := filepath.Join(root, "dst")
+
+			if err := Dir(src, dst, copyNothing); err != nil {
+				t.Fatalf("Dir() = %v", err)
+			}
+
+			assertAbsent(t, filepath.Join(dst, rel))
+			// The rest of the tree is still copied
+			assertContents(t, filepath.Join(dst, "keep"), "keep\n")
+			if tt.alsoCopied != "" {
+				if _, err := os.Stat(filepath.Join(dst, tt.alsoCopied)); err != nil {
+					t.Errorf("%s did not reach the destination: %v", tt.alsoCopied, err)
+				}
+			}
+		})
 	}
 }
 
-// TestDirPreservesPermissions verifies directory permissions are preserved
-func TestDirPreservesPermissions(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "gog-copy-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
+// A source inside the destination would be copied into itself, and the two are
+// compared resolved because either may be addressed through a symbolic link
+func TestDirRefusesASourceInsideTheDestination(t *testing.T) {
+	tests := []struct {
+		name string
+		// prepare returns the source and destination to copy between
+		prepare func(t *testing.T, root string) (src, dst string)
+	}{
+		{
+			name: "named directly",
+			prepare: func(t *testing.T, root string) (string, string) {
+				dst := filepath.Join(root, "dst")
+				src := filepath.Join(dst, "inner")
+				write(t, filepath.Join(src, "file"), "file\n", 0644)
+				return src, dst
+			},
+		},
+		{
+			name: "reached through a symbolic link",
+			prepare: func(t *testing.T, root string) (string, string) {
+				real := filepath.Join(root, "real")
+				src := filepath.Join(real, "inner")
+				write(t, filepath.Join(src, "file"), "file\n", 0644)
+				dst := filepath.Join(root, "link")
+				link(t, real, dst)
+				return src, dst
+			},
+		},
 	}
-	defer os.RemoveAll(tmpDir)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			src, dst := tt.prepare(t, t.TempDir())
 
-	// Create source directory with specific permissions. It needs a file
-	// because a directory with nothing to copy is not created.
-	srcDir := filepath.Join(tmpDir, "src")
-	if mkdirErr := os.Mkdir(srcDir, 0700); mkdirErr != nil {
-		t.Fatalf("Failed to create source dir: %v", mkdirErr)
-	}
-	if writeErr := os.WriteFile(filepath.Join(srcDir, "file.txt"), []byte("x"), 0644); writeErr != nil {
-		t.Fatalf("Failed to create file: %v", writeErr)
-	}
+			err := Dir(src, dst, copyNothing)
 
-	// Copy directory
-	dstDir := filepath.Join(tmpDir, "dst")
-	err = Dir(srcDir, dstDir, func(src, dst string) bool { return false })
-	if err != nil {
-		t.Fatalf("Dir() failed: %v", err)
-	}
-
-	// Verify permissions are preserved
-	srcInfo, err := os.Stat(srcDir)
-	if err != nil {
-		t.Fatalf("Failed to stat source: %v", err)
-	}
-
-	dstInfo, err := os.Stat(dstDir)
-	if err != nil {
-		t.Fatalf("Failed to stat destination: %v", err)
-	}
-
-	if srcInfo.Mode() != dstInfo.Mode() {
-		t.Errorf("Directory permissions not preserved: src=%v, dst=%v", srcInfo.Mode(), dstInfo.Mode())
+			if err == nil || !strings.Contains(err.Error(), "destination") {
+				t.Errorf("Dir() = %v, want a failure naming the destination", err)
+			}
+		})
 	}
 }
 
-// TestDirSkipsEmptyDirectories verifies that a directory with nothing to copy
-// into it is not created at the destination, so that an empty directory does
-// not become an untrackable entry in the repository
-func TestDirSkipsEmptyDirectories(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "gog-copy-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	srcDir := filepath.Join(tmpDir, "src")
-	if mkdirErr := os.MkdirAll(filepath.Join(srcDir, "empty", "alsoempty"), 0755); mkdirErr != nil {
-		t.Fatalf("Failed to create empty dirs: %v", mkdirErr)
-	}
-	if mkdirErr := os.MkdirAll(filepath.Join(srcDir, "full"), 0755); mkdirErr != nil {
-		t.Fatalf("Failed to create full dir: %v", mkdirErr)
-	}
-	if writeErr := os.WriteFile(filepath.Join(srcDir, "full", "file.txt"), []byte("x"), 0644); writeErr != nil {
-		t.Fatalf("Failed to create file: %v", writeErr)
-	}
-
-	dstDir := filepath.Join(tmpDir, "dst")
-	if err = Dir(srcDir, dstDir, func(src, dst string) bool { return false }); err != nil {
-		t.Fatalf("Dir() failed: %v", err)
-	}
-
-	if _, statErr := os.Stat(filepath.Join(dstDir, "full", "file.txt")); statErr != nil {
-		t.Errorf("The non-empty directory should have been copied: %v", statErr)
-	}
-	if _, statErr := os.Stat(filepath.Join(dstDir, "empty")); !os.IsNotExist(statErr) {
-		t.Error("An empty directory should not be created at the destination")
-	}
-}
-
-// TestDirSkipsEntirelyEmptySource verifies that copying a source that holds
-// nothing creates no destination at all
-func TestDirSkipsEntirelyEmptySource(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "gog-copy-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	srcDir := filepath.Join(tmpDir, "src")
-	if mkdirErr := os.Mkdir(srcDir, 0755); mkdirErr != nil {
-		t.Fatalf("Failed to create source dir: %v", mkdirErr)
-	}
-
-	dstDir := filepath.Join(tmpDir, "dst")
-	if err = Dir(srcDir, dstDir, func(src, dst string) bool { return false }); err != nil {
-		t.Fatalf("Dir() failed: %v", err)
-	}
-	if _, statErr := os.Stat(dstDir); !os.IsNotExist(statErr) {
-		t.Error("An empty source should not create a destination directory")
-	}
-}
-
-// TestDirSkipsSymlinkToFile verifies that a symlink is left behind rather than
-// replaced by a copy of its target's contents
-func TestDirSkipsSymlinkToFile(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "gog-copy-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	srcDir := filepath.Join(tmpDir, "src")
-	if mkdirErr := os.MkdirAll(srcDir, 0755); mkdirErr != nil {
-		t.Fatalf("Failed to create source dir: %v", mkdirErr)
-	}
-
-	// Create target file for symlink, within the source tree
-	targetFile := filepath.Join(srcDir, "target.txt")
-	if writeErr := os.WriteFile(targetFile, []byte("symlink target content"), 0644); writeErr != nil {
-		t.Fatalf("Failed to create target file: %v", writeErr)
-	}
-	if symlinkErr := os.Symlink(targetFile, filepath.Join(srcDir, "link.txt")); symlinkErr != nil {
-		t.Fatalf("Failed to create symlink: %v", symlinkErr)
-	}
-
-	dstDir := filepath.Join(tmpDir, "dst")
-	if err = Dir(srcDir, dstDir, func(src, dst string) bool { return false }); err != nil {
-		t.Fatalf("Dir() failed: %v", err)
-	}
-
-	// The target itself is a regular file and is copied
-	if _, statErr := os.Stat(filepath.Join(dstDir, "target.txt")); statErr != nil {
-		t.Errorf("The symlink's target should have been copied: %v", statErr)
-	}
-	// The symlink is not, in either form
-	if _, statErr := os.Lstat(filepath.Join(dstDir, "link.txt")); !os.IsNotExist(statErr) {
-		t.Error("The symlink should not have been copied")
-	}
-}
-
-// TestDirSkipsSymlinkToDirectory verifies that a symlink to a directory is
-// skipped rather than copied as a directory
-func TestDirSkipsSymlinkToDirectory(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "gog-copy-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	srcDir := filepath.Join(tmpDir, "src")
-	targetDir := filepath.Join(srcDir, "targetdir")
-	if mkdirErr := os.MkdirAll(targetDir, 0755); mkdirErr != nil {
-		t.Fatalf("Failed to create target dir: %v", mkdirErr)
-	}
-	if writeErr := os.WriteFile(filepath.Join(targetDir, "file.txt"), []byte("x"), 0644); writeErr != nil {
-		t.Fatalf("Failed to create file in target dir: %v", writeErr)
-	}
-	if symlinkErr := os.Symlink(targetDir, filepath.Join(srcDir, "linkdir")); symlinkErr != nil {
-		t.Fatalf("Failed to create symlink: %v", symlinkErr)
-	}
-
-	dstDir := filepath.Join(tmpDir, "dst")
-	if err = Dir(srcDir, dstDir, func(src, dst string) bool { return false }); err != nil {
-		t.Fatalf("Dir() failed: %v", err)
-	}
-
-	if _, statErr := os.Stat(filepath.Join(dstDir, "targetdir", "file.txt")); statErr != nil {
-		t.Errorf("The real directory should have been copied: %v", statErr)
-	}
-	if _, statErr := os.Lstat(filepath.Join(dstDir, "linkdir")); !os.IsNotExist(statErr) {
-		t.Error("The symlinked directory should not have been copied")
-	}
-}
-
-// TestDirSkipsBrokenSymlink verifies that a symlink whose target is missing is
-// skipped rather than failing the whole copy
-func TestDirSkipsBrokenSymlink(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "gog-copy-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	srcDir := filepath.Join(tmpDir, "src")
-	if mkdirErr := os.MkdirAll(srcDir, 0755); mkdirErr != nil {
-		t.Fatalf("Failed to create source dir: %v", mkdirErr)
-	}
-	if writeErr := os.WriteFile(filepath.Join(srcDir, "keep.txt"), []byte("keep"), 0644); writeErr != nil {
-		t.Fatalf("Failed to create file: %v", writeErr)
-	}
-	if symlinkErr := os.Symlink(filepath.Join(tmpDir, "gone"), filepath.Join(srcDir, "broken")); symlinkErr != nil {
-		t.Fatalf("Failed to create symlink: %v", symlinkErr)
-	}
-
-	dstDir := filepath.Join(tmpDir, "dst")
-	if err = Dir(srcDir, dstDir, func(src, dst string) bool { return false }); err != nil {
-		t.Fatalf("Dir() should skip a broken symlink, got: %v", err)
-	}
-	if _, statErr := os.Stat(filepath.Join(dstDir, "keep.txt")); statErr != nil {
-		t.Errorf("The rest of the directory should have been copied: %v", statErr)
-	}
-	if _, statErr := os.Lstat(filepath.Join(dstDir, "broken")); !os.IsNotExist(statErr) {
-		t.Error("The broken symlink should not have been copied")
-	}
-}
-
-// TestDirSkipsSelfReferentialSymlink verifies that a symlink pointing at its
-// own directory is skipped, so no cycle can be entered
-func TestDirSkipsSelfReferentialSymlink(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "gog-copy-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	srcDir := filepath.Join(tmpDir, "src")
-	if mkdirErr := os.MkdirAll(srcDir, 0755); mkdirErr != nil {
-		t.Fatalf("Failed to create source dir: %v", mkdirErr)
-	}
-	if writeErr := os.WriteFile(filepath.Join(srcDir, "keep.txt"), []byte("keep"), 0644); writeErr != nil {
-		t.Fatalf("Failed to create file: %v", writeErr)
-	}
-	if symlinkErr := os.Symlink(srcDir, filepath.Join(srcDir, "loop")); symlinkErr != nil {
-		t.Fatalf("Failed to create symlink: %v", symlinkErr)
-	}
-
-	dstDir := filepath.Join(tmpDir, "dst")
-	if err = Dir(srcDir, dstDir, func(src, dst string) bool { return false }); err != nil {
-		t.Fatalf("Dir() should skip a self-referential symlink, got: %v", err)
-	}
-	if _, statErr := os.Stat(filepath.Join(dstDir, "keep.txt")); statErr != nil {
-		t.Errorf("The rest of the directory should have been copied: %v", statErr)
-	}
-	if _, statErr := os.Lstat(filepath.Join(dstDir, "loop")); !os.IsNotExist(statErr) {
-		t.Error("The self-referential symlink should not have been copied")
-	}
-}
-
-// TestDirSkipsAncestorSymlink verifies that a symlink resolving to an ancestor
-// directory within the source is skipped rather than followed back up the tree
-func TestDirSkipsAncestorSymlink(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "gog-copy-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	// src/a/b/loop -> src/a: the target is an ancestor but stays within src
-	srcDir := filepath.Join(tmpDir, "src")
-	deepDir := filepath.Join(srcDir, "a", "b")
-	if mkdirErr := os.MkdirAll(deepDir, 0755); mkdirErr != nil {
-		t.Fatalf("Failed to create source dirs: %v", mkdirErr)
-	}
-	if writeErr := os.WriteFile(filepath.Join(deepDir, "keep.txt"), []byte("keep"), 0644); writeErr != nil {
-		t.Fatalf("Failed to create file: %v", writeErr)
-	}
-	if symlinkErr := os.Symlink(filepath.Join(srcDir, "a"), filepath.Join(deepDir, "loop")); symlinkErr != nil {
-		t.Fatalf("Failed to create symlink: %v", symlinkErr)
-	}
-
-	dstDir := filepath.Join(tmpDir, "dst")
-	if err = Dir(srcDir, dstDir, func(src, dst string) bool { return false }); err != nil {
-		t.Fatalf("Dir() should skip an ancestor symlink, got: %v", err)
-	}
-	if _, statErr := os.Stat(filepath.Join(dstDir, "a", "b", "keep.txt")); statErr != nil {
-		t.Errorf("The rest of the directory should have been copied: %v", statErr)
-	}
-	if _, statErr := os.Lstat(filepath.Join(dstDir, "a", "b", "loop")); !os.IsNotExist(statErr) {
-		t.Error("The ancestor symlink should not have been copied")
-	}
-}
-
-// TestDirSkipsSymlinkEscapingSource verifies that a symlink whose target
-// resolves outside the directory being copied is skipped, so that unrelated
-// files are never pulled in
-func TestDirSkipsSymlinkEscapingSource(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "gog-copy-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	// outside holds content that lives beyond the source tree
-	outside := filepath.Join(tmpDir, "outside")
-	if mkdirErr := os.MkdirAll(outside, 0755); mkdirErr != nil {
-		t.Fatalf("Failed to create outside dir: %v", mkdirErr)
-	}
-	if writeErr := os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("x"), 0644); writeErr != nil {
-		t.Fatalf("Failed to create outside file: %v", writeErr)
-	}
-
-	srcDir := filepath.Join(tmpDir, "src")
-	if mkdirErr := os.MkdirAll(srcDir, 0755); mkdirErr != nil {
-		t.Fatalf("Failed to create source dir: %v", mkdirErr)
-	}
-	if writeErr := os.WriteFile(filepath.Join(srcDir, "keep.txt"), []byte("keep"), 0644); writeErr != nil {
-		t.Fatalf("Failed to create file: %v", writeErr)
-	}
-	if symlinkErr := os.Symlink(outside, filepath.Join(srcDir, "escape")); symlinkErr != nil {
-		t.Fatalf("Failed to create symlink: %v", symlinkErr)
-	}
-
-	dstDir := filepath.Join(tmpDir, "dst")
-	if err = Dir(srcDir, dstDir, func(src, dst string) bool { return false }); err != nil {
-		t.Fatalf("Dir() should skip an escaping symlink, got: %v", err)
-	}
-	if _, statErr := os.Stat(filepath.Join(dstDir, "keep.txt")); statErr != nil {
-		t.Errorf("The non-escaping file should have been copied: %v", statErr)
-	}
-	if _, statErr := os.Stat(filepath.Join(dstDir, "escape", "secret.txt")); statErr == nil {
-		t.Error("The escaping symlink's target should not have been copied")
-	}
-}
-
-// TestDirRejectsSourceInsideDestination ensures a source that lives inside the
-// destination is rejected, because it would be re-copied into itself
-func TestDirRejectsSourceInsideDestination(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "gog-copy-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	// The source is a subdirectory of the destination
-	dstDir := filepath.Join(tmpDir, "dst")
-	srcDir := filepath.Join(dstDir, "inner")
-	if mkdirErr := os.MkdirAll(srcDir, 0755); mkdirErr != nil {
-		t.Fatalf("Failed to create source dir: %v", mkdirErr)
-	}
-	if writeErr := os.WriteFile(filepath.Join(srcDir, "file.txt"), []byte("x"), 0644); writeErr != nil {
-		t.Fatalf("Failed to create file: %v", writeErr)
-	}
-
-	err = Dir(srcDir, dstDir, func(src, dst string) bool { return false })
-	if err == nil {
-		t.Fatal("Dir() should fail when the source is nested inside the destination")
-	}
-	if !strings.Contains(err.Error(), "destination") {
-		t.Errorf("Error should mention the destination, got: %v", err)
-	}
-}
-
-// TestDirRejectsSourceInsideSymlinkedDestination ensures the overlap check
-// resolves symlinks: the destination is addressed through a symlinked path
-// component (e.g. a relocated ~/.local, or /var on macOS) but resolves to an
-// ancestor of the source, so the overlap must still be detected
-func TestDirRejectsSourceInsideSymlinkedDestination(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "gog-copy-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	// linkDir addresses realDir through a symlink, so the destination is only
-	// seen to contain the source once it is resolved
-	realDir := filepath.Join(tmpDir, "real")
-	srcDir := filepath.Join(realDir, "inner")
-	if mkdirErr := os.MkdirAll(srcDir, 0755); mkdirErr != nil {
-		t.Fatalf("Failed to create source dir: %v", mkdirErr)
-	}
-	if writeErr := os.WriteFile(filepath.Join(srcDir, "file.txt"), []byte("x"), 0644); writeErr != nil {
-		t.Fatalf("Failed to create file: %v", writeErr)
-	}
-	if symlinkErr := os.Symlink(realDir, filepath.Join(tmpDir, "link")); symlinkErr != nil {
-		t.Fatalf("Failed to create symlink: %v", symlinkErr)
-	}
-
-	// dst resolves to realDir, i.e. an ancestor of the source
-	dstDir := filepath.Join(tmpDir, "link")
-	err = Dir(srcDir, dstDir, func(src, dst string) bool { return false })
-	if err == nil {
-		t.Fatal("Dir() should fail when a symlink-addressed destination contains the source")
-	}
-	if !strings.Contains(err.Error(), "destination") {
-		t.Errorf("Error should mention the destination, got: %v", err)
+func link(t *testing.T, target, p string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, p); err != nil {
+		t.Fatal(err)
 	}
 }

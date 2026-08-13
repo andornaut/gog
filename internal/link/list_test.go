@@ -103,12 +103,3 @@ func TestListStatesMatchWhatApplyingDoes(t *testing.T) {
 		}
 	}
 }
-
-func TestListRejectsAnUncompilablePattern(t *testing.T) {
-	repoPath, _ := newSandbox(t)
-	t.Setenv("GOG_IGNORE_FILES_REGEX", "[")
-
-	if _, err := List(repoPath); err == nil {
-		t.Error("List() reported success for a pattern that cannot be compiled")
-	}
-}

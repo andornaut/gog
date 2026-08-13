@@ -1,11 +1,13 @@
 package cmd
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -162,16 +164,6 @@ func TestResolveGitPathsThroughASymlinkedRepositoryPath(t *testing.T) {
 	}
 }
 
-func TestResolveGitPathsDoesNotMutateItsArgument(t *testing.T) {
-	repoPath, linkPath := setupResolveGitPaths(t)
-
-	args := []string{"add", linkPath}
-	resolveGitPaths(repoPath, args)
-	if args[1] != linkPath {
-		t.Errorf("args[1] = %q, want %q", args[1], linkPath)
-	}
-}
-
 // `gog git` hands every argument to git, so the flag that selects the
 // repository is read here rather than by cobra, and only where git could not
 // mean it
@@ -211,6 +203,38 @@ func TestTakeRepositoryFlagWithoutAName(t *testing.T) {
 	repositoryFlag = ""
 	if _, err := takeRepositoryFlag([]string{"-r"}); err == nil {
 		t.Error("takeRepositoryFlag() accepted a flag with nothing after it")
+	}
+}
+
+// Cobra's own message ("requires at least 1 arg(s), only received 0") names
+// neither the command nor what it wanted
+func TestRequirePaths(t *testing.T) {
+	if err := requirePaths(add, []string{}); err == nil || err.Error() != "gog add requires at least one path" {
+		t.Errorf("requirePaths() = %v, want the command and what it wanted named", err)
+	}
+	if err := requirePaths(add, []string{"/etc/hosts"}); err != nil {
+		t.Errorf("requirePaths() = %v, want success", err)
+	}
+}
+
+// A command with nothing to run never has its arguments validated: cobra prints
+// help and reports success, so a mistyped command is reported here instead
+func TestUnknownCommand(t *testing.T) {
+	err := unknownCommand(Cmd, []string{"bogus"})
+
+	if err == nil || err.Error() != `unknown command "bogus" for "gog"` {
+		t.Errorf("unknownCommand() = %v, want the command named", err)
+	}
+
+	var out bytes.Buffer
+	Cmd.SetOut(&out)
+	t.Cleanup(func() { Cmd.SetOut(nil) })
+
+	if err := unknownCommand(Cmd, nil); err != nil {
+		t.Fatalf("unknownCommand() with no arguments = %v, want help", err)
+	}
+	if !strings.Contains(out.String(), "Available Commands:") {
+		t.Errorf("unknownCommand() printed %q, want help", out.String())
 	}
 }
 

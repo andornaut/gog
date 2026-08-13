@@ -42,8 +42,8 @@ func TestCleanPaths(t *testing.T) {
 	}
 }
 
-// An empty argument used to be passed over, which left the command reporting
-// success for work it never did
+// An empty argument names nothing, and passing it over would report success
+// for work that was never done
 func TestCleanPathsRefusesAnEmptyPath(t *testing.T) {
 	for _, arg := range []string{"", "   ", "\t"} {
 		got, err := cleanPaths([]string{"/etc/hosts", arg})

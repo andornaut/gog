@@ -5,9 +5,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
-	"github.com/andornaut/gog/internal/paths"
 	"github.com/andornaut/gog/internal/repository"
 )
 
@@ -55,284 +55,76 @@ func gitInit(t *testing.T, repoPath string) {
 	}
 }
 
-// TestFileCreatesSymlink verifies basic symlink creation
-func TestFileCreatesSymlink(t *testing.T) {
-	repoPath, _ := newSandbox(t)
+func TestFileLinksAndStagesOneFile(t *testing.T) {
+	repoPath, homeDir := newSandbox(t)
+	intPath := write(t, repoPath, "$HOME/.bashrc", "bashrc\n")
 
-	// Create a test file in the repo (using $HOME path format)
-	intPath := filepath.Join(repoPath, "$HOME", ".bashrc")
-	if mkdirErr := os.MkdirAll(filepath.Dir(intPath), 0755); mkdirErr != nil {
-		t.Fatalf("Failed to create dir: %v", mkdirErr)
-	}
-	if writeErr := os.WriteFile(intPath, []byte("test content"), 0644); writeErr != nil {
-		t.Fatalf("Failed to create test file: %v", writeErr)
+	if err := File(repoPath, intPath); err != nil {
+		t.Fatalf("File() = %v", err)
 	}
 
-	extPath := repository.ToExternalPath(repoPath, intPath)
-
-	// Create symlink
-	err := File(repoPath, intPath)
-	if err != nil {
-		t.Fatalf("File() failed: %v", err)
-	}
-
-	// Verify symlink was created
-	linkDest, err := os.Readlink(extPath)
-	if err != nil {
-		t.Fatalf("Failed to read symlink: %v", err)
-	}
-
-	if linkDest != intPath {
-		t.Errorf("Symlink points to %q, want %q", linkDest, intPath)
+	assertLink(t, filepath.Join(homeDir, ".bashrc"), intPath)
+	if got := staged(t, repoPath); !strings.Contains(got, "$HOME/.bashrc") {
+		t.Errorf("index holds %q, want the linked path", got)
 	}
 }
 
-// TestFileRefusesExistingFile verifies that a file the repository did not put
-// there is left alone and the failure is reported
-func TestFileRefusesExistingFile(t *testing.T) {
-	repoPath, _ := newSandbox(t)
-
-	// Create a test file in the repo
-	intPath := filepath.Join(repoPath, "$HOME", ".bashrc")
-	if mkdirErr := os.MkdirAll(filepath.Dir(intPath), 0755); mkdirErr != nil {
-		t.Fatalf("Failed to create dir: %v", mkdirErr)
-	}
-	if writeErr := os.WriteFile(intPath, []byte("new content"), 0644); writeErr != nil {
-		t.Fatalf("Failed to create test file: %v", writeErr)
-	}
-
-	extPath := repository.ToExternalPath(repoPath, intPath)
-
-	// Create existing file at external path
-	if mkdirErr := os.MkdirAll(filepath.Dir(extPath), 0755); mkdirErr != nil {
-		t.Fatalf("Failed to create ext dir: %v", mkdirErr)
-	}
-	existingContent := []byte("existing content")
-	if writeErr := os.WriteFile(extPath, existingContent, 0644); writeErr != nil {
-		t.Fatalf("Failed to create existing file: %v", writeErr)
-	}
-
-	// Link the file (should refuse, because extPath is the user's)
-	err := File(repoPath, intPath)
-	if !errors.Is(err, ErrIncomplete) {
-		t.Fatalf("File() = %v, want %v", err, ErrIncomplete)
-	}
-
-	// Verify the existing file is untouched
-	content, err := os.ReadFile(extPath)
-	if err != nil {
-		t.Fatalf("Existing file not readable: %v", err)
-	}
-	if string(content) != string(existingContent) {
-		t.Errorf("Existing file = %q, want %q", content, existingContent)
-	}
-	if paths.IsSymlink(extPath) {
-		t.Error("Existing file should not have been replaced by a symlink")
-	}
-}
-
-// TestFileHandlesBrokenSymlink verifies broken symlinks are replaced without backup
-func TestFileHandlesBrokenSymlink(t *testing.T) {
-	repoPath, _ := newSandbox(t)
-
-	// Create a test file in the repo
-	intPath := filepath.Join(repoPath, "$HOME", ".bashrc")
-	if mkdirErr := os.MkdirAll(filepath.Dir(intPath), 0755); mkdirErr != nil {
-		t.Fatalf("Failed to create dir: %v", mkdirErr)
-	}
-	if writeErr := os.WriteFile(intPath, []byte("test content"), 0644); writeErr != nil {
-		t.Fatalf("Failed to create test file: %v", writeErr)
-	}
-
-	extPath := repository.ToExternalPath(repoPath, intPath)
-
-	// Create broken symlink at external path
-	if mkdirErr := os.MkdirAll(filepath.Dir(extPath), 0755); mkdirErr != nil {
-		t.Fatalf("Failed to create ext dir: %v", mkdirErr)
-	}
-	brokenTarget := filepath.Join(repoPath, "nonexistent")
-	if symlinkErr := os.Symlink(brokenTarget, extPath); symlinkErr != nil {
-		t.Fatalf("Failed to create broken symlink: %v", symlinkErr)
-	}
-
-	// Create symlink (should replace broken symlink without backup)
-	err := File(repoPath, intPath)
-	if err != nil {
-		t.Fatalf("File() failed: %v", err)
-	}
-
-	// Verify symlink points to correct location
-	linkDest, err := os.Readlink(extPath)
-	if err != nil {
-		t.Fatalf("Failed to read symlink: %v", err)
-	}
-
-	if linkDest != intPath {
-		t.Errorf("Symlink points to %q, want %q", linkDest, intPath)
-	}
-}
-
-// TestFileSkipsAlreadyLinked verifies no-op when symlink already correct
-func TestFileSkipsAlreadyLinked(t *testing.T) {
-	repoPath, _ := newSandbox(t)
-
-	// Create a test file in the repo
-	intPath := filepath.Join(repoPath, "$HOME", ".bashrc")
-	if mkdirErr := os.MkdirAll(filepath.Dir(intPath), 0755); mkdirErr != nil {
-		t.Fatalf("Failed to create dir: %v", mkdirErr)
-	}
-	if writeErr := os.WriteFile(intPath, []byte("test content"), 0644); writeErr != nil {
-		t.Fatalf("Failed to create test file: %v", writeErr)
-	}
-
-	extPath := repository.ToExternalPath(repoPath, intPath)
-
-	// Create correct symlink
-	if mkdirErr := os.MkdirAll(filepath.Dir(extPath), 0755); mkdirErr != nil {
-		t.Fatalf("Failed to create ext dir: %v", mkdirErr)
-	}
-	if symlinkErr := os.Symlink(intPath, extPath); symlinkErr != nil {
-		t.Fatalf("Failed to create initial symlink: %v", symlinkErr)
-	}
-
-	// Get initial symlink target
-	initialTarget, err := os.Readlink(extPath)
-	if err != nil {
-		t.Fatalf("Failed to read symlink: %v", err)
-	}
-
-	// Get initial modification time
-	initialInfo, err := os.Lstat(extPath)
-	if err != nil {
-		t.Fatalf("Failed to stat symlink: %v", err)
-	}
-	initialModTime := initialInfo.ModTime()
-
-	// Call File() again (should be no-op)
-	err = File(repoPath, intPath)
-	if err != nil {
-		t.Fatalf("File() failed: %v", err)
-	}
-
-	// Verify symlink target hasn't changed
-	finalTarget, err := os.Readlink(extPath)
-	if err != nil {
-		t.Fatalf("Failed to read symlink after: %v", err)
-	}
-
-	if finalTarget != initialTarget {
-		t.Errorf("Symlink target changed from %q to %q", initialTarget, finalTarget)
-	}
-
-	// Verify symlink wasn't recreated (check modification time hasn't changed)
-	finalInfo, err := os.Lstat(extPath)
-	if err != nil {
-		t.Fatalf("Failed to stat symlink after: %v", err)
-	}
-
-	if !finalInfo.ModTime().Equal(initialModTime) {
-		t.Errorf("Symlink was recreated (modtime changed from %v to %v)", initialModTime, finalInfo.ModTime())
-	}
-}
-
-// TestFileSkipsIgnoredFiles verifies GOG_IGNORE_FILES_REGEX pattern matching
-func TestFileSkipsIgnoredFiles(t *testing.T) {
-	repoPath, _ := newSandbox(t)
-	// Set through the environment, which is where the pattern comes from: an
-	// entry point that reads it for itself is not exercised by assigning it
+func TestFileSkipsAnIgnoredFile(t *testing.T) {
+	repoPath, homeDir := newSandbox(t)
 	t.Setenv("GOG_IGNORE_FILES_REGEX", `\.swp$`)
+	intPath := write(t, repoPath, "$HOME/.bashrc.swp", "swp\n")
 
-	// Create a .swp file in the repo (should be ignored)
-	intPath := filepath.Join(repoPath, "$HOME", ".bashrc.swp")
-	if mkdirErr := os.MkdirAll(filepath.Dir(intPath), 0755); mkdirErr != nil {
-		t.Fatalf("Failed to create dir: %v", mkdirErr)
-	}
-	if writeErr := os.WriteFile(intPath, []byte("test content"), 0644); writeErr != nil {
-		t.Fatalf("Failed to create test file: %v", writeErr)
+	if err := File(repoPath, intPath); err != nil {
+		t.Fatalf("File() = %v", err)
 	}
 
-	extPath := repository.ToExternalPath(repoPath, intPath)
-
-	// Create parent directory
-	if mkdirErr := os.MkdirAll(filepath.Dir(extPath), 0755); mkdirErr != nil {
-		t.Fatalf("Failed to create ext dir: %v", mkdirErr)
-	}
-
-	// Attempt to create symlink (should be skipped)
-	err := File(repoPath, intPath)
-	if err != nil {
-		t.Fatalf("File() failed: %v", err)
-	}
-
-	// Verify symlink was NOT created
-	if _, err := os.Lstat(extPath); !os.IsNotExist(err) {
-		t.Error("Ignored file should not be linked")
+	if _, err := os.Lstat(filepath.Join(homeDir, ".bashrc.swp")); !os.IsNotExist(err) {
+		t.Errorf("a path the pattern matches was linked (%v)", err)
 	}
 }
 
-// TestFileSkipsSpecialFiles verifies .gitignore, LICENSE, README.md are skipped
-func TestFileSkipsSpecialFiles(t *testing.T) {
-	repoPath, _ := newSandbox(t)
-
-	specialFiles := []string{".gitignore", "LICENSE", "README.md"}
-
-	for _, filename := range specialFiles {
-		t.Run(filename, func(t *testing.T) {
-			intPath := filepath.Join(repoPath, filename)
-			if err := os.WriteFile(intPath, []byte("test content"), 0644); err != nil {
-				t.Fatalf("Failed to create test file: %v", err)
-			}
-
-			extPath := repository.ToExternalPath(repoPath, intPath)
-
-			// Attempt to create symlink (should be skipped)
-			err := File(repoPath, intPath)
-			if err != nil {
-				t.Fatalf("File() failed: %v", err)
-			}
-
-			// Verify symlink was NOT created
-			if _, err := os.Lstat(extPath); !os.IsNotExist(err) {
-				t.Errorf("%s should not be linked", filename)
-			}
-		})
-	}
-}
-
-// TestFileSkipsExistingDirectory verifies that a directory in the way is left
-// alone and reported, rather than removed or silently ignored
-func TestFileSkipsExistingDirectory(t *testing.T) {
-	repoPath, _ := newSandbox(t)
-
-	// Create a test file in the repo
-	intPath := filepath.Join(repoPath, "$HOME", ".config")
-	if err := os.MkdirAll(filepath.Dir(intPath), 0755); err != nil {
-		t.Fatalf("Failed to create dir: %v", err)
-	}
-	if err := os.WriteFile(intPath, []byte("test content"), 0644); err != nil {
-		t.Fatalf("Failed to create test file: %v", err)
-	}
-
-	extPath := repository.ToExternalPath(repoPath, intPath)
-
-	// Create directory at external path (conflict)
+// A directory is left alone rather than removed, and the caller still has to
+// learn that the run was incomplete
+func TestFileRefusesADirectoryInTheWay(t *testing.T) {
+	repoPath, homeDir := newSandbox(t)
+	intPath := write(t, repoPath, "$HOME/.config", "config\n")
+	extPath := filepath.Join(homeDir, ".config")
 	if err := os.MkdirAll(extPath, 0755); err != nil {
-		t.Fatalf("Failed to create conflicting directory: %v", err)
+		t.Fatal(err)
 	}
 
-	// Attempt to create symlink. The conflict is reported and the run
-	// continues, but the caller must still learn that it was incomplete.
 	err := File(repoPath, intPath)
-	if !errors.Is(err, ErrIncomplete) {
-		t.Fatalf("File() should report an incomplete run for a directory conflict, got: %v", err)
-	}
 
-	// Verify directory still exists (unchanged)
-	info, err := os.Stat(extPath)
-	if err != nil {
-		t.Fatalf("Directory should still exist: %v", err)
+	if !errors.Is(err, ErrIncomplete) {
+		t.Fatalf("File() = %v, want ErrIncomplete", err)
 	}
-	if !info.IsDir() {
-		t.Error("Path should still be a directory")
+	if info, statErr := os.Lstat(extPath); statErr != nil || !info.IsDir() {
+		t.Errorf("%s is no longer a directory (%v)", extPath, statErr)
+	}
+}
+
+// Link is given paths as they are named outside the repository, and hands each
+// to Dir or File by what the repository holds at it
+func TestLinkDispatchesOnWhatTheRepositoryHolds(t *testing.T) {
+	repoPath, homeDir := newSandbox(t)
+	fileIntPath := write(t, repoPath, "$HOME/.bashrc", "bashrc\n")
+	dirIntPath := write(t, repoPath, "$HOME/.config/app/conf", "conf\n")
+	unheld := filepath.Join(homeDir, ".vimrc")
+
+	err := Link(repoPath, []string{
+		filepath.Join(homeDir, ".bashrc"),
+		filepath.Join(homeDir, ".config"),
+		unheld,
+	})
+
+	if err != nil {
+		t.Fatalf("Link() = %v", err)
+	}
+	assertLink(t, filepath.Join(homeDir, ".bashrc"), fileIntPath)
+	assertLink(t, filepath.Join(homeDir, ".config/app/conf"), dirIntPath)
+	// A path the repository does not hold is passed over rather than failing the
+	// run: `gog add` links what it just copied, and nothing else is its business
+	if _, statErr := os.Lstat(unheld); !os.IsNotExist(statErr) {
+		t.Errorf("a path the repository does not hold was acted on (%v)", statErr)
 	}
 }

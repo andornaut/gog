@@ -2,173 +2,118 @@ package repository
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
-// TestRootPathAmbiguousMatch tests critical security fix:
-// ensures ambiguous repository names are rejected to prevent attacks
-func TestRootPathAmbiguousMatch(t *testing.T) {
-	originalBaseDir := BaseDir
-	defer func() { BaseDir = originalBaseDir }()
+// newBaseDir points the package at an empty data directory for the duration of
+// the test
+func newBaseDir(t *testing.T) string {
+	t.Helper()
+	original := BaseDir
+	BaseDir = t.TempDir()
+	t.Cleanup(func() { BaseDir = original })
+	return BaseDir
+}
 
-	tmpDir, err := os.MkdirTemp("", "gog-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
+// A repository is named rather than addressed, so a name that is a path reaches
+// nothing outside the data directory
+func TestValidateRepoName(t *testing.T) {
+	tests := []struct {
+		name string
+		ok   bool
+	}{
+		{name: "dotfiles", ok: true},
+		{name: "with-dash_and_1", ok: true},
+		{name: "../outside"},
+		{name: "sub/repo"},
+		{name: "with space"},
+		{name: ""},
 	}
-	defer os.RemoveAll(tmpDir)
-	BaseDir = tmpDir
-
-	// Create multiple repositories with similar names
-	for _, suffix := range []string{"-v1", "-v2"} {
-		repoPath := filepath.Join(BaseDir, "myrepo"+suffix)
-		if mkdirErr := os.MkdirAll(filepath.Join(repoPath, ".git"), 0755); mkdirErr != nil {
-			t.Fatalf("Failed to create test repo: %v", mkdirErr)
+	for _, tt := range tests {
+		err := validateRepoName(tt.name)
+		if (err == nil) != tt.ok {
+			t.Errorf("validateRepoName(%q) = %v, want valid = %v", tt.name, err, tt.ok)
 		}
 	}
+}
 
-	// Should reject ambiguous match
-	_, err = RootPath("myrepo")
-	if err == nil {
-		t.Error("RootPath should return error for ambiguous match")
-	}
-	if !strings.Contains(err.Error(), "ambiguous") {
-		t.Errorf("Error should mention ambiguity, got: %v", err)
+func TestRootPathRefusesAPathAsAName(t *testing.T) {
+	newBaseDir(t)
+
+	_, err := RootPath("../outside")
+
+	if err == nil || !strings.Contains(err.Error(), "invalid repository name") {
+		t.Errorf("RootPath(\"../outside\") = %v, want the name to be refused", err)
 	}
 }
 
-// TestRootPathDirectoryTraversal tests critical security fix:
-// ensures paths outside BaseDir are rejected
-func TestRootPathDirectoryTraversal(t *testing.T) {
-	originalBaseDir := BaseDir
-	defer func() { BaseDir = originalBaseDir }()
+// A prefix that names more than one repository is refused rather than resolved
+// to whichever comes first
+func TestRootPathRefusesAnAmbiguousPrefix(t *testing.T) {
+	base := newBaseDir(t)
+	newRepo(t, filepath.Join(base, "myrepo-v1"))
+	newRepo(t, filepath.Join(base, "myrepo-v2"))
 
-	tmpDir, err := os.MkdirTemp("", "gog-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
+	_, err := RootPath("myrepo")
+
+	if err == nil || !strings.Contains(err.Error(), "ambiguous") {
+		t.Errorf("RootPath(\"myrepo\") = %v, want a failure naming the ambiguity", err)
 	}
-	defer os.RemoveAll(tmpDir)
-	BaseDir = tmpDir
-
-	// Create a directory outside BaseDir
-	outsideDir := filepath.Join(filepath.Dir(tmpDir), "outside-gog")
-	if mkdirErr := os.MkdirAll(filepath.Join(outsideDir, ".git"), 0755); mkdirErr != nil {
-		t.Fatalf("Failed to create outside dir: %v", mkdirErr)
-	}
-	defer os.RemoveAll(outsideDir)
-
-	// Should reject directory traversal
-	_, err = RootPath("../outside-gog")
-	if err == nil {
-		t.Error("RootPath should reject paths outside BaseDir")
+	if got, err := RootPath("myrepo-v1"); err != nil || got != filepath.Join(base, "myrepo-v1") {
+		t.Errorf("RootPath(\"myrepo-v1\") = %q (%v), want the repository it names", got, err)
 	}
 }
 
-// TestGetFirstSkipsInvalidRepositories ensures the default repository is
-// selected with the same validation as List(), skipping non-git directories
-func TestGetFirstSkipsInvalidRepositories(t *testing.T) {
-	originalBaseDir := BaseDir
-	defer func() { BaseDir = originalBaseDir }()
+// The default repository is chosen with the same validation as List, so a
+// directory that is not a git repository is passed over rather than selected
+func TestGetFirstSkipsWhatIsNotARepository(t *testing.T) {
+	base := newBaseDir(t)
 
-	tmpDir, err := os.MkdirTemp("", "gog-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-	BaseDir = tmpDir
-
-	// No repositories yet
-	if _, firstErr := getFirst(); firstErr == nil {
-		t.Error("getFirst should return an error when there are no repositories")
+	if _, err := getFirst(); err == nil {
+		t.Error("getFirst() resolved a repository in an empty data directory")
 	}
 
-	// "aaa" sorts first, but is not a git repository
-	if mkdirErr := os.MkdirAll(filepath.Join(BaseDir, "aaa"), 0755); mkdirErr != nil {
-		t.Fatalf("Failed to create non-repo dir: %v", mkdirErr)
+	// "aaa" sorts first, but only "bbb" is a git repository
+	if err := os.Mkdir(filepath.Join(base, "aaa"), 0755); err != nil {
+		t.Fatal(err)
 	}
-
-	// "bbb" is a valid git repository
-	repoPath := filepath.Join(BaseDir, "bbb")
-	if mkdirErr := os.MkdirAll(repoPath, 0755); mkdirErr != nil {
-		t.Fatalf("Failed to create repo dir: %v", mkdirErr)
-	}
-	cmd := exec.Command("git", "init", "-q")
-	cmd.Dir = repoPath
-	if runErr := cmd.Run(); runErr != nil {
-		t.Fatalf("Failed to initialize git repo: %v", runErr)
-	}
+	newRepo(t, filepath.Join(base, "bbb"))
 
 	got, err := getFirst()
+
 	if err != nil {
-		t.Fatalf("getFirst() failed: %v", err)
+		t.Fatalf("getFirst() = %v", err)
 	}
-	if got != repoPath {
-		t.Errorf("getFirst() = %q, want %q", got, repoPath)
+	if want := filepath.Join(base, "bbb"); got != want {
+		t.Errorf("getFirst() = %q, want %q", got, want)
 	}
 }
 
-// TestAddRejectsExistingNonEmptyDirectory ensures Add never runs git init
-// over an existing directory that has content, while an empty directory
-// (e.g. left over from a failed clone) may be reused
-func TestAddRejectsExistingNonEmptyDirectory(t *testing.T) {
-	originalBaseDir := BaseDir
-	defer func() { BaseDir = originalBaseDir }()
-
-	tmpDir, err := os.MkdirTemp("", "gog-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
+// An existing directory holding anything is never converted into a repository,
+// so that a data directory is not adopted by name alone. An empty one, such as
+// a failed clone leaves behind, may be reused.
+func TestAddRefusesAnExistingNonEmptyDirectory(t *testing.T) {
+	base := newBaseDir(t)
+	occupied := filepath.Join(base, "occupied")
+	if err := os.Mkdir(occupied, 0755); err != nil {
+		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
-	BaseDir = tmpDir
-
-	// Existing directory with content must be rejected
-	dataDir := filepath.Join(BaseDir, "data")
-	if mkdirErr := os.MkdirAll(dataDir, 0755); mkdirErr != nil {
-		t.Fatalf("Failed to create data dir: %v", mkdirErr)
+	if err := os.WriteFile(filepath.Join(occupied, "file.txt"), []byte("x"), 0644); err != nil {
+		t.Fatal(err)
 	}
-	if writeErr := os.WriteFile(filepath.Join(dataDir, "file.txt"), []byte("x"), 0644); writeErr != nil {
-		t.Fatalf("Failed to create file: %v", writeErr)
-	}
-	if _, addErr := Add("data", ""); addErr == nil {
-		t.Error("Add should reject an existing non-empty directory")
-	} else if !strings.Contains(addErr.Error(), "not a gog repository") {
-		t.Errorf("Error should identify the path as not a gog repository, got: %v", addErr)
+	empty := filepath.Join(base, "empty")
+	if err := os.Mkdir(empty, 0755); err != nil {
+		t.Fatal(err)
 	}
 
-	// Existing empty directory may be reused
-	emptyDir := filepath.Join(BaseDir, "empty")
-	if mkdirErr := os.MkdirAll(emptyDir, 0755); mkdirErr != nil {
-		t.Fatalf("Failed to create empty dir: %v", mkdirErr)
-	}
-	repoPath, addErr := Add("empty", "")
-	if addErr != nil {
-		t.Fatalf("Add should reuse an existing empty directory: %v", addErr)
-	}
-	if repoPath != emptyDir {
-		t.Errorf("Add() = %q, want %q", repoPath, emptyDir)
-	}
-}
+	_, err := Add("occupied", "")
 
-// TestGetBaseDirNormalizesPath ensures GOG_HOME values with trailing slashes
-// or relative paths are normalized to clean absolute paths
-func TestGetBaseDirNormalizesPath(t *testing.T) {
-	t.Setenv("GOG_HOME", "/data/gog/")
-	got, err := getBaseDir("/home/testuser")
-	if err != nil {
-		t.Fatalf("getBaseDir() failed: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "not a gog repository") {
+		t.Errorf("Add(\"occupied\") = %v, want the path named as not a gog repository", err)
 	}
-	if got != "/data/gog" {
-		t.Errorf("getBaseDir() = %q, want %q", got, "/data/gog")
-	}
-
-	t.Setenv("GOG_HOME", "relative-gog")
-	got, err = getBaseDir("/home/testuser")
-	if err != nil {
-		t.Fatalf("getBaseDir() failed: %v", err)
-	}
-	if !filepath.IsAbs(got) {
-		t.Errorf("getBaseDir() = %q, want an absolute path", got)
+	if got, err := Add("empty", ""); err != nil || got != empty {
+		t.Errorf("Add(\"empty\") = %q (%v), want the empty directory reused", got, err)
 	}
 }

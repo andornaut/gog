@@ -8,94 +8,90 @@ import (
 	"testing"
 )
 
-// TestIs ensures that only the root of a git repository is recognized,
-// not its subdirectories or plain directories
-func TestIs(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "gog-git-test-*")
-	if err != nil {
-		t.Fatalf("Failed to create temp dir: %v", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	repoPath := filepath.Join(tmpDir, "repo")
-	subPath := filepath.Join(repoPath, "sub")
-	plainPath := filepath.Join(tmpDir, "plain")
-	for _, p := range []string{subPath, plainPath} {
-		if mkdirErr := os.MkdirAll(p, 0755); mkdirErr != nil {
-			t.Fatalf("Failed to create dir %s: %v", p, mkdirErr)
-		}
-	}
-
-	cmd := exec.Command("git", "init", "-q")
-	cmd.Dir = repoPath
-	if runErr := cmd.Run(); runErr != nil {
-		t.Fatalf("Failed to initialize git repo: %v", runErr)
-	}
-
-	if !Is(repoPath) {
-		t.Error("Is() should return true for the root of a git repository")
-	}
-	if Is(subPath) {
-		t.Error("Is() should return false for a subdirectory of a git repository")
-	}
-	if Is(plainPath) {
-		t.Error("Is() should return false for a directory that is not a git repository")
-	}
-
-	barePath := filepath.Join(tmpDir, "bare.git")
-	cmd = exec.Command("git", "init", "-q", "--bare", barePath)
-	if runErr := cmd.Run(); runErr != nil {
-		t.Fatalf("Failed to initialize bare git repo: %v", runErr)
-	}
-	if Is(barePath) {
-		t.Error("Is() should return false for a bare repository (no work tree to link from)")
-	}
-
-	// GIT_DIR must not leak into git invocations (e.g. when run from a git hook)
-	t.Setenv("GIT_DIR", filepath.Join(repoPath, ".git"))
-	if Is(plainPath) {
-		t.Error("Is() should return false for a non-repository directory when GIT_DIR is set")
-	}
-	if !Is(repoPath) {
-		t.Error("Is() should return true for a repository root when GIT_DIR is set")
+func gitInit(t *testing.T, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", append([]string{"init", "-q"}, args...)...)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init %v: %v: %s", args, err, out)
 	}
 }
 
-// TestCommandEnvScrubsInheritedGitVars ensures the repository-local and
-// config-selection git environment variables are removed while unrelated
-// variables are kept
-func TestCommandEnvScrubsInheritedGitVars(t *testing.T) {
-	t.Setenv("GIT_DIR", "/somewhere/.git")
-	t.Setenv("GIT_INDEX_FILE", "/somewhere/index")
-	t.Setenv("GIT_PREFIX", "sub/")
-	t.Setenv("GIT_CONFIG_GLOBAL", "/somewhere/gitconfig")
-	t.Setenv("GIT_CONFIG_COUNT", "1")
-	t.Setenv("GIT_CONFIG_KEY_0", "core.hooksPath")
-	t.Setenv("GIT_CONFIG_VALUE_0", "/tmp/hooks")
-	t.Setenv("GIT_SSH_COMMAND", "ssh -v")
-	t.Setenv("PATH", os.Getenv("PATH"))
+// Only the root of a work tree can be linked from, so a subdirectory, a plain
+// directory and a bare repository are all rejected
+func TestIs(t *testing.T) {
+	root := t.TempDir()
+	repoPath := filepath.Join(root, "repo")
+	subPath := filepath.Join(repoPath, "sub")
+	plainPath := filepath.Join(root, "plain")
+	barePath := filepath.Join(root, "bare.git")
+	for _, p := range []string{subPath, plainPath} {
+		if err := os.MkdirAll(p, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	gitInit(t, repoPath)
+	gitInit(t, "--bare", barePath)
 
-	kept := map[string]bool{}
-	for _, kv := range commandEnv() {
-		name, _, _ := strings.Cut(kv, "=")
-		kept[name] = true
+	tests := []struct {
+		name string
+		path string
+		want bool
+	}{
+		{name: "the root of a work tree", path: repoPath, want: true},
+		{name: "a subdirectory of one", path: subPath},
+		{name: "a directory that is not a repository", path: plainPath},
+		{name: "a bare repository", path: barePath},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Is(tt.path); got != tt.want {
+				t.Errorf("Is(%s) = %v, want %v", tt.name, got, tt.want)
+			}
+		})
 	}
 
-	// Location, config-selection, and numbered config vars must be removed
-	for _, name := range []string{
+	// An enclosing invocation such as a git hook exports GIT_DIR, which would
+	// otherwise answer for the directory that was asked about
+	t.Setenv("GIT_DIR", filepath.Join(repoPath, ".git"))
+	if Is(plainPath) {
+		t.Error("Is() answered for GIT_DIR rather than the directory it was given")
+	}
+	if !Is(repoPath) {
+		t.Error("Is() = false for a repository root while GIT_DIR is set")
+	}
+}
+
+// The variables that bind git to a repository, an index, or a configuration
+// source are removed; the ones that carry transport and identity are kept, or
+// clone and push would stop working
+func TestCommandEnvScrubsInheritedGitVars(t *testing.T) {
+	removed := []string{
 		"GIT_DIR", "GIT_INDEX_FILE", "GIT_PREFIX",
 		"GIT_CONFIG_GLOBAL", "GIT_CONFIG_COUNT",
 		"GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0",
-	} {
-		if kept[name] {
-			t.Errorf("commandEnv() should remove %s", name)
+	}
+	// PATH is inherited rather than set here: replacing it would change how this
+	// process finds git
+	kept := []string{"GIT_SSH_COMMAND", "PATH"}
+	for _, name := range removed {
+		t.Setenv(name, "set")
+	}
+	t.Setenv("GIT_SSH_COMMAND", "ssh -v")
+
+	got := map[string]bool{}
+	for _, kv := range commandEnv() {
+		name, _, _ := strings.Cut(kv, "=")
+		got[name] = true
+	}
+
+	for _, name := range removed {
+		if got[name] {
+			t.Errorf("commandEnv() kept %s", name)
 		}
 	}
-	// Transport and identity variables must be preserved so clone/push work
-	if !kept["GIT_SSH_COMMAND"] {
-		t.Error("commandEnv() should keep GIT_SSH_COMMAND")
-	}
-	if !kept["PATH"] {
-		t.Error("commandEnv() should keep PATH")
+	for _, name := range kept {
+		if !got[name] {
+			t.Errorf("commandEnv() removed %s", name)
+		}
 	}
 }
