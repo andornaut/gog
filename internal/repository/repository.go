@@ -118,7 +118,7 @@ func getFirst() (string, error) {
 		return "", err
 	}
 	if len(repoNames) == 0 {
-		return "", fmt.Errorf("no valid git repositories found in %s (run `gog repository add` to add one)", BaseDir)
+		return "", fmt.Errorf("no valid git repositories found in %s (run \"gog repository add\" to add one)", BaseDir)
 	}
 	return filepath.Join(BaseDir, repoNames[0]), nil
 }

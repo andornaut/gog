@@ -34,7 +34,7 @@ func validateRepoPath(p string) error {
 		return fmt.Errorf("repository path must be a directory: %s", p)
 	}
 	if !git.Is(p) {
-		return fmt.Errorf("repository must be initialized as a git repository (run 'git init' in %s)", p)
+		return fmt.Errorf("repository must be initialized as a git repository (run \"git init\" in %s)", p)
 	}
 	return nil
 }
