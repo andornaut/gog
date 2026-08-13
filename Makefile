@@ -5,7 +5,7 @@ DISTDIR   := dist
 TARGET    := gog
 PLATFORMS := darwin freebsd linux
 
-.PHONY: $(PLATFORMS) $(TARGET) all build clean coverage coverage-html fmt install lint release test uninstall
+.PHONY: $(PLATFORMS) $(TARGET) all build clean coverage coverage-html fmt install lab lint release test uninstall
 
 all: $(TARGET)
 
@@ -30,6 +30,10 @@ release: clean $(PLATFORMS)
 
 test:
 	go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
+
+# End-to-end scenarios against the compiled binary. Must not run as root: see lab/README.md
+lab:
+	bash lab/run-all.sh
 
 coverage: test
 	go tool cover -func=coverage.txt
