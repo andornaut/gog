@@ -1,6 +1,7 @@
 package copy
 
 import (
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -261,6 +262,53 @@ func TestDirSkipsSymbolicLinks(t *testing.T) {
 			}
 		})
 	}
+}
+
+// The warning names the link's target, because that is the path to add instead
+func TestDirNamesTheTargetOfASkippedLink(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "src")
+	target := write(t, filepath.Join(src, "target"), "target\n", 0644)
+	p := filepath.Join(src, "link")
+	link(t, target, p)
+
+	out := captureStderr(t, func() {
+		if err := Dir(src, filepath.Join(root, "dst"), copyNothing); err != nil {
+			t.Fatalf("Dir() = %v", err)
+		}
+	})
+
+	want := "Warning: skipping symbolic link " + p + " -> " + target + " (add that path instead)\n"
+	if out != want {
+		t.Errorf("Dir() printed %q, want %q", out, want)
+	}
+}
+
+// captureStderr returns what f writes to standard error. The warnings go there
+// rather than through a writer the caller supplies, so a test that means to
+// check one has to take it from the process.
+func captureStderr(t *testing.T, f func()) string {
+	t.Helper()
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := os.Stderr
+	os.Stderr = writer
+	defer func() { os.Stderr = original }()
+
+	done := make(chan string)
+	go func() {
+		var out strings.Builder
+		_, _ = io.Copy(&out, reader)
+		done <- out.String()
+	}()
+
+	f()
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return <-done
 }
 
 // A source inside the destination would be copied into itself, and the two are

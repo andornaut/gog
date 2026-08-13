@@ -160,10 +160,6 @@ func copyDir(src, dst, dstRoot string, skipFunc SkipFunc, ensureParent func() er
 			return err
 		}
 
-		if entryInfo.Mode()&os.ModeSymlink != 0 {
-			printSkippedLink(srcPath)
-			continue
-		}
 		if skipFunc(srcPath, dstPath) {
 			continue
 		}
@@ -174,11 +170,15 @@ func copyDir(src, dst, dstRoot string, skipFunc SkipFunc, ensureParent func() er
 			}
 			continue
 		}
-		// A named pipe, socket or device node is not something a copy can
-		// carry: git stores neither its kind nor its contents, and opening one
-		// to read it blocks until a writer appears or reads without end
+		// A symbolic link, named pipe, socket or device node is not something a
+		// copy can carry: git stores neither the kind nor, for the irregular
+		// ones, the contents, and opening one to read it blocks until a writer
+		// appears or reads without end. A link is caught here rather than by its
+		// own test because lstat reports it as neither a directory nor a regular
+		// file, which is also why no link is followed and the walk can meet
+		// neither a cycle nor a path outside the tree.
 		if !entryInfo.Mode().IsRegular() {
-			printSkippedIrregular(srcPath, entryInfo.Mode())
+			printSkipped(srcPath, entryInfo.Mode())
 			continue
 		}
 		if err := ensureDst(); err != nil {
@@ -191,15 +191,16 @@ func copyDir(src, dst, dstRoot string, skipFunc SkipFunc, ensureParent func() er
 	return nil
 }
 
-func printSkippedLink(p string) {
-	if target, err := os.Readlink(p); err == nil {
-		fmt.Fprintf(os.Stderr, "Warning: skipping symbolic link %s -> %s (add that path instead)\n", p, target)
-		return
+// printSkipped reports an entry that a copy leaves behind. A symbolic link
+// names its target, because that is the path to add instead, and because git
+// can store a link: gog declines to follow one rather than being unable to.
+func printSkipped(p string, mode os.FileMode) {
+	if mode&os.ModeSymlink != 0 {
+		if target, err := os.Readlink(p); err == nil {
+			fmt.Fprintf(os.Stderr, "Warning: skipping symbolic link %s -> %s (add that path instead)\n", p, target)
+			return
+		}
 	}
-	fmt.Fprintf(os.Stderr, "Warning: skipping symbolic link %s\n", p)
-}
-
-func printSkippedIrregular(p string, mode os.FileMode) {
 	fmt.Fprintf(os.Stderr, "Warning: skipping %s %s (git cannot store it)\n", FileKind(mode), p)
 }
 
