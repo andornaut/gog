@@ -71,6 +71,17 @@ func writeFile(t *testing.T, p, contents string) string {
 	return p
 }
 
+func symlink(t *testing.T, target, p string) string {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, p); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
 // A path in the home directory is stored under a literal $HOME component, which
 // is what makes a repository portable between machines
 func TestAddPathsStoresHomePathsPortably(t *testing.T) {
@@ -158,11 +169,11 @@ func TestAddPathsRefusals(t *testing.T) {
 			want: "path does not exist",
 		},
 		{
-			name: "gog's own data directory",
+			name: "a path inside a repository",
 			prepare: func(t *testing.T, _ string) string {
 				return filepath.Join(BaseDir, "dots", "$HOME", ".bashrc")
 			},
-			want: "gog's own directory cannot be managed",
+			want: "repository dots holds it",
 		},
 		{
 			name: "a backup left by an older version",
@@ -183,6 +194,132 @@ func TestAddPathsRefusals(t *testing.T) {
 				t.Errorf("AddPaths() = %v, want a failure containing %q", err, tt.want)
 			}
 		})
+	}
+}
+
+// A path inside the data directory is refused by the repository that holds it,
+// and by the path it is linked from, which is the one the command meant
+func TestOwnPathError(t *testing.T) {
+	repoPath, homeDir := newSandbox(t)
+	linked := writeFile(t, filepath.Join(repoPath, "$HOME", ".bashrc"), "bashrc\n")
+	symlink(t, linked, filepath.Join(homeDir, ".bashrc"))
+	unlinked := writeFile(t, filepath.Join(repoPath, "$HOME", ".vimrc"), "vimrc\n")
+
+	tests := []struct {
+		name string
+		p    string
+		want string
+	}{
+		{
+			name: "the data directory itself",
+			p:    BaseDir,
+			want: "gog's own data directory cannot be managed",
+		},
+		{
+			name: "a repository",
+			p:    repoPath,
+			want: "that is repository dots; name the paths it holds instead",
+		},
+		{
+			name: "a path it holds and has linked",
+			p:    linked,
+			want: "repository dots holds it; name " + filepath.Join(homeDir, ".bashrc") + " instead",
+		},
+		{
+			name: "a path it holds that is linked nowhere",
+			p:    unlinked,
+			want: "repository dots holds it",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateTargetPath(tt.p)
+
+			if err == nil || !strings.HasSuffix(err.Error(), "("+tt.want+")") {
+				t.Errorf("validateTargetPath() = %v, want it to end with %q", err, tt.want)
+			}
+		})
+	}
+}
+
+// What a copy leaves behind is named with what to do about it. A link into
+// gog's data directory is a path some repository already manages, and naming
+// that repository says more than the path inside it does.
+func TestReportSkipped(t *testing.T) {
+	_, homeDir := newSandbox(t)
+	managed := writeFile(t, filepath.Join(BaseDir, "other", "$HOME", ".bashrc"), "bashrc\n")
+	elsewhere := writeFile(t, filepath.Join(homeDir, "elsewhere"), "elsewhere\n")
+	missing := filepath.Join(homeDir, "gone")
+
+	tests := []struct {
+		name string
+		p    string
+		mode os.FileMode
+		want string
+	}{
+		{
+			name: "a link into another repository",
+			p:    symlink(t, managed, filepath.Join(homeDir, "managed")),
+			mode: os.ModeSymlink,
+			want: "Warning: skipping " + filepath.Join(homeDir, "managed") +
+				" (repository other already manages it; remove it from there first)\n",
+		},
+		{
+			name: "a link to anywhere else",
+			p:    symlink(t, elsewhere, filepath.Join(homeDir, "link")),
+			mode: os.ModeSymlink,
+			want: "Warning: skipping symbolic link " + filepath.Join(homeDir, "link") +
+				" -> " + elsewhere + " (add that path instead)\n",
+		},
+		{
+			name: "a link whose target is missing",
+			p:    symlink(t, missing, filepath.Join(homeDir, "broken")),
+			mode: os.ModeSymlink,
+			want: "Warning: skipping symbolic link " + filepath.Join(homeDir, "broken") +
+				" -> " + missing + " (add that path instead)\n",
+		},
+		{
+			name: "an irregular file",
+			p:    filepath.Join(homeDir, "socket"),
+			mode: os.ModeSocket,
+			want: "Warning: skipping socket " + filepath.Join(homeDir, "socket") + " (git cannot store it)\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := captureStderr(t, func() { reportSkipped(tt.p, tt.mode) })
+
+			if got != tt.want {
+				t.Errorf("reportSkipped() printed %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// The warning reaches the copy, and the rest of the directory is still added
+func TestAddPathsReportsAPathAnotherRepositoryManages(t *testing.T) {
+	repoPath, homeDir := newSandbox(t)
+	managed := writeFile(t, filepath.Join(BaseDir, "other", "$HOME", ".conf", "one"), "one\n")
+	conf := filepath.Join(homeDir, ".conf")
+	writeFile(t, filepath.Join(conf, "two"), "two\n")
+	symlink(t, managed, filepath.Join(conf, "one"))
+
+	out := captureStderr(t, func() {
+		if err := AddPaths(repoPath, []string{conf}); err != nil {
+			t.Fatalf("AddPaths() = %v", err)
+		}
+	})
+
+	want := "Warning: skipping " + filepath.Join(conf, "one") +
+		" (repository other already manages it; remove it from there first)\n"
+	if !strings.Contains(out, want) {
+		t.Errorf("AddPaths() printed %q, want %q", out, want)
+	}
+	if _, err := os.Stat(filepath.Join(repoPath, "$HOME", ".conf", "two")); err != nil {
+		t.Errorf("the repository does not hold the rest of the directory: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(repoPath, "$HOME", ".conf", "one")); !os.IsNotExist(err) {
+		t.Error("the repository took a path that another repository manages")
 	}
 }
 

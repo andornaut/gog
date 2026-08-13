@@ -185,6 +185,39 @@ func warnUnrecordableModes(repoPath string, targetPaths []string) {
 	}
 }
 
+// reportSkipped warns about an entry that copying a directory left behind, and
+// says what to do about it. A symbolic link is never followed: copying its
+// target would store the contents while discarding the link itself. One that
+// resolves into gog's data directory is a path some repository already manages,
+// and naming that repository says more than the path inside it does.
+func reportSkipped(p string, mode os.FileMode) {
+	if mode&os.ModeSymlink == 0 {
+		fmt.Fprintf(os.Stderr, "Warning: skipping %s %s (git cannot store it)\n", copy.FileKind(mode), p)
+		return
+	}
+	if resolved, err := filepath.EvalSymlinks(p); err == nil && paths.Within(BaseDir, resolved) {
+		fmt.Fprintf(os.Stderr, "Warning: skipping %s (repository %s already manages it; remove it from there first)\n",
+			p, repoNameOf(resolved))
+		return
+	}
+	if target, err := os.Readlink(p); err == nil {
+		fmt.Fprintf(os.Stderr, "Warning: skipping symbolic link %s -> %s (add that path instead)\n", p, target)
+		return
+	}
+	fmt.Fprintf(os.Stderr, "Warning: skipping symbolic link %s (add its target instead)\n", p)
+}
+
+// repoNameOf names the repository that holds p, which must be a path within the
+// data directory
+func repoNameOf(p string) string {
+	rel, err := filepath.Rel(BaseDir, p)
+	if err != nil {
+		return ""
+	}
+	name, _, _ := strings.Cut(rel, string(filepath.Separator))
+	return name
+}
+
 // widenedMode returns the permissions a path will be given on another machine
 // and whether that grants access the current mode withholds. A mode that is
 // more permissive than the recorded one is merely tightened elsewhere, which
@@ -298,7 +331,7 @@ func addPath(repoPath, targetPath string) error {
 	held := lstatErr == nil
 
 	if extFileInfo.IsDir() {
-		err = copy.Dir(extPath, intPath, shouldSkip)
+		err = copy.Dir(extPath, intPath, shouldSkip, reportSkipped)
 	} else if err = os.MkdirAll(filepath.Dir(intPath), 0755); err == nil {
 		// The parent directory is created here, because `copy.File` does not
 		// create directories

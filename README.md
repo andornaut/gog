@@ -106,7 +106,15 @@ Run `gog help <command>` for full usage.
 | Named pipe, socket, device node | Refused | Skipped, with a warning |
 
 - A symbolic link that gog created is followed rather than refused, so a
-  managed path can be added again, or added to a second repository.
+  managed path can be added again, or added to a second repository. Inside an
+  added directory it is skipped instead, naming the repository that holds it:
+
+  ```text
+  Warning: skipping /home/example/.config/foorc (repository work already manages it; remove it from there first)
+  ```
+
+- A path inside a repository is refused, and named by the path it is linked
+  from, which is the one `gog add` and `gog remove` mean.
 - Skipping the irregular entries is what lets a directory such as `~/.gnupg`
   be added while the agent sockets in it are left alone.
 - A file with more than one name is copied once per name. Git records contents

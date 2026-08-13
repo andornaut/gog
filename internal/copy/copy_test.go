@@ -1,10 +1,10 @@
 package copy
 
 import (
-	"io"
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -12,6 +12,21 @@ import (
 // copyNothing is a SkipFunc that skips nothing, so that a test exercises only
 // what Dir itself decides
 func copyNothing(_, _ string) bool { return false }
+
+// reported collects the entries a copy left behind
+type reported struct {
+	paths []string
+	modes []os.FileMode
+}
+
+func (r *reported) record(p string, mode os.FileMode) {
+	r.paths = append(r.paths, p)
+	r.modes = append(r.modes, mode)
+}
+
+// reportNothing discards what a copy left behind, for a test that asserts only
+// what reached the destination
+func reportNothing(_ string, _ os.FileMode) {}
 
 func write(t *testing.T, p, contents string, mode os.FileMode) string {
 	t.Helper()
@@ -86,7 +101,7 @@ func TestDirCopiesATreeAndItsModes(t *testing.T) {
 	write(t, filepath.Join(src, "sub", "nested", "three"), "three\n", 0644)
 	dst := filepath.Join(root, "dst")
 
-	if err := Dir(src, dst, copyNothing); err != nil {
+	if err := Dir(src, dst, copyNothing, reportNothing); err != nil {
 		t.Fatalf("Dir() = %v", err)
 	}
 
@@ -108,7 +123,7 @@ func TestDirHonoursTheSkipFunc(t *testing.T) {
 
 	err := Dir(src, dst, func(srcPath, _ string) bool {
 		return filepath.Base(srcPath) == "skip"
-	})
+	}, reportNothing)
 
 	if err != nil {
 		t.Fatalf("Dir() = %v", err)
@@ -121,7 +136,7 @@ func TestDirFailsWhenTheSourceIsNotADirectory(t *testing.T) {
 	root := t.TempDir()
 	src := write(t, filepath.Join(root, "file"), "x\n", 0644)
 
-	if err := Dir(src, filepath.Join(root, "dst"), copyNothing); err == nil {
+	if err := Dir(src, filepath.Join(root, "dst"), copyNothing, reportNothing); err == nil {
 		t.Error("Dir() reported success for a source that is not a directory")
 	}
 }
@@ -137,7 +152,7 @@ func TestDirCreatesNoDirectoryWithNothingToHold(t *testing.T) {
 	write(t, filepath.Join(src, "full", "file"), "file\n", 0644)
 	dst := filepath.Join(root, "dst")
 
-	if err := Dir(src, dst, copyNothing); err != nil {
+	if err := Dir(src, dst, copyNothing, reportNothing); err != nil {
 		t.Fatalf("Dir() = %v", err)
 	}
 
@@ -151,7 +166,7 @@ func TestDirCreatesNoDirectoryWithNothingToHold(t *testing.T) {
 	}
 	emptyDst := filepath.Join(root, "empty-dst")
 
-	if err := Dir(emptySrc, emptyDst, copyNothing); err != nil {
+	if err := Dir(emptySrc, emptyDst, copyNothing, reportNothing); err != nil {
 		t.Fatalf("Dir() = %v", err)
 	}
 
@@ -171,13 +186,21 @@ func TestDirSkipsAnIrregularFile(t *testing.T) {
 	}
 	defer func() { _ = listener.Close() }()
 	dst := filepath.Join(root, "dst")
+	socket := filepath.Join(src, "socket")
 
-	if err := Dir(src, dst, copyNothing); err != nil {
+	var left reported
+	if err := Dir(src, dst, copyNothing, left.record); err != nil {
 		t.Fatalf("Dir() = %v", err)
 	}
 
 	assertContents(t, filepath.Join(dst, "keep"), "keep\n")
 	assertAbsent(t, filepath.Join(dst, "socket"))
+	if !slices.Equal(left.paths, []string{socket}) {
+		t.Errorf("Dir() reported %q, want %q", left.paths, []string{socket})
+	}
+	if len(left.modes) != 1 || left.modes[0]&os.ModeSocket == 0 {
+		t.Errorf("Dir() reported mode %v, want a socket", left.modes)
+	}
 }
 
 // A symbolic link is skipped rather than followed: copying its target would
@@ -248,12 +271,17 @@ func TestDirSkipsSymbolicLinks(t *testing.T) {
 			rel := tt.prepare(t, root, src)
 			dst := filepath.Join(root, "dst")
 
-			if err := Dir(src, dst, copyNothing); err != nil {
+			var left reported
+			if err := Dir(src, dst, copyNothing, left.record); err != nil {
 				t.Fatalf("Dir() = %v", err)
 			}
 
 			assertAbsent(t, filepath.Join(dst, rel))
-			// The rest of the tree is still copied
+			// The link is reported rather than passed over in silence, and the
+			// rest of the tree is still copied
+			if want := []string{filepath.Join(src, rel)}; !slices.Equal(left.paths, want) {
+				t.Errorf("Dir() reported %q, want %q", left.paths, want)
+			}
 			assertContents(t, filepath.Join(dst, "keep"), "keep\n")
 			if tt.alsoCopied != "" {
 				if _, err := os.Stat(filepath.Join(dst, tt.alsoCopied)); err != nil {
@@ -262,53 +290,6 @@ func TestDirSkipsSymbolicLinks(t *testing.T) {
 			}
 		})
 	}
-}
-
-// The warning names the link's target, because that is the path to add instead
-func TestDirNamesTheTargetOfASkippedLink(t *testing.T) {
-	root := t.TempDir()
-	src := filepath.Join(root, "src")
-	target := write(t, filepath.Join(src, "target"), "target\n", 0644)
-	p := filepath.Join(src, "link")
-	link(t, target, p)
-
-	out := captureStderr(t, func() {
-		if err := Dir(src, filepath.Join(root, "dst"), copyNothing); err != nil {
-			t.Fatalf("Dir() = %v", err)
-		}
-	})
-
-	want := "Warning: skipping symbolic link " + p + " -> " + target + " (add that path instead)\n"
-	if out != want {
-		t.Errorf("Dir() printed %q, want %q", out, want)
-	}
-}
-
-// captureStderr returns what f writes to standard error. The warnings go there
-// rather than through a writer the caller supplies, so a test that means to
-// check one has to take it from the process.
-func captureStderr(t *testing.T, f func()) string {
-	t.Helper()
-	reader, writer, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	original := os.Stderr
-	os.Stderr = writer
-	defer func() { os.Stderr = original }()
-
-	done := make(chan string)
-	go func() {
-		var out strings.Builder
-		_, _ = io.Copy(&out, reader)
-		done <- out.String()
-	}()
-
-	f()
-	if err := writer.Close(); err != nil {
-		t.Fatal(err)
-	}
-	return <-done
 }
 
 // A source inside the destination would be copied into itself, and the two are
@@ -344,7 +325,7 @@ func TestDirRefusesASourceInsideTheDestination(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			src, dst := tt.prepare(t, t.TempDir())
 
-			err := Dir(src, dst, copyNothing)
+			err := Dir(src, dst, copyNothing, reportNothing)
 
 			if err == nil || !strings.Contains(err.Error(), "destination") {
 				t.Errorf("Dir() = %v, want a failure naming the destination", err)

@@ -85,6 +85,11 @@ func File(src, dst string) (err error) {
 // processing a directory entry
 type SkipFunc func(string, string) bool
 
+// ReportFunc is told about an entry that the copy left behind, and is called
+// for a symbolic link and for an irregular file. What such an entry means to
+// the caller is the caller's to say, so nothing is printed here.
+type ReportFunc func(p string, mode os.FileMode)
+
 // Dir recursively copies a directory tree. The source directory must exist.
 //
 // A symbolic link within the tree is reported and skipped rather than
@@ -96,9 +101,9 @@ type SkipFunc func(string, string) bool
 // A destination directory is created only once there is something to put in
 // it, so a source directory that is empty - or that holds nothing but skipped
 // entries - leaves no trace at the destination.
-func Dir(src string, dst string, skipFunc SkipFunc) error {
+func Dir(src string, dst string, skipFunc SkipFunc, report ReportFunc) error {
 	// dst may not exist yet, so only its existing prefix can be resolved
-	return copyDir(src, dst, paths.Resolve(dst), skipFunc, func() error {
+	return copyDir(src, dst, paths.Resolve(dst), skipFunc, report, func() error {
 		return os.MkdirAll(filepath.Dir(dst), 0755)
 	})
 }
@@ -108,7 +113,7 @@ func Dir(src string, dst string, skipFunc SkipFunc) error {
 // inside the tree being written. `ensureParent` creates this directory's
 // parent and is only called once there is something to copy, so that a
 // directory with nothing to hold is never created.
-func copyDir(src, dst, dstRoot string, skipFunc SkipFunc, ensureParent func() error) error {
+func copyDir(src, dst, dstRoot string, skipFunc SkipFunc, report ReportFunc, ensureParent func() error) error {
 	src = filepath.Clean(src)
 	dst = filepath.Clean(dst)
 
@@ -165,7 +170,7 @@ func copyDir(src, dst, dstRoot string, skipFunc SkipFunc, ensureParent func() er
 		}
 
 		if entryInfo.IsDir() {
-			if err := copyDir(srcPath, dstPath, dstRoot, skipFunc, ensureDst); err != nil {
+			if err := copyDir(srcPath, dstPath, dstRoot, skipFunc, report, ensureDst); err != nil {
 				return err
 			}
 			continue
@@ -178,7 +183,7 @@ func copyDir(src, dst, dstRoot string, skipFunc SkipFunc, ensureParent func() er
 		// file, which is also why no link is followed and the walk can meet
 		// neither a cycle nor a path outside the tree.
 		if !entryInfo.Mode().IsRegular() {
-			printSkipped(srcPath, entryInfo.Mode())
+			report(srcPath, entryInfo.Mode())
 			continue
 		}
 		if err := ensureDst(); err != nil {
@@ -189,19 +194,6 @@ func copyDir(src, dst, dstRoot string, skipFunc SkipFunc, ensureParent func() er
 		}
 	}
 	return nil
-}
-
-// printSkipped reports an entry that a copy leaves behind. A symbolic link
-// names its target, because that is the path to add instead, and because git
-// can store a link: gog declines to follow one rather than being unable to.
-func printSkipped(p string, mode os.FileMode) {
-	if mode&os.ModeSymlink != 0 {
-		if target, err := os.Readlink(p); err == nil {
-			fmt.Fprintf(os.Stderr, "Warning: skipping symbolic link %s -> %s (add that path instead)\n", p, target)
-			return
-		}
-	}
-	fmt.Fprintf(os.Stderr, "Warning: skipping %s %s (git cannot store it)\n", FileKind(mode), p)
 }
 
 // FileKind names what a mode describes, for reporting a path that gog cannot
