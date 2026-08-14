@@ -101,18 +101,14 @@ dotfiles/
   root/
     $HOME/.bashrc     -> ~/.bashrc
     etc/hosts         -> /etc/hosts
-  .github/            the forge's, never linked
+  .github/            never linked, as is anything else at this level
   .gitignore
   LICENSE
   README.md
 ```
 
-Nothing at the top level is linked, so a workflow, a licence or a readme cannot
-be mistaken for a path to write.
-
-Nothing at the top level is linked, and a repository with no `root/` has nothing
-to link, which `gog apply` and `gog list` say rather than passing over in
-silence.
+A repository with no `root/` has nothing to link, and `gog apply` and `gog list`
+say so rather than exiting silently.
 
 ### `$HOME` substitution
 
@@ -301,9 +297,8 @@ export GOG_IGNORE_FILES_REGEX='\.cache/'        # everything under .cache
 export GOG_IGNORE_FILES_REGEX='^secrets\.env$'  # one file, by name
 ```
 
-The expression is matched against paths relative to `root/`, the directory
-whose tree is linked, so `^secrets\.env$` names the same file in a repository
-that has been moved and one that has not. It is read only by the commands that
+The expression is matched against paths relative to `root/`, so `^secrets\.env$`
+names a file at the top of the linked tree. It is read only by the commands that
 link: `add`, `apply` and `list`.
 
 ## Releasing

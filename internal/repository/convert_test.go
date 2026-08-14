@@ -16,8 +16,7 @@ func setHomeDir(t *testing.T, home string) {
 	t.Cleanup(func() { SetHomeDirForTest(original) })
 }
 
-// newRepoDir builds a repository directory that keeps its content under
-// ContentDirName, which is where every repository keeps it.
+// newRepoDir builds a repository directory holding a content directory
 func newRepoDir(t *testing.T) string {
 	t.Helper()
 	repoPath := filepath.Join(t.TempDir(), "testrepo")
@@ -70,8 +69,8 @@ func TestToInternalPath(t *testing.T) {
 		{name: "within home", p: "/home/testuser/.bashrc", want: content + "/$HOME/.bashrc"},
 		{name: "a sibling of home", p: "/home/testuserother/.bashrc", want: content + "/home/testuserother/.bashrc"},
 		{name: "outside home", p: "/etc/hosts", want: content + "/etc/hosts"},
-		// /root is the superuser's home, and names the content directory only
-		// because that directory is named for the filesystem root it stands for
+		// The superuser's home, stored under the content directory like any
+		// other absolute path
 		{name: "the superuser's home", p: "/root/.profile", want: content + "/root/.profile"},
 	}
 	for _, tt := range tests {

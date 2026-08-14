@@ -207,8 +207,7 @@ var list = &cobra.Command{
 	Use:   "list",
 	Short: "Print the paths that a repository holds",
 	Long: "Print the paths that `gog apply` would link, as they appear outside the\n" +
-		"repository. The files a repository keeps for itself and whatever\n" +
-		"GOG_IGNORE_FILES_REGEX names are left out.",
+		"repository. Whatever GOG_IGNORE_FILES_REGEX names is left out.",
 	Args:                  noArgs,
 	DisableFlagsInUseLine: true,
 	RunE: func(c *cobra.Command, args []string) error {

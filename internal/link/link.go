@@ -103,8 +103,7 @@ func Dir(repoPath, intPath string) error {
 	if err := Configure(); err != nil {
 		return err
 	}
-	// A repository whose content directory is not there yet holds nothing to
-	// link, which is what a new one looks like before its first `gog add`.
+	// A repository with no content directory holds nothing to link.
 	if _, err := os.Stat(intPath); os.IsNotExist(err) {
 		return nil
 	}
@@ -115,9 +114,8 @@ func Dir(repoPath, intPath string) error {
 			return err
 		}
 
-		// The directory the walk starts at, which is linked from rather than
-		// linked. Nothing else here is the repository's own: the walk begins
-		// inside the content directory, and .git is outside it.
+		// Linked from, not linked. Nothing else needs skipping: the walk starts
+		// inside the content directory, and .git sits outside it.
 		if p == intPath {
 			return nil
 		}
@@ -224,15 +222,12 @@ func linkFile(repoPath, intPath string) (bool, error) {
 	return true, nil
 }
 
-// skipped reports whether a path the repository holds is one that is never
-// linked, which is whatever GOG_IGNORE_FILES_REGEX names. A repository's own
-// files need no entry here: they sit beside the directory whose tree is linked,
-// and nothing walks them.
+// skipped reports whether a path is one GOG_IGNORE_FILES_REGEX names.
 func skipped(repoPath, intPath string) bool {
-	// Matched against the path as it sits under the directory whose tree is
-	// linked, not under the repository, so that a pattern goes on meaning what
-	// it meant before that directory was introduced: `^secrets\.env$` names the
-	// same file in a repository that has been moved and one that has not.
+	// Matched against the path under the content directory rather than under
+	// the repository, so that a pattern names what it appears to: with the
+	// repository as the root, every path would carry a root/ prefix and an
+	// anchored pattern such as `^secrets\.env$` would match nothing.
 	return ignoreFilesRegex.MatchString(strings.TrimPrefix(intPath, repository.ContentPath(repoPath)+"/"))
 }
 

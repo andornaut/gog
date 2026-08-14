@@ -8,12 +8,10 @@ import (
 	"github.com/andornaut/gog/internal/repository"
 )
 
-// UnlinkDir replaces symbolic links with the files that they linked to. It is
-// called with the directory a repository links from, whether that is the whole
-// of what it holds or one tree inside it.
+// UnlinkDir replaces symbolic links with the files that they linked to, given
+// the content directory or one tree inside it.
 func UnlinkDir(repoPath, intPath string) error {
-	// A repository being removed before its content directory exists has no
-	// link of its own to restore.
+	// Nothing there is nothing to restore.
 	if _, err := os.Stat(intPath); os.IsNotExist(err) {
 		return nil
 	}

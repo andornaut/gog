@@ -42,8 +42,7 @@ func List(repoPath string) ([]Entry, error) {
 		return nil, err
 	}
 	contentPath := repository.ContentPath(repoPath)
-	// A repository whose content directory is not there yet holds nothing to
-	// link, which is what a new one looks like before its first `gog add`.
+	// A repository with no content directory holds nothing to link.
 	if _, err := os.Stat(contentPath); os.IsNotExist(err) {
 		return nil, nil
 	}

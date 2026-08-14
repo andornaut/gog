@@ -52,13 +52,10 @@ func repoPath() (string, error) {
 	return repoPath, nil
 }
 
-// noteEmpty says that a repository has no content directory, so the command
-// that just ran had nothing to act on.
-//
-// A new repository is the ordinary case and this is not a failure, but silence
-// would be: a repository that was written before gog linked from a directory of
-// its own, and that stored no home path for RefuseUnmoved to recognise, looks
-// exactly like a successful run that linked everything.
+// noteEmpty reports that a repository has no content directory, so there was
+// nothing to link. Not a failure: a repository has none until its first `gog
+// add`. Said rather than passed over, since a run that linked nothing and one
+// that linked everything are otherwise the same, both silent and exit 0.
 func noteEmpty(repoPath string) {
 	if repository.HasContentDir(repoPath) {
 		return

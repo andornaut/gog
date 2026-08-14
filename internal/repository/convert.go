@@ -10,9 +10,9 @@ import (
 )
 
 // ContentDirName is the directory of a repository whose tree is linked. Every
-// path under it names one on the filesystem; everything beside it belongs to
-// the repository itself, so a README, a LICENSE or a forge's own .github
-// directory cannot be mistaken for a file to link.
+// path under it names one on the filesystem, and everything beside it is the
+// repository's own: a README, a LICENSE or a .github directory is never a path
+// to write.
 const ContentDirName = "root"
 
 // ContentPath is the directory of repoPath whose tree is linked.
@@ -20,9 +20,9 @@ func ContentPath(repoPath string) string {
 	return filepath.Join(repoPath, ContentDirName)
 }
 
-// HasContentDir reports whether the repository keeps its content where gog links
-// from. A regular file or a link named ContentDirName is not that directory, and
-// reading it as one would walk something that is not a tree.
+// HasContentDir reports whether a repository has the directory gog links from.
+// A regular file or a link of that name is not one, and walking it would not be
+// walking a tree.
 func HasContentDir(repoPath string) bool {
 	info, err := os.Stat(ContentPath(repoPath))
 	return err == nil && info.IsDir()

@@ -62,9 +62,8 @@ func TestDirLinksAndStagesATree(t *testing.T) {
 	}
 }
 
-// A repository with nothing in it yet holds nothing to link, which is what a
-// new one looks like before its first `gog add`. Applying it is a no-op rather
-// than a walk of a directory that is not there.
+// A repository with no content directory has nothing to link, so applying it is
+// a no-op rather than a walk of a directory that is not there
 func TestDirOnARepositoryWithNoContentDirectory(t *testing.T) {
 	repoPath, homeDir := newSandbox(t)
 	for _, name := range []string{"README.md", ".gitignore"} {
@@ -86,9 +85,8 @@ func TestDirOnARepositoryWithNoContentDirectory(t *testing.T) {
 	}
 }
 
-// The pattern is matched against the path as it sits under the directory whose
-// tree is linked, so that a pattern written for a repository goes on meaning
-// the same thing after that repository is moved.
+// The pattern is matched under the content directory, so an anchored one names
+// what it appears to rather than needing a root/ prefix
 func TestDirHonoursAnAnchoredIgnorePatternAfterAMove(t *testing.T) {
 	repoPath, homeDir := newSandbox(t)
 	write(t, repoPath, "$HOME/.bashrc", "bashrc\n")
@@ -135,8 +133,8 @@ func TestDirIsIdempotent(t *testing.T) {
 	}
 }
 
-// A repository's own files sit beside the directory whose tree is linked and
-// are never walked, so what is left to check here is the ignore pattern
+// A repository's own files sit outside the walk, so the pattern is all that is
+// left to check
 func TestSkipped(t *testing.T) {
 	repoPath, _ := newSandbox(t)
 	t.Setenv("GOG_IGNORE_FILES_REGEX", `\.swp$`)
