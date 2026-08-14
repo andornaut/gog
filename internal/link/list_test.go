@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
+
+	"github.com/andornaut/gog/internal/repository"
 )
 
 func externalPaths(entries []Entry) []string {
@@ -32,8 +34,12 @@ func TestListLeavesOutWhatIsNeverLinked(t *testing.T) {
 	repoPath, homeDir := newSandbox(t)
 	write(t, repoPath, "$HOME/.bashrc", "bashrc\n")
 	write(t, repoPath, "$HOME/.cache/state", "state\n")
+	// The repository's own files, which sit beside the directory whose tree is
+	// linked rather than in it.
 	for _, name := range []string{".gitignore", "LICENSE", "README.md"} {
-		write(t, repoPath, name, name)
+		if err := os.WriteFile(filepath.Join(repoPath, name), []byte(name), 0644); err != nil {
+			t.Fatal(err)
+		}
 	}
 	t.Setenv("GOG_IGNORE_FILES_REGEX", `\.cache/`)
 
@@ -58,7 +64,7 @@ func TestListStatesMatchWhatApplyingDoes(t *testing.T) {
 	write(t, repoPath, "$HOME/.same", "same\n")
 	write(t, repoPath, "$HOME/.mine", "theirs\n")
 
-	if err := os.Symlink(filepath.Join(repoPath, "$HOME", ".linked"), filepath.Join(homeDir, ".linked")); err != nil {
+	if err := os.Symlink(filepath.Join(repoPath, repository.ContentDirName, "$HOME", ".linked"), filepath.Join(homeDir, ".linked")); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(filepath.Join(homeDir, "gone"), filepath.Join(homeDir, ".broken")); err != nil {
@@ -91,13 +97,13 @@ func TestListStatesMatchWhatApplyingDoes(t *testing.T) {
 
 	// Everything the listing did not call a conflict is linked by the run that
 	// follows, and the conflict is the only thing left alone
-	if err := Dir(repoPath, repoPath); err == nil {
+	if err := Dir(repoPath, repository.ContentPath(repoPath)); err == nil {
 		t.Error("Dir() reported success although a conflict was listed")
 	}
 	for name, wantState := range want {
 		extPath := filepath.Join(homeDir, name)
 		target, readErr := os.Readlink(extPath)
-		linked := readErr == nil && target == filepath.Join(repoPath, "$HOME", name)
+		linked := readErr == nil && target == filepath.Join(repoPath, repository.ContentDirName, "$HOME", name)
 		if linked != (wantState != StateConflict) {
 			t.Errorf("%s linked = %v, but the listing said %s", name, linked, wantState)
 		}

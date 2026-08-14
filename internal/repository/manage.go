@@ -281,6 +281,33 @@ func ValidateTargetPaths(targetPaths []string) error {
 
 // resolveAddPath validates a path given to `gog add` and returns the path
 // whose contents will be copied into the repository
+// refuseContentDirCollision stops a repository of the legacy layout from being
+// given a path that would create ContentDirName at its top level.
+//
+// /root is such a path, being where the superuser's home sits. A legacy
+// repository stores it at its top level under that name, which is the name that
+// decides the layout: the next command would read the repository as one that
+// had been moved, look for its content in that directory, and find one file
+// there while every other path it holds stopped converting to anything at all.
+//
+// Refused rather than stored somewhere else, since the repository is one move
+// away from having no such collision: under ContentDirName, /root is
+// root/root and names nothing but itself.
+//
+// CLEANUP (added 2026-08-14): goes with the legacy layout, see ContentPath.
+func refuseContentDirCollision(repoPath, targetPath, intPath string) error {
+	if !legacyLayout(repoPath) {
+		return nil
+	}
+	rel, err := filepath.Rel(repoPath, intPath)
+	if err != nil || (rel != ContentDirName && !strings.HasPrefix(rel, ContentDirName+string(filepath.Separator))) {
+		return nil
+	}
+	return fmt.Errorf("refusing to add %q to %s: it would be stored as %s, which is the directory "+
+		"a repository keeps its linked content in. Move this repository first: `gog git mv <each top-level directory> %s/`",
+		targetPath, filepath.Base(repoPath), rel, ContentDirName)
+}
+
 func resolveAddPath(repoPath string, force bool, targetPath string) (string, error) {
 	if err := validateTargetPath(targetPath); err != nil {
 		return "", err
@@ -349,6 +376,9 @@ func addTargetPath(repoPath string, force bool, targetPath string) error {
 	}
 
 	intPath := ToInternalPath(repoPath, targetPath)
+	if err = refuseContentDirCollision(repoPath, targetPath, intPath); err != nil {
+		return err
+	}
 	// Compared with its symbolic links resolved, as extPath already is: a data
 	// directory reached through a symlinked parent spells the same path two
 	// ways, and copying a file over itself empties it.

@@ -41,8 +41,14 @@ func List(repoPath string) ([]Entry, error) {
 	if err := Configure(); err != nil {
 		return nil, err
 	}
+	contentPath := repository.ContentPath(repoPath)
+	// A repository whose content directory is not there yet holds nothing to
+	// link, which is what a new one looks like before its first `gog add`.
+	if _, err := os.Stat(contentPath); os.IsNotExist(err) {
+		return nil, nil
+	}
 	var entries []Entry
-	err := filepath.Walk(repoPath, func(p string, info os.FileInfo, err error) error {
+	err := filepath.Walk(contentPath, func(p string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -52,6 +58,14 @@ func List(repoPath string) ([]Entry, error) {
 			}
 			// A worktree's .git is a file, and skipping a file the way a
 			// directory is skipped would skip its siblings as well
+			return nil
+		}
+		// See link.Dir: a repository's own directory is skipped whole, and only
+		// a legacy layout's walk meets one.
+		if ownEntry(repoPath, p) {
+			if info.IsDir() {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		if info.IsDir() || skipped(repoPath, p) {

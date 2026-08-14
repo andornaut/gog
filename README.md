@@ -49,7 +49,7 @@ make install
 # Clone a repository and add a file to it
 gog repository add dotfiles https://example.com/user/dotfiles.git
 gog add ~/.config/foorc
-# Linked: /home/example/.config/foorc -> /home/example/.local/share/gog/dotfiles/\$HOME/.config/foorc
+# Linked: /home/example/.config/foorc -> /home/example/.local/share/gog/dotfiles/root/\$HOME/.config/foorc
 
 # Publish it
 gog git commit -am 'Add foo config'
@@ -91,10 +91,52 @@ Run `gog help <command>` for full usage.
 
 ## Behaviour
 
+### Repository layout
+
+A repository keeps what it links under `root/`, whose tree mirrors the
+filesystem, and everything beside it belongs to the repository itself:
+
+```text
+dotfiles/
+  root/
+    $HOME/.bashrc     -> ~/.bashrc
+    etc/hosts         -> /etc/hosts
+  .github/            the forge's, never linked
+  .gitignore
+  LICENSE
+  README.md
+```
+
+Nothing at the top level is linked, so a workflow, a licence or a readme cannot
+be mistaken for a path to write.
+
+A repository written before this held its content at the top level instead. It
+still works, and its own files are recognised by name rather than by where they
+sit. Move one with a single commit, naming every content directory it has, not
+only `$HOME`:
+
+```bash
+gog git mv '$HOME' etc root/     # every top-level directory except the repository's own
+gog git commit -m 'Move the linked tree under root/'
+gog apply
+```
+
+`gog apply` and `gog list` warn about anything left beside `root/`, since
+nothing links it, and `gog repository remove` refuses while it is there rather
+than deleting files it cannot restore.
+
+Do that on the machine that holds the repository, and run `gog apply` on the
+others once they have both the new version and the commit: a link made before
+the move points at a path that no longer exists.
+
+`GOG_IGNORE_FILES_REGEX` keeps its meaning across the move: patterns are matched
+against the path as it sits under `root/`, so `^secrets\.env$` names the same
+file before and after.
+
 ### `$HOME` substitution
 
 - A path under the home directory is stored with a literal `$HOME` component:
-  `~/.bashrc` is stored as `$HOME/.bashrc`.
+  `~/.bashrc` is stored as `root/$HOME/.bashrc`.
 - `gog apply` expands it to the home directory of whoever runs it, so one
   repository serves several users and machines.
 - A path outside the home directory is stored by its absolute name.
@@ -270,7 +312,7 @@ done
 | --- | --- |
 | `GOG_DEFAULT_REPOSITORY_NAME` | Repository to use when `-r` is not given. Default: the first repository, which `gog repository default` prints |
 | `GOG_HOME` | Where gog stores repositories. Default: `${XDG_DATA_HOME}/gog` if set, otherwise `${HOME}/.local/share/gog` |
-| `GOG_IGNORE_FILES_REGEX` | Do not link repository-relative paths that match this regular expression |
+| `GOG_IGNORE_FILES_REGEX` | Do not link paths that match this regular expression, named as they sit under `root/` |
 
 ```bash
 export GOG_IGNORE_FILES_REGEX='\.swp$|\.tmp$'   # Vim temporary files
@@ -278,8 +320,10 @@ export GOG_IGNORE_FILES_REGEX='\.cache/'        # everything under .cache
 export GOG_IGNORE_FILES_REGEX='^secrets\.env$'  # one file, by name
 ```
 
-The expression is matched against paths relative to the repository root, and is
-read only by the commands that link: `add`, `apply` and `list`.
+The expression is matched against paths relative to `root/`, the directory
+whose tree is linked, so `^secrets\.env$` names the same file in a repository
+that has been moved and one that has not. It is read only by the commands that
+link: `add`, `apply` and `list`.
 
 ## Releasing
 

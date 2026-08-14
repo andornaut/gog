@@ -127,7 +127,7 @@ func TestUnlinkDirRestoresEveryFileInTheTree(t *testing.T) {
 		}
 	}
 
-	if err := UnlinkDir(repoPath, filepath.Join(repoPath, "$HOME", ".config")); err != nil {
+	if err := UnlinkDir(repoPath, filepath.Join(repoPath, repository.ContentDirName, "$HOME", ".config")); err != nil {
 		t.Fatalf("UnlinkDir() = %v", err)
 	}
 

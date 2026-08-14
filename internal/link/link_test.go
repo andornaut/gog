@@ -97,7 +97,7 @@ func TestLinkFilePrintsWhatItLinked(t *testing.T) {
 	})
 
 	want := "Linked: " + filepath.Join(homeDir, ".bashrc") + " -> " +
-		filepath.Join(repoPath, `\$HOME`, ".bashrc") + "\n"
+		filepath.Join(repoPath, repository.ContentDirName, `\$HOME`, ".bashrc") + "\n"
 	if out != want {
 		t.Errorf("linkFile() printed %q, want %q", out, want)
 	}

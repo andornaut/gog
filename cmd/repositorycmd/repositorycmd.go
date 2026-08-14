@@ -120,9 +120,21 @@ var remove = &cobra.Command{
 					filepath.Base(repoPath), strings.Join(unsaved, " and "))
 			}
 		}
+		// Content beside the directory whose tree is linked is a move that was
+		// not finished, and nothing here can restore it: what it links is
+		// decided from the directory the repository now keeps its content in,
+		// so those paths convert to no external path at all. Deleting the
+		// repository would leave links to nothing and take the files with it,
+		// so the move is finished first.
+		if stranded := repository.Stranded(repoPath); len(stranded) > 0 {
+			return fmt.Errorf("refusing to remove %s: it holds %s beside %s/, which this cannot restore. "+
+				"Move them under %s/ and run `gog apply`, or delete the directory yourself",
+				filepath.Base(repoPath), strings.Join(stranded, ", "),
+				repository.ContentDirName, repository.ContentDirName)
+		}
 		// Restore what the repository holds before deleting it, so that the
 		// user is left with their files rather than with links to nothing
-		if err := link.UnlinkDir(repoPath, repoPath); err != nil {
+		if err := link.UnlinkDir(repoPath, repository.ContentPath(repoPath)); err != nil {
 			return err
 		}
 		if err := repository.Remove(repoPath); err != nil {

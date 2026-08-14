@@ -12,6 +12,11 @@ import (
 // called with a whole repository when one is being removed, so git's own
 // directory is skipped: nothing in it was ever linked.
 func UnlinkDir(repoPath, intPath string) error {
+	// A repository being removed before its content directory exists has no
+	// link of its own to restore.
+	if _, err := os.Stat(intPath); os.IsNotExist(err) {
+		return nil
+	}
 	return filepath.Walk(intPath, func(p string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -23,6 +28,14 @@ func UnlinkDir(repoPath, intPath string) error {
 			}
 			// A worktree's .git is a file, and skipping a file the way a
 			// directory is skipped would skip its siblings as well
+			return nil
+		}
+		// See link.Dir: a repository's own file was never linked, so there is
+		// nothing of it to restore.
+		if ownEntry(repoPath, p) {
+			if info.IsDir() {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		if info.IsDir() {

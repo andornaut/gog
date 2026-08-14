@@ -51,3 +51,21 @@ func repoPath() (string, error) {
 	fmt.Fprintln(os.Stderr, "Repository:", filepath.Base(repoPath))
 	return repoPath, nil
 }
+
+// warnStranded says what a repository holds beside the directory whose tree is
+// linked, which is a move that was not finished.
+//
+// Warned rather than refused: what is under that directory is linked correctly,
+// and stopping the command would take that away as well. Said on every run that
+// links or lists, since nothing else reports it and what it names is a file the
+// operator believes is managed.
+func warnStranded(repoPath string) {
+	stranded := repository.Stranded(repoPath)
+	if len(stranded) == 0 {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "Warning: %s holds %s beside %s/, which is not linked. "+
+		"Move them under %s/ to finish the move\n",
+		filepath.Base(repoPath), strings.Join(stranded, ", "),
+		repository.ContentDirName, repository.ContentDirName)
+}

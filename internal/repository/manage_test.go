@@ -72,7 +72,7 @@ func TestAddPathsStoresHomePathsPortably(t *testing.T) {
 		t.Fatalf("AddPaths() = %v", err)
 	}
 
-	contents, err := os.ReadFile(filepath.Join(repoPath, "$HOME", ".bashrc"))
+	contents, err := os.ReadFile(filepath.Join(repoPath, ContentDirName, "$HOME", ".bashrc"))
 	if err != nil || string(contents) != "bashrc\n" {
 		t.Errorf("the repository holds %q (%v), want the file's contents", contents, err)
 	}
@@ -88,7 +88,7 @@ func TestAddPathsCopiesADirectoryTree(t *testing.T) {
 	}
 
 	for _, rel := range []string{"$HOME/.config/app/conf", "$HOME/.config/app/nested/deep.conf"} {
-		if _, err := os.Stat(filepath.Join(repoPath, rel)); err != nil {
+		if _, err := os.Stat(filepath.Join(repoPath, ContentDirName, rel)); err != nil {
 			t.Errorf("the repository does not hold %s: %v", rel, err)
 		}
 	}
@@ -106,7 +106,7 @@ func TestAddPathsChecksEveryPathBeforeCopyingAny(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "does not exist") {
 		t.Fatalf("AddPaths() = %v, want a failure naming the missing path", err)
 	}
-	if _, statErr := os.Stat(filepath.Join(repoPath, "$HOME", ".bashrc")); !os.IsNotExist(statErr) {
+	if _, statErr := os.Stat(filepath.Join(repoPath, ContentDirName, "$HOME", ".bashrc")); !os.IsNotExist(statErr) {
 		t.Error("the repository holds the first path although the batch failed")
 	}
 }
@@ -151,7 +151,7 @@ func TestAddPathsRefusals(t *testing.T) {
 		{
 			name: "a path inside a repository",
 			prepare: func(t *testing.T, _ string) string {
-				return filepath.Join(BaseDir, "dots", "$HOME", ".bashrc")
+				return filepath.Join(BaseDir, "dots", ContentDirName, "$HOME", ".bashrc")
 			},
 			want: "repository dots holds it",
 		},
@@ -181,7 +181,7 @@ func TestAddPathsRefusals(t *testing.T) {
 // repositories, so it is refused unless --force says to take it over
 func TestAddPathsRefusesAPathAnotherRepositoryManages(t *testing.T) {
 	repoPath, homeDir := newSandbox(t)
-	managed := writeFile(t, filepath.Join(BaseDir, "other", "$HOME", ".bashrc"), "theirs\n")
+	managed := writeFile(t, filepath.Join(BaseDir, "other", ContentDirName, "$HOME", ".bashrc"), "theirs\n")
 	target := symlink(t, managed, filepath.Join(homeDir, ".bashrc"))
 
 	err := AddPaths(repoPath, false, []string{target})
@@ -190,7 +190,7 @@ func TestAddPathsRefusesAPathAnotherRepositoryManages(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), want) {
 		t.Fatalf("AddPaths() = %v, want a failure containing %q", err, want)
 	}
-	if _, statErr := os.Lstat(filepath.Join(repoPath, "$HOME", ".bashrc")); !os.IsNotExist(statErr) {
+	if _, statErr := os.Lstat(filepath.Join(repoPath, ContentDirName, "$HOME", ".bashrc")); !os.IsNotExist(statErr) {
 		t.Error("the repository took the path although it refused")
 	}
 
@@ -198,7 +198,7 @@ func TestAddPathsRefusesAPathAnotherRepositoryManages(t *testing.T) {
 	if err = AddPaths(repoPath, true, []string{target}); err != nil {
 		t.Fatalf("AddPaths(force) = %v", err)
 	}
-	contents, err := os.ReadFile(filepath.Join(repoPath, "$HOME", ".bashrc"))
+	contents, err := os.ReadFile(filepath.Join(repoPath, ContentDirName, "$HOME", ".bashrc"))
 	if err != nil || string(contents) != "theirs\n" {
 		t.Errorf("the repository holds %q (%v), want the contents it took over", contents, err)
 	}
@@ -207,7 +207,7 @@ func TestAddPathsRefusesAPathAnotherRepositoryManages(t *testing.T) {
 // A path this repository already holds may be added again
 func TestAddPathsFollowsItsOwnLink(t *testing.T) {
 	repoPath, homeDir := newSandbox(t)
-	held := writeFile(t, filepath.Join(repoPath, "$HOME", ".bashrc"), "bashrc\n")
+	held := writeFile(t, filepath.Join(repoPath, ContentDirName, "$HOME", ".bashrc"), "bashrc\n")
 	target := symlink(t, held, filepath.Join(homeDir, ".bashrc"))
 
 	if err := AddPaths(repoPath, false, []string{target}); err != nil {
@@ -224,9 +224,9 @@ func TestAddPathsFollowsItsOwnLink(t *testing.T) {
 // and by the path it is linked from
 func TestOwnPathError(t *testing.T) {
 	repoPath, homeDir := newSandbox(t)
-	linked := writeFile(t, filepath.Join(repoPath, "$HOME", ".bashrc"), "bashrc\n")
+	linked := writeFile(t, filepath.Join(repoPath, ContentDirName, "$HOME", ".bashrc"), "bashrc\n")
 	symlink(t, linked, filepath.Join(homeDir, ".bashrc"))
-	unlinked := writeFile(t, filepath.Join(repoPath, "$HOME", ".vimrc"), "vimrc\n")
+	unlinked := writeFile(t, filepath.Join(repoPath, ContentDirName, "$HOME", ".vimrc"), "vimrc\n")
 
 	tests := []struct {
 		name string
@@ -298,7 +298,7 @@ func TestValidateTargetPaths(t *testing.T) {
 		t.Errorf("ValidateTargetPaths() = %v, want success", err)
 	}
 
-	err := ValidateTargetPaths([]string{mine, filepath.Join(repoPath, "$HOME", ".vimrc")})
+	err := ValidateTargetPaths([]string{mine, filepath.Join(repoPath, ContentDirName, "$HOME", ".vimrc")})
 
 	if err == nil || !strings.Contains(err.Error(), "repository dots holds it") {
 		t.Errorf("ValidateTargetPaths() = %v, want the batch refused", err)
@@ -309,7 +309,7 @@ func TestValidateTargetPaths(t *testing.T) {
 // gog's data directory names the repository that manages it.
 func TestReportSkipped(t *testing.T) {
 	repoPath, homeDir := newSandbox(t)
-	managed := writeFile(t, filepath.Join(BaseDir, "other", "$HOME", ".bashrc"), "bashrc\n")
+	managed := writeFile(t, filepath.Join(BaseDir, "other", ContentDirName, "$HOME", ".bashrc"), "bashrc\n")
 	elsewhere := writeFile(t, filepath.Join(homeDir, "elsewhere"), "elsewhere\n")
 	missing := filepath.Join(homeDir, "gone")
 
@@ -342,7 +342,7 @@ func TestReportSkipped(t *testing.T) {
 		},
 		{
 			name: "a link into the repository being added to",
-			p:    symlink(t, writeFile(t, filepath.Join(repoPath, "$HOME", ".inputrc"), "inputrc\n"), filepath.Join(homeDir, ".inputrc")),
+			p:    symlink(t, writeFile(t, filepath.Join(repoPath, ContentDirName, "$HOME", ".inputrc"), "inputrc\n"), filepath.Join(homeDir, ".inputrc")),
 			mode: os.ModeSymlink,
 			want: "",
 		},
@@ -379,7 +379,7 @@ func TestAddPathsIsQuietWhenItMeetsItsOwnLinks(t *testing.T) {
 	if err := os.Remove(filepath.Join(conf, "one")); err != nil {
 		t.Fatal(err)
 	}
-	symlink(t, filepath.Join(repoPath, "$HOME", ".conf", "one"), filepath.Join(conf, "one"))
+	symlink(t, filepath.Join(repoPath, ContentDirName, "$HOME", ".conf", "one"), filepath.Join(conf, "one"))
 	writeFile(t, filepath.Join(conf, "two"), "two\n")
 
 	out := captureStderr(t, func() {
@@ -391,7 +391,7 @@ func TestAddPathsIsQuietWhenItMeetsItsOwnLinks(t *testing.T) {
 	if out != "" {
 		t.Errorf("AddPaths() printed %q, want nothing", out)
 	}
-	if _, err := os.Stat(filepath.Join(repoPath, "$HOME", ".conf", "two")); err != nil {
+	if _, err := os.Stat(filepath.Join(repoPath, ContentDirName, "$HOME", ".conf", "two")); err != nil {
 		t.Errorf("the repository does not hold the path that was added: %v", err)
 	}
 }
@@ -399,7 +399,7 @@ func TestAddPathsIsQuietWhenItMeetsItsOwnLinks(t *testing.T) {
 // The warning reaches the copy, and the rest of the directory is still added
 func TestAddPathsReportsAPathAnotherRepositoryManages(t *testing.T) {
 	repoPath, homeDir := newSandbox(t)
-	managed := writeFile(t, filepath.Join(BaseDir, "other", "$HOME", ".conf", "one"), "one\n")
+	managed := writeFile(t, filepath.Join(BaseDir, "other", ContentDirName, "$HOME", ".conf", "one"), "one\n")
 	conf := filepath.Join(homeDir, ".conf")
 	writeFile(t, filepath.Join(conf, "two"), "two\n")
 	symlink(t, managed, filepath.Join(conf, "one"))
@@ -415,10 +415,10 @@ func TestAddPathsReportsAPathAnotherRepositoryManages(t *testing.T) {
 	if !strings.Contains(out, want) {
 		t.Errorf("AddPaths() printed %q, want %q", out, want)
 	}
-	if _, err := os.Stat(filepath.Join(repoPath, "$HOME", ".conf", "two")); err != nil {
+	if _, err := os.Stat(filepath.Join(repoPath, ContentDirName, "$HOME", ".conf", "two")); err != nil {
 		t.Errorf("the repository does not hold the rest of the directory: %v", err)
 	}
-	if _, err := os.Lstat(filepath.Join(repoPath, "$HOME", ".conf", "one")); !os.IsNotExist(err) {
+	if _, err := os.Lstat(filepath.Join(repoPath, ContentDirName, "$HOME", ".conf", "one")); !os.IsNotExist(err) {
 		t.Error("the repository took a path that another repository manages")
 	}
 }
@@ -436,7 +436,7 @@ func TestRemovePathsUntracksAndLeavesNothingBehind(t *testing.T) {
 		t.Fatalf("RemovePaths() = %v", err)
 	}
 
-	if _, err := os.Lstat(filepath.Join(repoPath, "$HOME", ".bashrc")); !os.IsNotExist(err) {
+	if _, err := os.Lstat(filepath.Join(repoPath, ContentDirName, "$HOME", ".bashrc")); !os.IsNotExist(err) {
 		t.Errorf("the repository still holds the path (%v)", err)
 	}
 	if tracked := gittest.Run(t, repoPath, "ls-files"); strings.Contains(tracked, ".bashrc") {
@@ -514,7 +514,7 @@ func TestUnsavedWorkCountsWhatDeletionWouldDestroy(t *testing.T) {
 	gittest.Run(t, repoPath, "init", "-q", "--bare", remote)
 	gittest.Run(t, repoPath, "remote", "add", "origin", remote)
 	gittest.Run(t, repoPath, "push", "-q", "-u", "origin", "HEAD")
-	writeFile(t, filepath.Join(repoPath, "$HOME", ".vimrc"), "vimrc\n")
+	writeFile(t, filepath.Join(repoPath, ContentDirName, "$HOME", ".vimrc"), "vimrc\n")
 
 	unsaved, err = UnsavedWork(repoPath)
 	if err != nil {
@@ -649,7 +649,7 @@ func TestWidenedMode(t *testing.T) {
 // the unresolved one, missed, and copied the file over itself.
 func TestAddPathsThroughASymlinkedDataDirectoryKeepsWhatItHolds(t *testing.T) {
 	repoPath, homeDir := newSandbox(t)
-	held := writeFile(t, filepath.Join(repoPath, "$HOME", ".bashrc"), "bashrc\n")
+	held := writeFile(t, filepath.Join(repoPath, ContentDirName, "$HOME", ".bashrc"), "bashrc\n")
 	target := symlink(t, held, filepath.Join(homeDir, ".bashrc"))
 
 	linked := filepath.Join(t.TempDir(), "data-link")

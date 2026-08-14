@@ -103,6 +103,11 @@ func Dir(repoPath, intPath string) error {
 	if err := Configure(); err != nil {
 		return err
 	}
+	// A repository whose content directory is not there yet holds nothing to
+	// link, which is what a new one looks like before its first `gog add`.
+	if _, err := os.Stat(intPath); os.IsNotExist(err) {
+		return nil
+	}
 	before := failures
 	var linked []string
 	walkErr := filepath.Walk(intPath, func(p string, info os.FileInfo, err error) error {
@@ -111,10 +116,23 @@ func Dir(repoPath, intPath string) error {
 		}
 
 		switch p {
-		case repoPath:
+		// The directory the walk starts at, which is linked from rather than
+		// linked. Compared against intPath rather than the repository, the two
+		// being different directories wherever content sits under one.
+		case intPath:
 			return nil
 		case filepath.Join(repoPath, ".git"):
 			return filepath.SkipDir
+		}
+		// A repository's own file, which only a legacy layout's walk meets: the
+		// content directory holds none of them. Whole subtree, since .github is
+		// a directory and the branch below would create /.github before any
+		// file in it was judged.
+		if ownEntry(repoPath, p) {
+			if info.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
 		}
 
 		if info.IsDir() {
@@ -224,16 +242,30 @@ func linkFile(repoPath, intPath string) (bool, error) {
 // linked: the files a repository keeps for itself, and whatever
 // GOG_IGNORE_FILES_REGEX names.
 func skipped(repoPath, intPath string) bool {
-	if ignoreFilesRegex.MatchString(strings.TrimPrefix(intPath, repoPath+"/")) {
+	// Matched against the path as it sits under the directory whose tree is
+	// linked, not under the repository, so that a pattern goes on meaning what
+	// it meant before that directory was introduced: `^secrets\.env$` names the
+	// same file in a repository that has been moved and one that has not.
+	if ignoreFilesRegex.MatchString(strings.TrimPrefix(intPath, repository.ContentPath(repoPath)+"/")) {
 		return true
 	}
-	switch intPath {
-	case filepath.Join(repoPath, ".gitignore"),
-		filepath.Join(repoPath, "LICENSE"),
-		filepath.Join(repoPath, "README.md"):
-		return true
+	return ownEntry(repoPath, intPath)
+}
+
+// ownEntry reports whether a path is one of the repository's own files, which
+// is decided by name and only at the repository's top level: a repository that
+// keeps its content under repository.ContentDirName has none of them among the
+// paths it links, and $HOME/.config/README.md is the operator's file either
+// way.
+//
+// CLEANUP (added 2026-08-14): goes with the legacy layout, see
+// repository.ContentPath.
+func ownEntry(repoPath, intPath string) bool {
+	rel := strings.TrimPrefix(intPath, repoPath+"/")
+	if rel == intPath || strings.Contains(rel, "/") {
+		return false
 	}
-	return false
+	return repository.OwnName(rel)
 }
 
 // maxGitAddBatch bounds the number of paths passed to a single git

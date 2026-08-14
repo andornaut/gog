@@ -12,10 +12,10 @@ import (
 )
 
 // write creates a file in the repository at a path given relative to the
-// repository root, and returns the path it holds
+// directory whose tree is linked, and returns the path it holds
 func write(t *testing.T, repoPath, rel, contents string) string {
 	t.Helper()
-	p := filepath.Join(repoPath, rel)
+	p := filepath.Join(repoPath, repository.ContentDirName, rel)
 	if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +46,7 @@ func TestDirLinksAndStagesATree(t *testing.T) {
 	repoPath, homeDir := newSandbox(t)
 	intPath := write(t, repoPath, "$HOME/.config/app/conf", "conf\n")
 
-	if err := Dir(repoPath, repoPath); err != nil {
+	if err := Dir(repoPath, repository.ContentPath(repoPath)); err != nil {
 		t.Fatalf("Dir() = %v", err)
 	}
 
@@ -62,6 +62,103 @@ func TestDirLinksAndStagesATree(t *testing.T) {
 	}
 }
 
+// A repository with nothing in it yet holds nothing to link, which is what a
+// new one looks like before its first `gog add`. Applying it is a no-op rather
+// than a walk of a directory that is not there.
+func TestDirOnARepositoryWithNoContentDirectory(t *testing.T) {
+	repoPath, homeDir := newSandbox(t)
+	for _, name := range []string{"README.md", ".gitignore"} {
+		if err := os.WriteFile(filepath.Join(repoPath, name), []byte(name), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := Dir(repoPath, repository.ContentPath(repoPath)); err != nil {
+		t.Fatalf("Dir() = %v", err)
+	}
+
+	entries, err := os.ReadDir(homeDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("the home directory holds %d entries, want none", len(entries))
+	}
+}
+
+// The pattern is matched against the path as it sits under the directory whose
+// tree is linked, so that a pattern written for a repository goes on meaning
+// the same thing after that repository is moved.
+func TestDirHonoursAnAnchoredIgnorePatternAfterAMove(t *testing.T) {
+	repoPath, homeDir := newSandbox(t)
+	write(t, repoPath, "$HOME/.bashrc", "bashrc\n")
+	write(t, repoPath, "$HOME/secrets.env", "secret\n")
+	t.Setenv("GOG_IGNORE_FILES_REGEX", `^\$HOME/secrets\.env$`)
+
+	if err := Dir(repoPath, repository.ContentPath(repoPath)); err != nil {
+		t.Fatalf("Dir() = %v", err)
+	}
+
+	if _, err := os.Lstat(filepath.Join(homeDir, ".bashrc")); err != nil {
+		t.Errorf("a path the pattern does not match was not linked: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(homeDir, "secrets.env")); !os.IsNotExist(err) {
+		t.Errorf("a path the pattern matches was linked (%v)", err)
+	}
+}
+
+// A repository written before the content directory existed keeps working, its
+// tree linked from its own top level.
+func TestDirLinksALegacyRepository(t *testing.T) {
+	repoPath, homeDir := newSandbox(t)
+	intPath := filepath.Join(repoPath, "$HOME", ".bashrc")
+	if err := os.MkdirAll(filepath.Dir(intPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(intPath, []byte("bashrc\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Dir(repoPath, repository.ContentPath(repoPath)); err != nil {
+		t.Fatalf("Dir() = %v", err)
+	}
+
+	assertLink(t, filepath.Join(homeDir, ".bashrc"), intPath)
+}
+
+// A repository's own directory is never linked. In a legacy layout it sits
+// among the paths that are, and a walk that judged it by its files alone would
+// try to create /.github before reaching any of them.
+func TestDirSkipsTheRepositorysOwnDirectory(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root can create /.github, so the failure this asserts cannot happen")
+	}
+	repoPath, homeDir := newSandbox(t)
+	own := filepath.Join(repoPath, ".github", "workflows", "test.yml")
+	if err := os.MkdirAll(filepath.Dir(own), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(own, []byte("on: push\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	intPath := filepath.Join(repoPath, "$HOME", ".bashrc")
+	if err := os.MkdirAll(filepath.Dir(intPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(intPath, []byte("bashrc\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Dir(repoPath, repository.ContentPath(repoPath)); err != nil {
+		t.Fatalf("Dir() = %v", err)
+	}
+
+	if _, err := os.Lstat("/.github"); !os.IsNotExist(err) {
+		t.Errorf("/.github = %v, want nothing there", err)
+	}
+	assertLink(t, filepath.Join(homeDir, ".bashrc"), intPath)
+}
+
 // A second run leaves the link as the first one made it, rather than removing
 // and recreating it
 func TestDirIsIdempotent(t *testing.T) {
@@ -69,14 +166,14 @@ func TestDirIsIdempotent(t *testing.T) {
 	intPath := write(t, repoPath, "$HOME/.bashrc", "one\n")
 	extPath := filepath.Join(homeDir, ".bashrc")
 
-	if err := Dir(repoPath, repoPath); err != nil {
+	if err := Dir(repoPath, repository.ContentPath(repoPath)); err != nil {
 		t.Fatalf("Dir() = %v", err)
 	}
 	first, err := os.Lstat(extPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = Dir(repoPath, repoPath); err != nil {
+	if err = Dir(repoPath, repository.ContentPath(repoPath)); err != nil {
 		t.Fatalf("Dir() on the second run = %v", err)
 	}
 
@@ -125,7 +222,7 @@ func TestDirHonoursTheIgnorePattern(t *testing.T) {
 	write(t, repoPath, "$HOME/.cache/state", "state\n")
 	t.Setenv("GOG_IGNORE_FILES_REGEX", `\.cache/`)
 
-	if err := Dir(repoPath, repoPath); err != nil {
+	if err := Dir(repoPath, repository.ContentPath(repoPath)); err != nil {
 		t.Fatalf("Dir() = %v", err)
 	}
 
@@ -144,7 +241,7 @@ func TestEntryPointsRejectAnUncompilablePattern(t *testing.T) {
 		name string
 		call func(repoPath, intPath, extPath string) error
 	}{
-		{name: "Dir", call: func(repoPath, _, _ string) error { return Dir(repoPath, repoPath) }},
+		{name: "Dir", call: func(repoPath, _, _ string) error { return Dir(repoPath, repository.ContentPath(repoPath)) }},
 		{name: "File", call: func(repoPath, intPath, _ string) error { return File(repoPath, intPath) }},
 		{name: "Link", call: func(repoPath, _, extPath string) error { return Link(repoPath, []string{extPath}) }},
 		{name: "List", call: func(repoPath, _, _ string) error { _, err := List(repoPath); return err }},
@@ -179,7 +276,7 @@ func TestDirReportsAConflictAndCarriesOn(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := Dir(repoPath, repoPath)
+	err := Dir(repoPath, repository.ContentPath(repoPath))
 
 	if !errors.Is(err, ErrIncomplete) {
 		t.Errorf("Dir() = %v, want ErrIncomplete", err)
@@ -204,7 +301,7 @@ func TestDirFailsWhenTheLinkCannotBeMade(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(homeDir, 0755) })
 
-	err := Dir(repoPath, repoPath)
+	err := Dir(repoPath, repository.ContentPath(repoPath))
 
 	if err == nil || !strings.Contains(err.Error(), "failed to create symlink") {
 		t.Errorf("Dir() = %v, want a failure naming what could not be done", err)
@@ -232,7 +329,7 @@ func TestDirReplacesWhatHoldsNothingOfTheUsers(t *testing.T) {
 		{
 			name: "a link into gog's data directory",
 			inTheWay: func(t *testing.T, homeDir, otherRepo string) {
-				other := filepath.Join(otherRepo, "$HOME", ".bashrc")
+				other := filepath.Join(otherRepo, repository.ContentDirName, "$HOME", ".bashrc")
 				if err := os.MkdirAll(filepath.Dir(other), 0755); err != nil {
 					t.Fatal(err)
 				}
@@ -260,7 +357,7 @@ func TestDirReplacesWhatHoldsNothingOfTheUsers(t *testing.T) {
 			otherRepo := filepath.Join(repository.BaseDir, "other")
 			tt.inTheWay(t, homeDir, otherRepo)
 
-			if err := Dir(repoPath, repoPath); err != nil {
+			if err := Dir(repoPath, repository.ContentPath(repoPath)); err != nil {
 				t.Fatalf("Dir() = %v", err)
 			}
 			assertLink(t, filepath.Join(homeDir, ".bashrc"), intPath)
