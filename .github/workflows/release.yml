@@ -168,7 +168,7 @@ jobs:
       # fetched, which matters more here than there: `dev` is a moving tag, so a
       # download that straddles a re-cut would otherwise go unnoticed.
       - name: Write checksums
-        run: cd artifacts && sha256sum *.tar.gz > checksums.txt
+        run: cd artifacts && sha256sum -- *.tar.gz > checksums.txt
 
       # A release follows its tag, and updating one below does not move the tag
       # GitHub already has, so `dev` has to be repointed here or the release's
