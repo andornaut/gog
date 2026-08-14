@@ -52,20 +52,17 @@ func repoPath() (string, error) {
 	return repoPath, nil
 }
 
-// warnStranded says what a repository holds beside the directory whose tree is
-// linked, which is a move that was not finished.
+// noteEmpty says that a repository has no content directory, so the command
+// that just ran had nothing to act on.
 //
-// Warned rather than refused: what is under that directory is linked correctly,
-// and stopping the command would take that away as well. Said on every run that
-// links or lists, since nothing else reports it and what it names is a file the
-// operator believes is managed.
-func warnStranded(repoPath string) {
-	stranded := repository.Stranded(repoPath)
-	if len(stranded) == 0 {
+// A new repository is the ordinary case and this is not a failure, but silence
+// would be: a repository that was written before gog linked from a directory of
+// its own, and that stored no home path for RefuseUnmoved to recognise, looks
+// exactly like a successful run that linked everything.
+func noteEmpty(repoPath string) {
+	if repository.HasContentDir(repoPath) {
 		return
 	}
-	fmt.Fprintf(os.Stderr, "Warning: %s holds %s beside %s/, which is not linked. "+
-		"Move them under %s/ to finish the move\n",
-		filepath.Base(repoPath), strings.Join(stranded, ", "),
-		repository.ContentDirName, repository.ContentDirName)
+	fmt.Fprintf(os.Stderr, "Note: %s holds no %s/, so there is nothing to link\n",
+		filepath.Base(repoPath), repository.ContentDirName)
 }

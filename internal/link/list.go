@@ -52,22 +52,6 @@ func List(repoPath string) ([]Entry, error) {
 		if err != nil {
 			return err
 		}
-		if p == filepath.Join(repoPath, ".git") {
-			if info.IsDir() {
-				return filepath.SkipDir
-			}
-			// A worktree's .git is a file, and skipping a file the way a
-			// directory is skipped would skip its siblings as well
-			return nil
-		}
-		// See link.Dir: a repository's own directory is skipped whole, and only
-		// a legacy layout's walk meets one.
-		if ownEntry(repoPath, p) {
-			if info.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
 		if info.IsDir() || skipped(repoPath, p) {
 			return nil
 		}

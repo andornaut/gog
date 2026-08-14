@@ -107,58 +107,6 @@ func TestDirHonoursAnAnchoredIgnorePatternAfterAMove(t *testing.T) {
 	}
 }
 
-// A repository written before the content directory existed keeps working, its
-// tree linked from its own top level.
-func TestDirLinksALegacyRepository(t *testing.T) {
-	repoPath, homeDir := newSandbox(t)
-	intPath := filepath.Join(repoPath, "$HOME", ".bashrc")
-	if err := os.MkdirAll(filepath.Dir(intPath), 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(intPath, []byte("bashrc\n"), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := Dir(repoPath, repository.ContentPath(repoPath)); err != nil {
-		t.Fatalf("Dir() = %v", err)
-	}
-
-	assertLink(t, filepath.Join(homeDir, ".bashrc"), intPath)
-}
-
-// A repository's own directory is never linked. In a legacy layout it sits
-// among the paths that are, and a walk that judged it by its files alone would
-// try to create /.github before reaching any of them.
-func TestDirSkipsTheRepositorysOwnDirectory(t *testing.T) {
-	if os.Geteuid() == 0 {
-		t.Skip("root can create /.github, so the failure this asserts cannot happen")
-	}
-	repoPath, homeDir := newSandbox(t)
-	own := filepath.Join(repoPath, ".github", "workflows", "test.yml")
-	if err := os.MkdirAll(filepath.Dir(own), 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(own, []byte("on: push\n"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	intPath := filepath.Join(repoPath, "$HOME", ".bashrc")
-	if err := os.MkdirAll(filepath.Dir(intPath), 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(intPath, []byte("bashrc\n"), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := Dir(repoPath, repository.ContentPath(repoPath)); err != nil {
-		t.Fatalf("Dir() = %v", err)
-	}
-
-	if _, err := os.Lstat("/.github"); !os.IsNotExist(err) {
-		t.Errorf("/.github = %v, want nothing there", err)
-	}
-	assertLink(t, filepath.Join(homeDir, ".bashrc"), intPath)
-}
-
 // A second run leaves the link as the first one made it, rather than removing
 // and recreating it
 func TestDirIsIdempotent(t *testing.T) {
@@ -187,8 +135,8 @@ func TestDirIsIdempotent(t *testing.T) {
 	}
 }
 
-// The files a repository keeps for itself sit at its root, which is the
-// filesystem root outside it, so they are checked here rather than linked
+// A repository's own files sit beside the directory whose tree is linked and
+// are never walked, so what is left to check here is the ignore pattern
 func TestSkipped(t *testing.T) {
 	repoPath, _ := newSandbox(t)
 	t.Setenv("GOG_IGNORE_FILES_REGEX", `\.swp$`)
@@ -200,16 +148,13 @@ func TestSkipped(t *testing.T) {
 		rel  string
 		want bool
 	}{
-		{rel: ".gitignore", want: true},
-		{rel: "LICENSE", want: true},
-		{rel: "README.md", want: true},
 		{rel: "$HOME/.vimrc.swp", want: true},
 		{rel: "$HOME/.bashrc", want: false},
 		{rel: "$HOME/.config/README.md", want: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.rel, func(t *testing.T) {
-			if got := skipped(repoPath, filepath.Join(repoPath, tt.rel)); got != tt.want {
+			if got := skipped(repoPath, filepath.Join(repository.ContentPath(repoPath), tt.rel)); got != tt.want {
 				t.Errorf("skipped(%q) = %v, want %v", tt.rel, got, tt.want)
 			}
 		})

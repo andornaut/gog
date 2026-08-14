@@ -166,7 +166,7 @@ var apply = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		warnStranded(repoPath)
+		noteEmpty(repoPath)
 		return link.Dir(repoPath, repository.ContentPath(repoPath))
 	},
 }
@@ -216,7 +216,7 @@ var list = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		warnStranded(repoPath)
+		noteEmpty(repoPath)
 		entries, err := link.List(repoPath)
 		if err != nil {
 			return err

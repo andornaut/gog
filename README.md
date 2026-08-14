@@ -110,28 +110,9 @@ dotfiles/
 Nothing at the top level is linked, so a workflow, a licence or a readme cannot
 be mistaken for a path to write.
 
-A repository written before this held its content at the top level instead. It
-still works, and its own files are recognised by name rather than by where they
-sit. Move one with a single commit, naming every content directory it has, not
-only `$HOME`:
-
-```bash
-gog git mv '$HOME' etc root/     # every top-level directory except the repository's own
-gog git commit -m 'Move the linked tree under root/'
-gog apply
-```
-
-`gog apply` and `gog list` warn about anything left beside `root/`, since
-nothing links it, and `gog repository remove` refuses while it is there rather
-than deleting files it cannot restore.
-
-Do that on the machine that holds the repository, and run `gog apply` on the
-others once they have both the new version and the commit: a link made before
-the move points at a path that no longer exists.
-
-`GOG_IGNORE_FILES_REGEX` keeps its meaning across the move: patterns are matched
-against the path as it sits under `root/`, so `^secrets\.env$` names the same
-file before and after.
+Nothing at the top level is linked, and a repository with no `root/` has nothing
+to link, which `gog apply` and `gog list` say rather than passing over in
+silence.
 
 ### `$HOME` substitution
 

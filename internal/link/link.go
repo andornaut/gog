@@ -115,26 +115,12 @@ func Dir(repoPath, intPath string) error {
 			return err
 		}
 
-		switch p {
 		// The directory the walk starts at, which is linked from rather than
-		// linked. Compared against intPath rather than the repository, the two
-		// being different directories wherever content sits under one.
-		case intPath:
-			return nil
-		case filepath.Join(repoPath, ".git"):
-			return filepath.SkipDir
-		}
-		// A repository's own file, which only a legacy layout's walk meets: the
-		// content directory holds none of them. Whole subtree, since .github is
-		// a directory and the branch below would create /.github before any
-		// file in it was judged.
-		if ownEntry(repoPath, p) {
-			if info.IsDir() {
-				return filepath.SkipDir
-			}
+		// linked. Nothing else here is the repository's own: the walk begins
+		// inside the content directory, and .git is outside it.
+		if p == intPath {
 			return nil
 		}
-
 		if info.IsDir() {
 			extPath := repository.ToExternalPath(repoPath, p)
 			if paths.IsSymlink(extPath) {
@@ -239,33 +225,15 @@ func linkFile(repoPath, intPath string) (bool, error) {
 }
 
 // skipped reports whether a path the repository holds is one that is never
-// linked: the files a repository keeps for itself, and whatever
-// GOG_IGNORE_FILES_REGEX names.
+// linked, which is whatever GOG_IGNORE_FILES_REGEX names. A repository's own
+// files need no entry here: they sit beside the directory whose tree is linked,
+// and nothing walks them.
 func skipped(repoPath, intPath string) bool {
 	// Matched against the path as it sits under the directory whose tree is
 	// linked, not under the repository, so that a pattern goes on meaning what
 	// it meant before that directory was introduced: `^secrets\.env$` names the
 	// same file in a repository that has been moved and one that has not.
-	if ignoreFilesRegex.MatchString(strings.TrimPrefix(intPath, repository.ContentPath(repoPath)+"/")) {
-		return true
-	}
-	return ownEntry(repoPath, intPath)
-}
-
-// ownEntry reports whether a path is one of the repository's own files, which
-// is decided by name and only at the repository's top level: a repository that
-// keeps its content under repository.ContentDirName has none of them among the
-// paths it links, and $HOME/.config/README.md is the operator's file either
-// way.
-//
-// CLEANUP (added 2026-08-14): goes with the legacy layout, see
-// repository.ContentPath.
-func ownEntry(repoPath, intPath string) bool {
-	rel := strings.TrimPrefix(intPath, repoPath+"/")
-	if rel == intPath || strings.Contains(rel, "/") {
-		return false
-	}
-	return repository.OwnName(rel)
+	return ignoreFilesRegex.MatchString(strings.TrimPrefix(intPath, repository.ContentPath(repoPath)+"/"))
 }
 
 // maxGitAddBatch bounds the number of paths passed to a single git

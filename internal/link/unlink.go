@@ -9,8 +9,8 @@ import (
 )
 
 // UnlinkDir replaces symbolic links with the files that they linked to. It is
-// called with a whole repository when one is being removed, so git's own
-// directory is skipped: nothing in it was ever linked.
+// called with the directory a repository links from, whether that is the whole
+// of what it holds or one tree inside it.
 func UnlinkDir(repoPath, intPath string) error {
 	// A repository being removed before its content directory exists has no
 	// link of its own to restore.
@@ -22,22 +22,6 @@ func UnlinkDir(repoPath, intPath string) error {
 			return err
 		}
 
-		if p == filepath.Join(repoPath, ".git") {
-			if info.IsDir() {
-				return filepath.SkipDir
-			}
-			// A worktree's .git is a file, and skipping a file the way a
-			// directory is skipped would skip its siblings as well
-			return nil
-		}
-		// See link.Dir: a repository's own file was never linked, so there is
-		// nothing of it to restore.
-		if ownEntry(repoPath, p) {
-			if info.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
 		if info.IsDir() {
 			return nil
 		}

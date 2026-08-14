@@ -125,35 +125,3 @@ func TestRemoveRestoresWhatItHeld(t *testing.T) {
 		t.Errorf("%s holds %q (%v), want the contents restored", extPath, contents, readErr)
 	}
 }
-
-// Content beside the directory whose tree is linked converts to no external
-// path, so nothing here can restore it. Deleting the repository would take
-// those files with it and leave links to nothing, so --force does not reach
-// that far.
-func TestRemoveRefusesWhileContentSitsBesideTheContentDirectory(t *testing.T) {
-	repoPath, extPath := newSandbox(t)
-	stranded := filepath.Join(repoPath, "etc", "hosts")
-	if err := os.MkdirAll(filepath.Dir(stranded), 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(stranded, []byte("hosts\n"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	isForced = true
-	t.Cleanup(func() { isForced = false })
-
-	err := remove.RunE(remove, []string{"dots"})
-
-	if err == nil || !strings.Contains(err.Error(), "etc") {
-		t.Fatalf("remove = %v, want a refusal naming what it cannot restore", err)
-	}
-	if _, statErr := os.Stat(stranded); statErr != nil {
-		t.Errorf("the stranded content was deleted: %v", statErr)
-	}
-	if _, statErr := os.Stat(repoPath); statErr != nil {
-		t.Errorf("the repository was deleted although the removal was refused: %v", statErr)
-	}
-	if _, readErr := os.Readlink(extPath); readErr != nil {
-		t.Errorf("%s is no longer a link, so the removal had already begun: %v", extPath, readErr)
-	}
-}
