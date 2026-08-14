@@ -100,3 +100,8 @@ jobs:
         uses: golangci/golangci-lint-action@v9.3.0
         with:
           version: v2.10.1
+          # Verification fetches a JSONSchema from golangci-lint.run on every
+          # run, which makes a red Lint a question of whether that host was
+          # reachable. golangci-lint rejects a config it cannot parse either
+          # way, so what this gives up is schema advice, not enforcement.
+          verify: false
