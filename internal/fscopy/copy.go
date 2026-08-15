@@ -21,9 +21,10 @@
  * SOFTWARE.
  */
 
-// Package copy provides functions for copying files and directories.
+// Package fscopy provides functions for copying files and directories. Named
+// fscopy rather than copy so that importing it does not shadow the builtin.
 // Originally derived from https://gist.github.com/r0l1/92462b38df26839a3ca324697c8cba04#file-copy-go-L118
-package copy
+package fscopy
 
 import (
 	"fmt"
@@ -39,7 +40,7 @@ import (
 func File(src, dst string) (err error) {
 	in, err := os.Open(src)
 	if err != nil {
-		return
+		return err
 	}
 	defer func() {
 		if e := in.Close(); e != nil && err == nil {
@@ -49,7 +50,7 @@ func File(src, dst string) (err error) {
 
 	out, err := os.Create(dst)
 	if err != nil {
-		return
+		return err
 	}
 	defer func() {
 		if e := out.Close(); e != nil && err == nil {
@@ -59,24 +60,24 @@ func File(src, dst string) (err error) {
 
 	_, err = io.Copy(out, in)
 	if err != nil {
-		return
+		return err
 	}
 
 	err = out.Sync()
 	if err != nil {
-		return
+		return err
 	}
 
 	si, err := os.Stat(src)
 	if err != nil {
-		return
+		return err
 	}
 	err = os.Chmod(dst, si.Mode())
 	if err != nil {
-		return
+		return err
 	}
 
-	return
+	return err
 }
 
 // SkipFunc reports whether a directory entry should be passed over

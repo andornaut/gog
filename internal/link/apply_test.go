@@ -264,6 +264,7 @@ func TestDirReplacesWhatHoldsNothingOfTheUsers(t *testing.T) {
 		{
 			name: "a broken symbolic link",
 			inTheWay: func(t *testing.T, homeDir, _ string) {
+				t.Helper()
 				if err := os.Symlink(filepath.Join(homeDir, "gone"), filepath.Join(homeDir, ".bashrc")); err != nil {
 					t.Fatal(err)
 				}
@@ -272,6 +273,7 @@ func TestDirReplacesWhatHoldsNothingOfTheUsers(t *testing.T) {
 		{
 			name: "a link into gog's data directory",
 			inTheWay: func(t *testing.T, homeDir, otherRepo string) {
+				t.Helper()
 				other := filepath.Join(otherRepo, repository.ContentDirName, "$HOME", ".bashrc")
 				if err := os.MkdirAll(filepath.Dir(other), 0755); err != nil {
 					t.Fatal(err)
@@ -287,6 +289,7 @@ func TestDirReplacesWhatHoldsNothingOfTheUsers(t *testing.T) {
 		{
 			name: "a copy of what the repository holds, which is what add leaves behind",
 			inTheWay: func(t *testing.T, homeDir, _ string) {
+				t.Helper()
 				if err := os.WriteFile(filepath.Join(homeDir, ".bashrc"), []byte("same\n"), 0644); err != nil {
 					t.Fatal(err)
 				}

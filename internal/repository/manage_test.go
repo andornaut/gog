@@ -121,6 +121,7 @@ func TestAddPathsRefusals(t *testing.T) {
 		{
 			name: "a symbolic link names its target instead",
 			prepare: func(t *testing.T, homeDir string) string {
+				t.Helper()
 				target := writeFile(t, filepath.Join(homeDir, "real.conf"), "real\n")
 				link := filepath.Join(homeDir, ".link")
 				if err := os.Symlink(target, link); err != nil {
@@ -133,6 +134,7 @@ func TestAddPathsRefusals(t *testing.T) {
 		{
 			name: "a named pipe has nothing git can store",
 			prepare: func(t *testing.T, homeDir string) string {
+				t.Helper()
 				p := filepath.Join(homeDir, ".pipe")
 				if out, err := exec.Command("mkfifo", p).CombinedOutput(); err != nil {
 					t.Skipf("mkfifo unavailable: %v: %s", err, out)
@@ -144,6 +146,7 @@ func TestAddPathsRefusals(t *testing.T) {
 		{
 			name: "a path that does not exist",
 			prepare: func(t *testing.T, homeDir string) string {
+				t.Helper()
 				return filepath.Join(homeDir, ".gone")
 			},
 			want: "does not exist",
@@ -151,6 +154,7 @@ func TestAddPathsRefusals(t *testing.T) {
 		{
 			name: "a path inside a repository",
 			prepare: func(t *testing.T, _ string) string {
+				t.Helper()
 				return filepath.Join(BaseDir, "dots", ContentDirName, "$HOME", ".bashrc")
 			},
 			want: "repository dots holds it",
@@ -158,6 +162,7 @@ func TestAddPathsRefusals(t *testing.T) {
 		{
 			name: "a backup left by an older version",
 			prepare: func(t *testing.T, homeDir string) string {
+				t.Helper()
 				return writeFile(t, filepath.Join(homeDir, ".bashrc.gog"), "old\n")
 			},
 			want: ".gog backup files cannot be managed",

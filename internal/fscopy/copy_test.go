@@ -1,4 +1,4 @@
-package copy
+package fscopy
 
 import (
 	"net"
@@ -217,6 +217,7 @@ func TestDirSkipsSymbolicLinks(t *testing.T) {
 		{
 			name: "to a file",
 			prepare: func(t *testing.T, _, src string) string {
+				t.Helper()
 				link(t, write(t, filepath.Join(src, "target"), "target\n", 0644), filepath.Join(src, "link"))
 				return "link"
 			},
@@ -225,6 +226,7 @@ func TestDirSkipsSymbolicLinks(t *testing.T) {
 		{
 			name: "to a directory",
 			prepare: func(t *testing.T, _, src string) string {
+				t.Helper()
 				write(t, filepath.Join(src, "targetdir", "file"), "file\n", 0644)
 				link(t, filepath.Join(src, "targetdir"), filepath.Join(src, "linkdir"))
 				return "linkdir"
@@ -234,6 +236,7 @@ func TestDirSkipsSymbolicLinks(t *testing.T) {
 		{
 			name: "whose target is missing",
 			prepare: func(t *testing.T, root, src string) string {
+				t.Helper()
 				link(t, filepath.Join(root, "gone"), filepath.Join(src, "broken"))
 				return "broken"
 			},
@@ -241,6 +244,7 @@ func TestDirSkipsSymbolicLinks(t *testing.T) {
 		{
 			name: "to its own directory",
 			prepare: func(t *testing.T, _, src string) string {
+				t.Helper()
 				link(t, src, filepath.Join(src, "loop"))
 				return "loop"
 			},
@@ -248,6 +252,7 @@ func TestDirSkipsSymbolicLinks(t *testing.T) {
 		{
 			name: "to an ancestor within the source",
 			prepare: func(t *testing.T, _, src string) string {
+				t.Helper()
 				write(t, filepath.Join(src, "a", "b", "file"), "file\n", 0644)
 				link(t, filepath.Join(src, "a"), filepath.Join(src, "a", "b", "loop"))
 				return "a/b/loop"
@@ -257,6 +262,7 @@ func TestDirSkipsSymbolicLinks(t *testing.T) {
 		{
 			name: "to a path outside the source",
 			prepare: func(t *testing.T, root, src string) string {
+				t.Helper()
 				write(t, filepath.Join(root, "outside", "elsewhere"), "elsewhere\n", 0644)
 				link(t, filepath.Join(root, "outside"), filepath.Join(src, "escape"))
 				return "escape"
@@ -303,6 +309,7 @@ func TestDirRefusesASourceInsideTheDestination(t *testing.T) {
 		{
 			name: "named directly",
 			prepare: func(t *testing.T, root string) (string, string) {
+				t.Helper()
 				dst := filepath.Join(root, "dst")
 				src := filepath.Join(dst, "inner")
 				write(t, filepath.Join(src, "file"), "file\n", 0644)
@@ -312,11 +319,12 @@ func TestDirRefusesASourceInsideTheDestination(t *testing.T) {
 		{
 			name: "reached through a symbolic link",
 			prepare: func(t *testing.T, root string) (string, string) {
-				real := filepath.Join(root, "real")
-				src := filepath.Join(real, "inner")
+				t.Helper()
+				realDir := filepath.Join(root, "real")
+				src := filepath.Join(realDir, "inner")
 				write(t, filepath.Join(src, "file"), "file\n", 0644)
 				dst := filepath.Join(root, "link")
-				link(t, real, dst)
+				link(t, realDir, dst)
 				return src, dst
 			},
 		},

@@ -2,6 +2,54 @@ version: "2"
 run:
   tests: true
 linters:
+  # Everything is on. What is off below only enforces layout or mandates
+  # documentation, and each entry says which.
+  default: all
+  disable:
+    # Blank-line placement, and where a return may sit relative to one.
+    - wsl
+    - wsl_v5
+    - nlreturn
+    - whitespace
+    # Bans `if err := f(); err != nil`, which is the error idiom used here.
+    - noinlineerr
+    # Every struct literal must set every field, including its zero values.
+    - exhaustruct
+    # Minimum identifier length, and a ban on named returns.
+    - varnamelen
+    - nonamedreturns
+    # Import allowlist. Nothing here vendors a dependency worth policing that way.
+    - depguard
+    # Every returned error wrapped, and every error a declared sentinel.
+    - wrapcheck
+    - err113
+    # Numeric literals must be named constants.
+    - mnd
+    # Comments must end in a period; tests must live in a _test package;
+    # exported methods must precede unexported ones; struct tags must follow
+    # one naming scheme.
+    - godot
+    - testpackage
+    - funcorder
+    - tagliatelle
+    # Size and complexity ceilings. Worth watching, not worth failing a build on.
+    - cyclop
+    - funlen
+    - gocognit
+    - nestif
+    - lll
+    # Package-level state, and t.Parallel() on every test.
+    - gochecknoglobals
+    - paralleltest
+    # Bans fmt.Print. These are command line tools; printing is the interface.
+    - forbidigo
+    # Wants every exec.Command to carry a context. These are synchronous
+    # command line tools with no cancellation story, so satisfying it would
+    # mean context.Background() at every call site: ceremony, not cancellation.
+    - noctx
+    # init() is how cobra registers commands and their flags, and the ones here
+    # say in a comment why a flag is registered where it is.
+    - gochecknoinits
   enable:
     - bodyclose
     - copyloopvar
@@ -13,6 +61,10 @@ linters:
     - unconvert
     - unparam
   settings:
+    # A default clause handles the cases not named, which is how these switches
+    # are written; without this the linter wants every case spelled out anyway.
+    exhaustive:
+      default-signifies-exhaustive: true
     gosec:
       excludes:
         - G204 # subprocess launched with variable - git commands

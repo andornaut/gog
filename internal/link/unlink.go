@@ -4,7 +4,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/andornaut/gog/internal/copy"
+	"github.com/andornaut/gog/internal/fscopy"
 	"github.com/andornaut/gog/internal/repository"
 )
 
@@ -38,7 +38,7 @@ func UnlinkFile(repoPath, intPath string) error {
 	extFileInfo, err := os.Stat(extPath)
 	if err != nil {
 		// extPath cannot be examined, so there is no link of gog's to replace
-		return nil
+		return nil //nolint:nilerr // the stat error is the answer, not a failure
 	}
 	intFileInfo, err := os.Stat(intPath)
 	if err != nil {
@@ -52,7 +52,7 @@ func UnlinkFile(repoPath, intPath string) error {
 	if err := os.Remove(extPath); err != nil {
 		return err
 	}
-	if err := copy.File(intPath, extPath); err != nil {
+	if err := fscopy.File(intPath, extPath); err != nil {
 		return err
 	}
 	printRestored(extPath)

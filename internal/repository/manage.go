@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/andornaut/gog/internal/copy"
+	"github.com/andornaut/gog/internal/fscopy"
 	"github.com/andornaut/gog/internal/git"
 	"github.com/andornaut/gog/internal/paths"
 )
@@ -45,7 +45,7 @@ func Add(repoName, repoURL string) (string, error) {
 		// failed clone otherwise leaves the directory it was cloning into,
 		// empty or half written
 		if rmErr := os.RemoveAll(repoPath); rmErr != nil {
-			return "", fmt.Errorf("%w (and %s could not be removed: %v)", err, repoPath, rmErr)
+			return "", fmt.Errorf("%w (and %s could not be removed: %w)", err, repoPath, rmErr)
 		}
 		return "", err
 	}
@@ -57,10 +57,10 @@ func Add(repoName, repoURL string) (string, error) {
 func initRepo(repoPath, repoURL string) error {
 	if repoURL == "" {
 		return gitFailure(git.Init(BaseDir, repoPath),
-			fmt.Sprintf("failed to initialize a git repository in %s", repoPath))
+			"failed to initialize a git repository in "+repoPath)
 	}
 	return gitFailure(git.Clone(BaseDir, repoPath, repoURL),
-		fmt.Sprintf("failed to clone %s", repoURL))
+		"failed to clone "+repoURL)
 }
 
 // gitFailure names the step of gog's that failed. A wait status is left out:
@@ -115,7 +115,7 @@ func UnsavedWork(repoPath string) ([]string, error) {
 
 	var unsaved []string
 	if n := countLines(unpushed); n > 0 {
-		unsaved = append(unsaved, fmt.Sprintf("%s that no remote has", quantify(n, "commit")))
+		unsaved = append(unsaved, quantify(n, "commit")+" that no remote has")
 	}
 	if n := countLines(uncommitted); n > 0 {
 		unsaved = append(unsaved, quantify(n, "uncommitted change"))
@@ -168,7 +168,7 @@ func warnUnrecordableModes(repoPath string, targetPaths []string) {
 		// must never turn a successful add into a failure
 		_ = filepath.Walk(intPath, func(p string, info os.FileInfo, err error) error {
 			if err != nil {
-				return nil
+				return nil //nolint:nilerr // see the comment above: a walk error must not fail an add
 			}
 			recorded, widened := widenedMode(info.Mode())
 			if !widened {
@@ -186,11 +186,11 @@ func warnUnrecordableModes(repoPath string, targetPaths []string) {
 // behind. A symbolic link is never followed: copying its target would store the
 // contents while discarding the link itself. One that resolves into gog's data
 // directory names the repository that manages it.
-func reportSkipped(repoPath, resolvedRoot, typedRoot string) copy.ReportFunc {
+func reportSkipped(repoPath, resolvedRoot, typedRoot string) fscopy.ReportFunc {
 	return func(p string, mode os.FileMode) {
 		p = asTyped(p, resolvedRoot, typedRoot)
 		if mode&os.ModeSymlink == 0 {
-			fmt.Fprintf(os.Stderr, "Warning: skipping %s %s (git cannot store it)\n", copy.FileKind(mode), p)
+			fmt.Fprintf(os.Stderr, "Warning: skipping %s %s (git cannot store it)\n", fscopy.FileKind(mode), p)
 			return
 		}
 		if resolved, err := filepath.EvalSymlinks(p); err == nil && WithinBaseDir(resolved) {
@@ -317,7 +317,7 @@ func resolveAddPath(repoPath string, force bool, targetPath string) (string, err
 	// neither its kind nor its contents, and opening one to read it blocks
 	// until a writer appears or reads without end
 	if !info.Mode().IsRegular() && !info.IsDir() {
-		return "", fmt.Errorf("%q is a %s (gog manages files and directories)", targetPath, copy.FileKind(info.Mode()))
+		return "", fmt.Errorf("%q is a %s (gog manages files and directories)", targetPath, fscopy.FileKind(info.Mode()))
 	}
 	return extPath, nil
 }
@@ -368,11 +368,11 @@ func addTargetPath(repoPath string, force bool, targetPath string) error {
 	held := lstatErr == nil
 
 	if extFileInfo.IsDir() {
-		err = copy.Dir(extPath, intPath, shouldSkip, reportSkipped(repoPath, extPath, targetPath))
+		err = fscopy.Dir(extPath, intPath, shouldSkip, reportSkipped(repoPath, extPath, targetPath))
 	} else if err = os.MkdirAll(filepath.Dir(intPath), 0755); err == nil {
-		// The parent directory is created here, because `copy.File` does not
+		// The parent directory is created here, because `fscopy.File` does not
 		// create directories
-		err = copy.File(extPath, intPath)
+		err = fscopy.File(extPath, intPath)
 	}
 	if err != nil {
 		return undoCopy(repoPath, intPath, held, err)
@@ -391,7 +391,7 @@ func undoCopy(repoPath, intPath string, held bool, cause error) error {
 			cause, filepath.Base(repoPath), ToExternalPath(repoPath, intPath))
 	}
 	if err := os.RemoveAll(intPath); err != nil {
-		return fmt.Errorf("%w (and %s could not be discarded: %v)", cause, intPath, err)
+		return fmt.Errorf("%w (and %s could not be discarded: %w)", cause, intPath, err)
 	}
 	return cause
 }

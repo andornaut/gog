@@ -61,6 +61,7 @@ func TestUnlinkFileLeavesAloneWhatIsNotItsLink(t *testing.T) {
 		{
 			name: "a file of the user's",
 			prepare: func(t *testing.T, extPath string) {
+				t.Helper()
 				if err := os.WriteFile(extPath, []byte("mine\n"), 0644); err != nil {
 					t.Fatal(err)
 				}
@@ -70,6 +71,7 @@ func TestUnlinkFileLeavesAloneWhatIsNotItsLink(t *testing.T) {
 		{
 			name: "a link to another repository's copy",
 			prepare: func(t *testing.T, extPath string) {
+				t.Helper()
 				other := write(t, filepath.Join(repository.BaseDir, "other"), "$HOME/.bashrc", "theirs\n")
 				if err := os.Symlink(other, extPath); err != nil {
 					t.Fatal(err)
