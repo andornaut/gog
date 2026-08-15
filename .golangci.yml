@@ -19,9 +19,11 @@ linters:
         - G301 # directory permissions 0755 are standard and appropriate
         - G304 # file operations with user paths are the tool's purpose
         - G703 # path traversal - validating user paths is the tool's purpose
-        - G706 # log injection - logging environment variables
     govet:
       disable:
+        # Packs struct fields by size. These are CLIs and a broker, where no
+        # struct is allocated often enough for the bytes to matter, and field
+        # order is how a reader finds related fields together.
         - fieldalignment
       enable-all: true
     revive:
@@ -31,23 +33,22 @@ linters:
   exclusions:
     generated: lax
     rules:
-      # Tests get a longer leash than the code they exercise: fixture literals
-      # repeat by nature (goconst), helpers take parameters only some cases use
-      # (unparam), and the untrusted input gosec warns about is input the test
-      # wrote itself.
+      # Tests get a longer leash than the code they exercise, but only where the
+      # finding is about being a test: fixture literals repeat by nature
+      # (goconst) and helpers take parameters only some cases use (unparam).
       - linters:
           - goconst
-          - gosec
           - unparam
         path: _test\.go
-      # errcheck stays narrow. Tearing down what a test set up is
-      # fire-and-forget, and so is a write that cannot fail; a dropped error
-      # anywhere else in a test is a test that passes without checking anything.
-      # os.Setenv rather than t.Setenv because TestMain holds no *testing.T.
+      # gosec by rule rather than wholesale, so everything it checks still
+      # applies to tests except the four that only describe a fixture: a file
+      # written 0644 into a temp dir the test made (G306, G302, G301), and a
+      # password spelled out in the fixture that is the point of the fixture
+      # (G101).
       - linters:
-          - errcheck
+          - gosec
         path: _test\.go
-        text: Error return value of `([\w.]+\.(Close|Serve)|os\.(Remove|RemoveAll|Setenv)|fmt\.Fprint)` is not checked
+        text: G(101|301|302|306)
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
