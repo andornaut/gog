@@ -40,12 +40,14 @@ linters:
           - gosec
           - unparam
         path: _test\.go
-      # errcheck stays narrow. Only teardown is fire-and-forget; a dropped error
+      # errcheck stays narrow. Tearing down what a test set up is
+      # fire-and-forget, and so is a write that cannot fail; a dropped error
       # anywhere else in a test is a test that passes without checking anything.
+      # os.Setenv rather than t.Setenv because TestMain holds no *testing.T.
       - linters:
           - errcheck
         path: _test\.go
-        text: Error return value of `os\.RemoveAll` is not checked
+        text: Error return value of `([\w.]+\.(Close|Serve)|os\.(Remove|RemoveAll|Setenv)|fmt\.Fprint)` is not checked
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
