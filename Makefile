@@ -3,6 +3,9 @@ PREFIX    ?= /usr/local
 BINPREFIX ?= $(PREFIX)/bin
 DISTDIR   := dist
 TARGET    := gog
+# The flags .goreleaser.yaml builds a tag with, so a binary built here is the
+# binary a release ships rather than an unstripped one carrying local paths.
+LDFLAGS   := -s -w
 PLATFORMS := darwin freebsd linux
 
 .PHONY: $(PLATFORMS) $(TARGET) all build clean coverage coverage-html fmt install lint release test uninstall
@@ -12,10 +15,10 @@ all: $(TARGET)
 build: $(TARGET)
 
 $(PLATFORMS):
-	GOARCH=amd64 GOOS=$@ go build -o "$(DISTDIR)/$(TARGET)-$@-amd64"
+	GOARCH=amd64 GOOS=$@ go build -ldflags="$(LDFLAGS)" -trimpath -o "$(DISTDIR)/$(TARGET)-$@-amd64"
 
 $(TARGET):
-	go build -o $@
+	go build -ldflags="$(LDFLAGS)" -trimpath -o $@
 
 clean:
 	go clean
