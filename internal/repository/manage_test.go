@@ -95,6 +95,30 @@ func TestAddPathsCopiesADirectoryTree(t *testing.T) {
 	}
 }
 
+// gog's data directory sits under the home directory by default, so adding one
+// of its ancestors would copy every repository into the one being added to
+func TestAddPathsLeavesOutGogsOwnDataDirectory(t *testing.T) {
+	_, homeDir := newSandbox(t)
+	// Restored by the sandbox's own cleanup
+	BaseDir = filepath.Join(homeDir, ".local", "share", "gog")
+	repoPath := filepath.Join(BaseDir, "dots")
+	gittest.Init(t, repoPath)
+	writeFile(t, filepath.Join(repoPath, ContentDirName, "$HOME", ".vimrc"), "held\n")
+	writeFile(t, filepath.Join(homeDir, ".bashrc"), "bashrc\n")
+
+	if err := AddPaths(repoPath, false, []string{homeDir}); err != nil {
+		t.Fatalf("AddPaths() = %v", err)
+	}
+
+	held := filepath.Join(repoPath, ContentDirName, "$HOME")
+	if _, err := os.Lstat(filepath.Join(held, ".local")); !os.IsNotExist(err) {
+		t.Errorf("the repository holds gog's data directory (%v)", err)
+	}
+	if _, err := os.Stat(filepath.Join(held, ".bashrc")); err != nil {
+		t.Errorf("the rest of the directory was not added: %v", err)
+	}
+}
+
 // The whole batch is checked before anything is copied, so that one unusable
 // path does not leave the repository holding files that were never linked
 func TestAddPathsChecksEveryPathBeforeCopyingAny(t *testing.T) {
@@ -429,24 +453,39 @@ func TestAddPathsReportsAPathAnotherRepositoryManages(t *testing.T) {
 	}
 }
 
+// `git rm` deletes what it tracked; a path that was only ever copied in has to
+// be cleared separately, or the repository keeps a copy of it
 func TestRemovePathsUntracksAndLeavesNothingBehind(t *testing.T) {
-	repoPath, homeDir := newSandbox(t)
-	target := writeFile(t, filepath.Join(homeDir, ".bashrc"), "bashrc\n")
-	if err := AddPaths(repoPath, false, []string{target}); err != nil {
-		t.Fatal(err)
+	tests := []struct {
+		name      string
+		committed bool
+	}{
+		{name: "a path git tracks", committed: true},
+		{name: "one that was only copied in"},
 	}
-	gittest.Run(t, repoPath, "add", "-A")
-	gittest.Run(t, repoPath, "commit", "-q", "-m", "init")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repoPath, homeDir := newSandbox(t)
+			target := writeFile(t, filepath.Join(homeDir, ".bashrc"), "bashrc\n")
+			if err := AddPaths(repoPath, false, []string{target}); err != nil {
+				t.Fatal(err)
+			}
+			if tt.committed {
+				gittest.Run(t, repoPath, "add", "-A")
+				gittest.Run(t, repoPath, "commit", "-q", "-m", "init")
+			}
 
-	if err := RemovePaths(repoPath, []string{target}); err != nil {
-		t.Fatalf("RemovePaths() = %v", err)
-	}
+			if err := RemovePaths(repoPath, []string{target}); err != nil {
+				t.Fatalf("RemovePaths() = %v", err)
+			}
 
-	if _, err := os.Lstat(filepath.Join(repoPath, ContentDirName, "$HOME", ".bashrc")); !os.IsNotExist(err) {
-		t.Errorf("the repository still holds the path (%v)", err)
-	}
-	if tracked := gittest.Run(t, repoPath, "ls-files"); strings.Contains(tracked, ".bashrc") {
-		t.Errorf("the index still holds %q", tracked)
+			if _, err := os.Lstat(filepath.Join(repoPath, ContentDirName, "$HOME", ".bashrc")); !os.IsNotExist(err) {
+				t.Errorf("the repository still holds the path (%v)", err)
+			}
+			if tracked := gittest.Run(t, repoPath, "ls-files"); strings.Contains(tracked, ".bashrc") {
+				t.Errorf("the index still holds %q", tracked)
+			}
+		})
 	}
 }
 

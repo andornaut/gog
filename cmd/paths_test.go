@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/andornaut/gog/internal/gittest"
 	"github.com/andornaut/gog/internal/repository"
 	"github.com/andornaut/gog/internal/testout"
 )
@@ -56,6 +57,56 @@ func TestCleanPathsRefusesAnEmptyPath(t *testing.T) {
 		if !strings.Contains(err.Error(), "cannot be empty") {
 			t.Errorf("cleanPaths(%q) = %v, want a failure naming the empty path", arg, err)
 		}
+	}
+}
+
+// newSandbox creates a repository holding one linked file, and points the
+// repository package at it and at a home directory for the duration of the test
+func newSandbox(t *testing.T) (repoPath, extPath string) {
+	t.Helper()
+	root := t.TempDir()
+	baseDir := filepath.Join(root, "data")
+	repoPath = filepath.Join(baseDir, "dots")
+	homeDir := filepath.Join(root, "home")
+	intPath := filepath.Join(repoPath, repository.ContentDirName, "$HOME", ".bashrc")
+	for _, p := range []string{filepath.Dir(intPath), homeDir} {
+		if err := os.MkdirAll(p, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(intPath, []byte("bashrc\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	extPath = filepath.Join(homeDir, ".bashrc")
+	if err := os.Symlink(intPath, extPath); err != nil {
+		t.Fatal(err)
+	}
+	gittest.Init(t, repoPath)
+	gittest.Isolate(t, homeDir)
+
+	originalBase := repository.BaseDir
+	repository.BaseDir = baseDir
+	originalHome := repository.SetHomeDirForTest(homeDir)
+	t.Cleanup(func() {
+		repository.BaseDir = originalBase
+		repository.SetHomeDirForTest(originalHome)
+	})
+	return repoPath, extPath
+}
+
+// The batch is checked before anything is restored, so that an unusable path
+// does not leave the paths before it half-removed
+func TestRemoveChecksTheBatchBeforeRestoringAnything(t *testing.T) {
+	repoPath, extPath := newSandbox(t)
+	inRepository := filepath.Join(repoPath, repository.ContentDirName, "$HOME", ".bashrc")
+
+	err := remove.RunE(remove, []string{extPath, inRepository})
+
+	if err == nil || !strings.Contains(err.Error(), "repository dots holds it") {
+		t.Fatalf("remove = %v, want the batch refused", err)
+	}
+	if target, readErr := os.Readlink(extPath); readErr != nil || target != inRepository {
+		t.Errorf("%s -> %q (%v), want the link left in place", extPath, target, readErr)
 	}
 }
 

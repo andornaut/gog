@@ -118,6 +118,29 @@ func TestDirHonoursTheIgnorePattern(t *testing.T) {
 	}
 }
 
+// An unset pattern ignores nothing, whatever pattern was read before it
+func TestDirWithTheIgnorePatternUnset(t *testing.T) {
+	repoPath, homeDir := newSandbox(t)
+	write(t, repoPath, "$HOME/.bashrc", "bashrc\n")
+	extPath := filepath.Join(homeDir, ".bashrc")
+	t.Setenv("GOG_IGNORE_FILES_REGEX", `\.bashrc$`)
+	if err := Dir(repoPath, repository.ContentPath(repoPath)); err != nil {
+		t.Fatalf("Dir() = %v", err)
+	}
+	if _, err := os.Lstat(extPath); !os.IsNotExist(err) {
+		t.Fatalf("the pattern was never read (%v)", err)
+	}
+
+	t.Setenv("GOG_IGNORE_FILES_REGEX", "")
+
+	if err := Dir(repoPath, repository.ContentPath(repoPath)); err != nil {
+		t.Fatalf("Dir() = %v", err)
+	}
+	if _, err := os.Lstat(extPath); err != nil {
+		t.Errorf("a pattern that is no longer set still decides what is linked: %v", err)
+	}
+}
+
 // A second run leaves the link alone rather than recreating it, which would
 // report every path of an already-applied repository as newly linked
 func TestDirIsIdempotent(t *testing.T) {
@@ -242,25 +265,33 @@ func TestDirReplacesASymlinkedDirectoryOfItsOwn(t *testing.T) {
 }
 
 // A path that cannot be linked at all fails the command, naming what could not
-// be done. Only a conflict is reported and passed over.
+// be done; only a conflict is reported and passed over. What was linked before
+// the failure is still staged, so that it is not left untracked.
 func TestDirFailsWhenTheLinkCannotBeMade(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root writes to a directory whose mode forbids it")
 	}
 	repoPath, homeDir := newSandbox(t)
-	write(t, repoPath, "$HOME/.bashrc", "bashrc\n")
-	if err := os.Chmod(homeDir, 0500); err != nil {
+	// Walked first, so it is linked before the failure below
+	linked := write(t, repoPath, "$HOME/.bashrc", "bashrc\n")
+	write(t, repoPath, "$HOME/locked/conf", "conf\n")
+	locked := filepath.Join(homeDir, "locked")
+	if err := os.Mkdir(locked, 0500); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(homeDir, 0755) })
+	t.Cleanup(func() { _ = os.Chmod(locked, 0755) })
 
 	err := Dir(repoPath, repository.ContentPath(repoPath))
 
 	if err == nil || !strings.Contains(err.Error(), "failed to create symlink") {
 		t.Errorf("Dir() = %v, want a failure naming what could not be done", err)
 	}
-	if _, statErr := os.Lstat(filepath.Join(homeDir, ".bashrc")); !os.IsNotExist(statErr) {
+	if _, statErr := os.Lstat(filepath.Join(locked, "conf")); !os.IsNotExist(statErr) {
 		t.Errorf("the path was linked although the directory forbids it (%v)", statErr)
+	}
+	assertLink(t, filepath.Join(homeDir, ".bashrc"), linked)
+	if got := staged(t, repoPath); !strings.Contains(got, "$HOME/.bashrc") {
+		t.Errorf("index holds %q, want the path linked before the failure", got)
 	}
 }
 

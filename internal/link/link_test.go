@@ -118,6 +118,11 @@ func TestFileRefusesADirectoryInTheWay(t *testing.T) {
 	if !strings.Contains(out, extPath+" exists and is a directory") {
 		t.Errorf("File() printed %q, want the directory named", out)
 	}
+	// Only what was linked is staged: a path left alone would otherwise be
+	// committed although nothing on the filesystem points at it
+	if got := staged(t, repoPath); got != "" {
+		t.Errorf("index holds %q, want nothing", got)
+	}
 }
 
 // Two files of the same length are compared byte for byte. A wrong answer here

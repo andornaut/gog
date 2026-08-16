@@ -133,15 +133,18 @@ func TestDirCopiesATreeAndItsModes(t *testing.T) {
 	assertMode(t, filepath.Join(dst, "sub"), os.ModeDir|0700)
 }
 
+// A directory is skipped whole rather than walked, which is how a copy is kept
+// out of the tree it is being written into
 func TestDirHonoursTheSkipFunc(t *testing.T) {
 	root := t.TempDir()
 	src := filepath.Join(root, "src")
 	write(t, filepath.Join(src, "keep"), "keep\n", 0644)
 	write(t, filepath.Join(src, "skip"), "skip\n", 0644)
+	write(t, filepath.Join(src, "skipdir", "within"), "within\n", 0644)
 	dst := filepath.Join(root, "dst")
 
 	err := Dir(src, dst, func(srcPath, _ string) bool {
-		return filepath.Base(srcPath) == "skip"
+		return strings.HasPrefix(filepath.Base(srcPath), "skip")
 	}, reportNothing)
 
 	if err != nil {
@@ -149,6 +152,7 @@ func TestDirHonoursTheSkipFunc(t *testing.T) {
 	}
 	assertContents(t, filepath.Join(dst, "keep"), "keep\n")
 	assertAbsent(t, filepath.Join(dst, "skip"))
+	assertAbsent(t, filepath.Join(dst, "skipdir"))
 }
 
 func TestDirFailsWhenTheSourceIsNotADirectory(t *testing.T) {

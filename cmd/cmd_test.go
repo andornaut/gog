@@ -3,6 +3,7 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -42,6 +43,12 @@ func setupResolveGitPaths(t *testing.T) (repoPath, linkPath string) {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(dashPath, filepath.Join(home, "-dashed")); err != nil {
+		t.Fatal(err)
+	}
+	// A path outside the repository, whose repository-relative form differs
+	// from the argument, so that one passed through is distinguishable from one
+	// that was converted
+	if err := os.WriteFile(filepath.Join(home, "outside.conf"), []byte("contents\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	t.Chdir(home)
@@ -108,8 +115,8 @@ func TestResolveGitPaths(t *testing.T) {
 		},
 		{
 			name: "a path outside the repository is passed through",
-			args: []string{"add", ".."},
-			want: []string{"add", ".."},
+			args: []string{"add", "outside.conf"},
+			want: []string{"add", "outside.conf"},
 		},
 		{
 			name: "a nonexistent path is passed through",
@@ -251,6 +258,29 @@ func TestNeedsCommand(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), tt.want) {
 			t.Errorf("Args(%q) = %v, want %q", tt.args, err, tt.want)
 		}
+	}
+}
+
+// A flag cobra could not parse is a wrong invocation too. Cobra parses before
+// it runs the hook that resolves gog's environment, so nothing is created on
+// the way to the failure.
+func TestAnUnparseableFlagIsAWrongInvocation(t *testing.T) {
+	Cmd.SetArgs([]string{"apply", "--no-such-flag"})
+	Cmd.SetOut(io.Discard)
+	Cmd.SetErr(io.Discard)
+	t.Cleanup(func() {
+		Cmd.SetArgs(nil)
+		Cmd.SetOut(nil)
+		Cmd.SetErr(nil)
+	})
+
+	err := Cmd.Execute()
+
+	if err == nil || !strings.Contains(err.Error(), "no-such-flag") {
+		t.Fatalf("Execute() = %v, want the flag named", err)
+	}
+	if got := ExitCode(err); got != exitUsage {
+		t.Errorf("ExitCode() = %d, want %d", got, exitUsage)
 	}
 }
 
