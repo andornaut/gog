@@ -295,6 +295,37 @@ func TestDirFailsWhenTheLinkCannotBeMade(t *testing.T) {
 	}
 }
 
+// A path gog cannot resolve is left alone rather than removed: what it holds
+// exists nowhere else, and an unresolvable path is not proof that it holds
+// nothing
+func TestDirLeavesAlonePathsItCannotResolve(t *testing.T) {
+	repoPath, homeDir := newSandbox(t)
+	write(t, repoPath, "$HOME/.bashrc", "bashrc\n")
+	extPath := filepath.Join(homeDir, ".bashrc")
+	// Two links that point at each other resolve to neither
+	loop := filepath.Join(homeDir, ".loop")
+	if err := os.Symlink(loop, extPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(extPath, loop); err != nil {
+		t.Fatal(err)
+	}
+
+	out := testout.Capture(t, func() {
+		if err := Dir(repoPath, repository.ContentPath(repoPath)); !errors.Is(err, ErrIncomplete) {
+			t.Errorf("Dir() = %v, want ErrIncomplete", err)
+		}
+	})
+
+	if target, err := os.Readlink(extPath); err != nil || target != loop {
+		t.Errorf("%s -> %q (%v), want the link left alone", extPath, target, err)
+	}
+	// Named as one that could not be resolved, rather than as one already there
+	if !strings.Contains(out, "cannot resolve "+extPath+", leaving it alone") {
+		t.Errorf("Dir() printed %q, want the path named as unresolvable", out)
+	}
+}
+
 // The cases where nothing of the user's is lost, so applying replaces what is
 // in the way without asking
 func TestDirReplacesWhatHoldsNothingOfTheUsers(t *testing.T) {

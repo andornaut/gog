@@ -170,7 +170,7 @@ world-readable wherever the repository is applied.
 leaves it alone, carries on with the rest of the repository, and fails:
 
 ```text
-Error: /home/example/.bashrc already exists (move or remove it, then run the command again)
+Error: "/home/example/.bashrc" already exists (move or remove it, then run the command again)
 Error: some paths could not be linked
 ```
 

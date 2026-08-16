@@ -29,10 +29,11 @@ func stateOf(t *testing.T, entries []Entry, extPath string) State {
 }
 
 // What is listed is what applying would act on, rather than what the directory
-// holds
+// holds, in the order a walk of the repository meets it
 func TestListLeavesOutWhatIsNeverLinked(t *testing.T) {
 	repoPath, homeDir := newSandbox(t)
 	write(t, repoPath, "$HOME/.bashrc", "bashrc\n")
+	write(t, repoPath, "$HOME/.vimrc", "vimrc\n")
 	write(t, repoPath, "$HOME/.cache/state", "state\n")
 	// The repository's own files, which sit beside the directory whose tree is
 	// linked rather than in it.
@@ -48,9 +49,33 @@ func TestListLeavesOutWhatIsNeverLinked(t *testing.T) {
 		t.Fatalf("List() = %v", err)
 	}
 
-	want := []string{filepath.Join(homeDir, ".bashrc")}
+	want := []string{filepath.Join(homeDir, ".bashrc"), filepath.Join(homeDir, ".vimrc")}
 	if got := externalPaths(entries); !slices.Equal(got, want) {
 		t.Errorf("List() = %v, want %v", got, want)
+	}
+}
+
+// A path gog cannot examine is a conflict rather than a missing one: applying
+// would report it and leave it alone rather than link it
+func TestListStateOfAPathItCannotExamine(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads a directory whose mode forbids it")
+	}
+	repoPath, homeDir := newSandbox(t)
+	write(t, repoPath, "$HOME/locked/conf", "conf\n")
+	locked := filepath.Join(homeDir, "locked")
+	if err := os.Mkdir(locked, 0000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0755) })
+
+	entries, err := List(repoPath)
+	if err != nil {
+		t.Fatalf("List() = %v", err)
+	}
+
+	if got := stateOf(t, entries, filepath.Join(locked, "conf")); got != StateConflict {
+		t.Errorf("state = %s, want %s", got, StateConflict)
 	}
 }
 

@@ -157,6 +157,20 @@ func TestAddPathsRefusals(t *testing.T) {
 			want: "is a symbolic link",
 		},
 		{
+			// Decided before the resolution error is reported, or the failure
+			// would name the missing target rather than the link
+			name: "a broken symbolic link is still a link",
+			prepare: func(t *testing.T, homeDir string) string {
+				t.Helper()
+				p := filepath.Join(homeDir, ".broken")
+				if err := os.Symlink(filepath.Join(homeDir, "gone"), p); err != nil {
+					t.Fatal(err)
+				}
+				return p
+			},
+			want: "is a symbolic link to ",
+		},
+		{
 			name: "a named pipe has nothing git can store",
 			prepare: func(t *testing.T, homeDir string) string {
 				t.Helper()

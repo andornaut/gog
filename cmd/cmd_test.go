@@ -124,9 +124,12 @@ func TestResolveGitPaths(t *testing.T) {
 			want: []string{"add", "missing"},
 		},
 		{
+			// The subcommand is read from the first argument only, so one that
+			// follows a global flag is not identified. Named absolutely, or a
+			// converted argument would be indistinguishable from this one.
 			name: "a global flag suppresses subcommand detection",
-			args: []string{"-C", "elsewhere", "add", "tracked"},
-			want: []string{"-C", "elsewhere", "add", "tracked"},
+			args: []string{"-C", "elsewhere", "add", linkPath},
+			want: []string{"-C", "elsewhere", "add", linkPath},
 		},
 		{
 			name: "no arguments",

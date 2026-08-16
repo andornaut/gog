@@ -102,6 +102,9 @@ func TestList(t *testing.T) {
 	base := newBaseDir(t)
 	gittest.Init(t, filepath.Join(base, "work"))
 	gittest.Init(t, filepath.Join(base, "personal"))
+	// A repository whose name gog cannot select is not one it offers: -r and
+	// `repository remove` refuse the name it would be listed under
+	gittest.Init(t, filepath.Join(base, "not a name"))
 	if err := os.Mkdir(filepath.Join(base, "not-a-repository"), 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -116,6 +119,32 @@ func TestList(t *testing.T) {
 	}
 	if want := []string{"personal", "work"}; !slices.Equal(got, want) {
 		t.Errorf("List() = %v, want %v", got, want)
+	}
+}
+
+// The remote is cloned into the directory gog names, which is the one it
+// returns for the commands that follow
+func TestAddClonesTheRemote(t *testing.T) {
+	base := newBaseDir(t)
+	gittest.Isolate(t, t.TempDir())
+	source := filepath.Join(t.TempDir(), "source")
+	gittest.Init(t, source)
+	if err := os.WriteFile(filepath.Join(source, "tracked"), []byte("tracked\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	gittest.Run(t, source, "add", "-A")
+	gittest.Run(t, source, "commit", "-q", "-m", "init")
+
+	repoPath, err := Add("cloned", source)
+
+	if err != nil {
+		t.Fatalf("Add() = %v", err)
+	}
+	if want := filepath.Join(base, "cloned"); repoPath != want {
+		t.Errorf("Add() = %q, want %q", repoPath, want)
+	}
+	if contents, readErr := os.ReadFile(filepath.Join(repoPath, "tracked")); readErr != nil || string(contents) != "tracked\n" {
+		t.Errorf("the repository holds %q (%v), want what the remote holds", contents, readErr)
 	}
 }
 
