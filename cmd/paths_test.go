@@ -83,6 +83,11 @@ func newSandbox(t *testing.T) (repoPath, extPath string) {
 	}
 	gittest.Init(t, repoPath)
 	gittest.Isolate(t, homeDir)
+	// The repository and link packages read these. Cleared here, so a host that
+	// has gog configured for its own use does not decide what the test sees.
+	t.Setenv("GOG_DEFAULT_REPOSITORY_NAME", "")
+	t.Setenv("GOG_HOME", "")
+	t.Setenv("GOG_IGNORE_FILES_REGEX", "")
 
 	originalBase := repository.BaseDir
 	repository.BaseDir = baseDir
