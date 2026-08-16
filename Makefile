@@ -41,7 +41,11 @@ coverage-html: test
 fmt:
 	golangci-lint fmt
 
+# The checks CI runs, both of them. `run` accepts an unknown key inside
+# `linters.settings` and exits 0, which leaves that setting disabled while CI
+# stays green, so `config verify` is what rejects a misspelled one.
 lint:
+	golangci-lint config verify
 	golangci-lint run
 
 uninstall:
