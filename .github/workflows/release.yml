@@ -169,7 +169,8 @@ jobs:
 
       # As goreleaser does for a tag. The consumer can then verify what it
       # fetched, which matters more here than there: `dev` is a moving tag, so a
-      # download that straddles a re-cut would otherwise go unnoticed.
+      # download that straddles a re-cut would otherwise install a mixed set
+      # silently.
       - name: Write checksums
         run: cd artifacts && sha256sum -- *.tar.gz > checksums.txt
 
