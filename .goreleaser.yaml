@@ -8,14 +8,9 @@ before:
     - go mod tidy
 
 builds:
-  - env:
-      - CGO_ENABLED=0
-    goos:
-      - linux
-      - darwin
-    goarch:
-      - amd64
-      - arm64
+  - env: [CGO_ENABLED=0]
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
     # macOS is Apple Silicon only: the last Intel Mac was discontinued in 2023
     # and macOS 26 is the final release supporting Intel.
     ignore:
