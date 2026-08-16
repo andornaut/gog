@@ -75,6 +75,10 @@ func linksTo(p, target string) bool {
 	return err == nil && resolved == target
 }
 
+// shouldSkip is handed paths that the copy has already resolved, so the data
+// directory must be resolved too: a home directory reached through a symbolic
+// link spells BaseDir one way and the walk another, and gog would then copy
+// its own data directory into the repository it is adding to.
 func shouldSkip(extPath, _ string) bool {
-	return paths.Within(BaseDir, extPath) || strings.HasSuffix(extPath, ".gog")
+	return WithinBaseDir(extPath) || strings.HasSuffix(extPath, ".gog")
 }
