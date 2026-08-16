@@ -6,13 +6,15 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/andornaut/gog/internal/repository"
+	"github.com/andornaut/gog/internal/testout"
 )
 
 func TestCleanPaths(t *testing.T) {
-	root := t.TempDir()
-	t.Chdir(root)
-	// A relative argument is resolved against the current directory, and the
-	// current directory itself may be reached through a symbolic link
+	t.Chdir(t.TempDir())
+	// Read back rather than reused: a temporary directory may be reached
+	// through a symbolic link, and cleanPaths joins what the process reports
 	cwd, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
@@ -54,5 +56,54 @@ func TestCleanPathsRefusesAnEmptyPath(t *testing.T) {
 		if !strings.Contains(err.Error(), "cannot be empty") {
 			t.Errorf("cleanPaths(%q) = %v, want a failure naming the empty path", arg, err)
 		}
+	}
+}
+
+// A run that linked nothing and one that linked everything are otherwise the
+// same, both silent and exit 0
+func TestNoteEmpty(t *testing.T) {
+	want := "Note: dots holds no root/, so there is nothing to link\n"
+	tests := []struct {
+		name string
+		// prepare puts something at the content path, or nothing when it is nil
+		prepare func(t *testing.T, contentPath string)
+		want    string
+	}{
+		{name: "no content directory", want: want},
+		{
+			// Walking it would not be walking a tree
+			name: "a regular file of that name",
+			prepare: func(t *testing.T, contentPath string) {
+				t.Helper()
+				if err := os.WriteFile(contentPath, []byte("x"), 0644); err != nil {
+					t.Fatal(err)
+				}
+			},
+			want: want,
+		},
+		{
+			name: "a content directory",
+			prepare: func(t *testing.T, contentPath string) {
+				t.Helper()
+				if err := os.Mkdir(contentPath, 0755); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repoPath := filepath.Join(t.TempDir(), "dots")
+			if err := os.Mkdir(repoPath, 0755); err != nil {
+				t.Fatal(err)
+			}
+			if tt.prepare != nil {
+				tt.prepare(t, repository.ContentPath(repoPath))
+			}
+
+			if got := testout.Capture(t, func() { noteEmpty(repoPath) }); got != tt.want {
+				t.Errorf("noteEmpty() printed %q, want %q", got, tt.want)
+			}
+		})
 	}
 }

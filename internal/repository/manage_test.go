@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/andornaut/gog/internal/gittest"
+	"github.com/andornaut/gog/internal/testout"
 )
 
 // newSandbox creates a data directory holding one repository, and a home
@@ -199,7 +200,7 @@ func TestAddPathsRefusesAPathAnotherRepositoryManages(t *testing.T) {
 		t.Error("the repository took the path although it refused")
 	}
 
-	// --force takes it over, as the failure said it would
+	// --force takes it over
 	if err = AddPaths(repoPath, true, []string{target}); err != nil {
 		t.Fatalf("AddPaths(force) = %v", err)
 	}
@@ -362,7 +363,7 @@ func TestReportSkipped(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// The paths here are already named as the caller typed them, so
 			// the two roots are the same and nothing is rewritten.
-			got := captureStderr(t, func() { reportSkipped(repoPath, homeDir, homeDir)(tt.p, tt.mode) })
+			got := testout.Capture(t, func() { reportSkipped(repoPath, homeDir, homeDir)(tt.p, tt.mode) })
 
 			if got != tt.want {
 				t.Errorf("reportSkipped() printed %q, want %q", got, tt.want)
@@ -387,7 +388,7 @@ func TestAddPathsIsQuietWhenItMeetsItsOwnLinks(t *testing.T) {
 	symlink(t, filepath.Join(repoPath, ContentDirName, "$HOME", ".conf", "one"), filepath.Join(conf, "one"))
 	writeFile(t, filepath.Join(conf, "two"), "two\n")
 
-	out := captureStderr(t, func() {
+	out := testout.Capture(t, func() {
 		if err := AddPaths(repoPath, false, []string{conf}); err != nil {
 			t.Fatalf("AddPaths() = %v", err)
 		}
@@ -409,7 +410,7 @@ func TestAddPathsReportsAPathAnotherRepositoryManages(t *testing.T) {
 	writeFile(t, filepath.Join(conf, "two"), "two\n")
 	symlink(t, managed, filepath.Join(conf, "one"))
 
-	out := captureStderr(t, func() {
+	out := testout.Capture(t, func() {
 		if err := AddPaths(repoPath, false, []string{conf}); err != nil {
 			t.Fatalf("AddPaths() = %v", err)
 		}
@@ -455,7 +456,7 @@ func TestRemovePathsReportsAPathItNeverHeld(t *testing.T) {
 	repoPath, homeDir := newSandbox(t)
 	target := filepath.Join(homeDir, ".never")
 
-	out := captureStderr(t, func() {
+	out := testout.Capture(t, func() {
 		if err := RemovePaths(repoPath, []string{target}); err != nil {
 			t.Errorf("RemovePaths() = %v, want success", err)
 		}
@@ -466,34 +467,6 @@ func TestRemovePathsReportsAPathItNeverHeld(t *testing.T) {
 	if !strings.Contains(out, want) {
 		t.Errorf("RemovePaths() printed %q, want %q", out, want)
 	}
-}
-
-// captureStderr returns what f writes to standard error. What gog did goes
-// there rather than through a writer the caller supplies, so a test that means
-// to check one has to take it from the process.
-//
-// A file rather than a pipe: git inherits whatever os.Stderr is when gog runs
-// it, and a pipe is only read to its end once every process holding the write
-// end has let go of it.
-func captureStderr(t *testing.T, f func()) string {
-	t.Helper()
-	file, err := os.CreateTemp(t.TempDir(), "stderr")
-	if err != nil {
-		t.Fatal(err)
-	}
-	original := os.Stderr
-	os.Stderr = file
-	defer func() { os.Stderr = original }()
-
-	f()
-	if err = file.Close(); err != nil {
-		t.Fatal(err)
-	}
-	out, err := os.ReadFile(file.Name())
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(out)
 }
 
 func TestUnsavedWorkCountsWhatDeletionWouldDestroy(t *testing.T) {
@@ -648,10 +621,71 @@ func TestWidenedMode(t *testing.T) {
 	}
 }
 
-// A data directory reached through a symbolic link is what a temporary
-// directory on macOS is, and what moving one onto another disk leaves behind.
-// Adding a path the repository already holds compared the resolved file against
-// the unresolved one, missed, and copied the file over itself.
+// A copy that fails part-way leaves nothing behind, so that the repository does
+// not hold files that were never linked or staged. A path it already held is
+// reported instead, because discarding that would throw away whatever the copy
+// had overwritten.
+func TestAddPathsUndoesAFailedCopy(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads a directory whose mode forbids it")
+	}
+	repoPath, homeDir := newSandbox(t)
+	conf := filepath.Join(homeDir, ".conf")
+	writeFile(t, filepath.Join(conf, "a", "file"), "file\n")
+	// Sorted last, so the copy fails only once it has written something
+	unreadable := filepath.Join(conf, "z")
+	if err := os.Mkdir(unreadable, 0000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(unreadable, 0755) })
+	intPath := filepath.Join(repoPath, ContentDirName, "$HOME", ".conf")
+
+	if err := AddPaths(repoPath, false, []string{conf}); err == nil {
+		t.Fatal("AddPaths() reported success for a copy that failed")
+	}
+	if _, err := os.Lstat(intPath); !os.IsNotExist(err) {
+		t.Errorf("the repository holds a partial copy (%v)", err)
+	}
+
+	held := writeFile(t, filepath.Join(intPath, "held"), "held\n")
+
+	err := AddPaths(repoPath, false, []string{conf})
+
+	if err == nil || !strings.Contains(err.Error(), "dots still holds a partial copy of "+conf) {
+		t.Fatalf("AddPaths() = %v, want the partial copy reported", err)
+	}
+	if contents, readErr := os.ReadFile(held); readErr != nil || string(contents) != "held\n" {
+		t.Errorf("the repository holds %q (%v), want what it held", contents, readErr)
+	}
+}
+
+// A mode git cannot record is reported, so that a private file is not silently
+// widened on the next machine that applies the repository
+func TestAddPathsWarnsAboutAModeGitCannotRecord(t *testing.T) {
+	repoPath, homeDir := newSandbox(t)
+	private := filepath.Join(homeDir, ".netrc")
+	if err := os.WriteFile(private, []byte("secret\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	// Added alongside it, and not warned about
+	ordinary := writeFile(t, filepath.Join(homeDir, ".bashrc"), "bashrc\n")
+
+	out := testout.Capture(t, func() {
+		if err := AddPaths(repoPath, false, []string{private, ordinary}); err != nil {
+			t.Fatalf("AddPaths() = %v", err)
+		}
+	})
+
+	want := "Warning: " + private + " has mode 0600, which git does not record;" +
+		" it will be applied as 0644 on another machine\n"
+	if out != want {
+		t.Errorf("AddPaths() printed %q, want %q", out, want)
+	}
+}
+
+// A temporary directory on macOS reaches gog's data directory through a
+// symbolic link. Adding a path the repository already holds once compared the
+// resolved file against the unresolved one, missed, and copied it over itself.
 func TestAddPathsThroughASymlinkedDataDirectoryKeepsWhatItHolds(t *testing.T) {
 	repoPath, homeDir := newSandbox(t)
 	held := writeFile(t, filepath.Join(repoPath, ContentDirName, "$HOME", ".bashrc"), "bashrc\n")

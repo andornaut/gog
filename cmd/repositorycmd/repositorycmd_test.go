@@ -29,6 +29,19 @@ func TestRequireArgs(t *testing.T) {
 	}
 }
 
+// cobra.NoArgs reports an operand as an unknown command, which misdescribes
+// `gog repository list extra`: list takes no operands at all
+func TestNoArgs(t *testing.T) {
+	err := noArgs(list, []string{"extra"})
+
+	if err == nil || err.Error() != `repository list takes no arguments, but got "extra"` {
+		t.Errorf("noArgs() = %v, want the command and the operand named", err)
+	}
+	if err := noArgs(list, nil); err != nil {
+		t.Errorf("noArgs() = %v, want success", err)
+	}
+}
+
 // Naming a subcommand that does not exist is a wrong invocation, and so is
 // naming none. Both are reported by the argument validator, which runs before
 // usage is silenced, so the reader is shown the commands they could have named.

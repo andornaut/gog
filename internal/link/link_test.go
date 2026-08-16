@@ -9,35 +9,8 @@ import (
 
 	"github.com/andornaut/gog/internal/gittest"
 	"github.com/andornaut/gog/internal/repository"
+	"github.com/andornaut/gog/internal/testout"
 )
-
-// captureStderr returns what f writes to standard error. What gog did goes
-// there rather than through a writer the caller supplies, so a test that means
-// to check one has to take it from the process.
-//
-// A file rather than a pipe: git inherits whatever os.Stderr is when gog runs
-// it, and a pipe is only read to its end once every process holding the write
-// end has let go of it.
-func captureStderr(t *testing.T, f func()) string {
-	t.Helper()
-	file, err := os.CreateTemp(t.TempDir(), "stderr")
-	if err != nil {
-		t.Fatal(err)
-	}
-	original := os.Stderr
-	os.Stderr = file
-	defer func() { os.Stderr = original }()
-
-	f()
-	if err = file.Close(); err != nil {
-		t.Fatal(err)
-	}
-	out, err := os.ReadFile(file.Name())
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(out)
-}
 
 // newSandbox creates a repository and a home directory to link into, and points
 // the repository package at both for the duration of the test
@@ -84,13 +57,12 @@ func TestFileLinksAndStagesOneFile(t *testing.T) {
 
 // The result line names both ends of the link, with the repository's literal
 // $HOME component escaped so that the path can be pasted into a shell. Taken
-// from linkFile, which is the step that prints it: File also stages, and git
-// writes to the same stream.
+// from linkFile because File also stages, and git writes to the same stream.
 func TestLinkFilePrintsWhatItLinked(t *testing.T) {
 	repoPath, homeDir := newSandbox(t)
 	intPath := write(t, repoPath, "$HOME/.bashrc", "bashrc\n")
 
-	out := captureStderr(t, func() {
+	out := testout.Capture(t, func() {
 		if _, err := linkFile(repoPath, intPath); err != nil {
 			t.Errorf("linkFile() = %v", err)
 		}
@@ -112,7 +84,7 @@ func TestFileReportsAPathGitWillNotStage(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out := captureStderr(t, func() {
+	out := testout.Capture(t, func() {
 		if err := File(repoPath, intPath); !errors.Is(err, ErrIncomplete) {
 			t.Errorf("File() = %v, want ErrIncomplete", err)
 		}
@@ -134,13 +106,71 @@ func TestFileRefusesADirectoryInTheWay(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := File(repoPath, intPath)
+	out := testout.Capture(t, func() {
+		if err := File(repoPath, intPath); !errors.Is(err, ErrIncomplete) {
+			t.Errorf("File() = %v, want ErrIncomplete", err)
+		}
+	})
 
-	if !errors.Is(err, ErrIncomplete) {
-		t.Fatalf("File() = %v, want ErrIncomplete", err)
-	}
 	if info, statErr := os.Lstat(extPath); statErr != nil || !info.IsDir() {
 		t.Errorf("%s is no longer a directory (%v)", extPath, statErr)
+	}
+	if !strings.Contains(out, extPath+" exists and is a directory") {
+		t.Errorf("File() printed %q, want the directory named", out)
+	}
+}
+
+// Two files of the same length are compared byte for byte. A wrong answer here
+// deletes a file of the user's that the repository does not hold.
+func TestSameContents(t *testing.T) {
+	// Longer than the buffer a comparison reads into, so the loop runs twice
+	large := strings.Repeat("ab", 64*1024)
+
+	tests := []struct {
+		name string
+		a    string
+		b    string
+		want bool
+	}{
+		{name: "identical", a: "same\n", b: "same\n", want: true},
+		{name: "the same length, differing", a: "mine\n", b: "them\n"},
+		{name: "differing lengths", a: "short\n", b: "longer\n"},
+		{name: "both empty", a: "", b: "", want: true},
+		{name: "past one read, identical", a: large, b: large, want: true},
+		{name: "past one read, differing at the end", a: large, b: large[:len(large)-1] + "z"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			a, b := filepath.Join(root, "a"), filepath.Join(root, "b")
+			for p, contents := range map[string]string{a: tt.a, b: tt.b} {
+				if err := os.WriteFile(p, []byte(contents), 0644); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			if got := sameContents(a, b); got != tt.want {
+				t.Errorf("sameContents(%q, %q) = %v, want %v", tt.a, tt.b, got, tt.want)
+			}
+		})
+	}
+}
+
+// Replacing a symbolic link discards the link itself, which no copy of the
+// contents preserves
+func TestSameContentsExcludesASymbolicLink(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "target")
+	if err := os.WriteFile(target, []byte("same\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	linkPath := filepath.Join(root, "link")
+	if err := os.Symlink(target, linkPath); err != nil {
+		t.Fatal(err)
+	}
+
+	if sameContents(linkPath, target) {
+		t.Error("sameContents() called a symbolic link the same as what it points at")
 	}
 }
 

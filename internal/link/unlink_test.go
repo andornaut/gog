@@ -7,6 +7,7 @@ import (
 
 	"github.com/andornaut/gog/internal/paths"
 	"github.com/andornaut/gog/internal/repository"
+	"github.com/andornaut/gog/internal/testout"
 )
 
 func TestUnlinkFileRestoresWhatTheLinkPointedAt(t *testing.T) {
@@ -17,9 +18,11 @@ func TestUnlinkFileRestoresWhatTheLinkPointedAt(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := UnlinkFile(repoPath, intPath); err != nil {
-		t.Fatalf("UnlinkFile() = %v", err)
-	}
+	out := testout.Capture(t, func() {
+		if err := UnlinkFile(repoPath, intPath); err != nil {
+			t.Errorf("UnlinkFile() = %v", err)
+		}
+	})
 
 	if paths.IsSymlink(extPath) {
 		t.Errorf("%s is still a symbolic link", extPath)
@@ -27,23 +30,7 @@ func TestUnlinkFileRestoresWhatTheLinkPointedAt(t *testing.T) {
 	if contents, err := os.ReadFile(extPath); err != nil || string(contents) != "bashrc\n" {
 		t.Errorf("%s holds %q (%v), want the repository's contents", extPath, contents, err)
 	}
-}
-
-// The result line names the path that was given back
-func TestUnlinkFilePrintsWhatItRestored(t *testing.T) {
-	repoPath, homeDir := newSandbox(t)
-	intPath := write(t, repoPath, "$HOME/.bashrc", "bashrc\n")
-	extPath := filepath.Join(homeDir, ".bashrc")
-	if err := os.Symlink(intPath, extPath); err != nil {
-		t.Fatal(err)
-	}
-
-	out := captureStderr(t, func() {
-		if err := UnlinkFile(repoPath, intPath); err != nil {
-			t.Errorf("UnlinkFile() = %v", err)
-		}
-	})
-
+	// The result line names the path that was given back
 	if want := "Restored: " + extPath + "\n"; out != want {
 		t.Errorf("UnlinkFile() printed %q, want %q", out, want)
 	}

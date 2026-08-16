@@ -90,7 +90,7 @@ func TestConfigureRefusesAnUnusableHomeDirectory(t *testing.T) {
 		home string
 		want string
 	}{
-		{name: "one that does not exist", home: filepath.Join(root, "gone"), want: "home directory"},
+		{name: "one that does not exist", home: filepath.Join(root, "gone"), want: "does not exist"},
 		{name: "one that is a file", home: file, want: "home directory is not a directory"},
 	}
 	for _, tt := range tests {

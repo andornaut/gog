@@ -54,40 +54,62 @@ func assertAbsent(t *testing.T, p string) {
 	}
 }
 
-func TestFileCopiesContentsAndMode(t *testing.T) {
-	root := t.TempDir()
-	src := write(t, filepath.Join(root, "source"), "contents\n", 0600)
-	dst := filepath.Join(root, "destination")
-
-	if err := File(src, dst); err != nil {
-		t.Fatalf("File() = %v", err)
+func assertMode(t *testing.T, p string, want os.FileMode) {
+	t.Helper()
+	info, err := os.Stat(p)
+	if err != nil {
+		t.Fatal(err)
 	}
-
-	assertContents(t, dst, "contents\n")
-	info, err := os.Stat(dst)
-	if err != nil || info.Mode() != 0600 {
-		t.Errorf("%s has mode %v (%v), want 0600", dst, info.Mode(), err)
+	if info.Mode() != want {
+		t.Errorf("%s has mode %v, want %v", p, info.Mode(), want)
 	}
 }
 
-func TestFileReplacesTheDestination(t *testing.T) {
-	root := t.TempDir()
-	src := write(t, filepath.Join(root, "source"), "new\n", 0644)
-	dst := write(t, filepath.Join(root, "destination"), "old\n", 0644)
-
-	if err := File(src, dst); err != nil {
-		t.Fatalf("File() = %v", err)
+// The source's contents and mode replace whatever the destination held
+func TestFileWritesContentsAndMode(t *testing.T) {
+	tests := []struct {
+		name string
+		// prepare puts something at dst, or nothing when it is nil
+		prepare func(t *testing.T, dst string)
+	}{
+		{name: "a destination that does not exist"},
+		{
+			name: "one that already holds something",
+			prepare: func(t *testing.T, dst string) {
+				t.Helper()
+				write(t, dst, "old\n", 0644)
+			},
+		},
 	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			src := write(t, filepath.Join(root, "source"), "new\n", 0600)
+			dst := filepath.Join(root, "destination")
+			if tt.prepare != nil {
+				tt.prepare(t, dst)
+			}
 
-	assertContents(t, dst, "new\n")
+			if err := File(src, dst); err != nil {
+				t.Fatalf("File() = %v", err)
+			}
+
+			assertContents(t, dst, "new\n")
+			assertMode(t, dst, 0600)
+		})
+	}
 }
 
+// The source is opened before the destination is created, so a source that
+// cannot be read leaves nothing behind
 func TestFileFailsWhenTheSourceDoesNotExist(t *testing.T) {
 	root := t.TempDir()
+	dst := filepath.Join(root, "destination")
 
-	if err := File(filepath.Join(root, "gone"), filepath.Join(root, "destination")); err == nil {
+	if err := File(filepath.Join(root, "gone"), dst); err == nil {
 		t.Error("File() reported success for a source that does not exist")
 	}
+	assertAbsent(t, dst)
 }
 
 func TestDirCopiesATreeAndItsModes(t *testing.T) {
@@ -108,10 +130,7 @@ func TestDirCopiesATreeAndItsModes(t *testing.T) {
 	assertContents(t, filepath.Join(dst, "one"), "one\n")
 	assertContents(t, filepath.Join(dst, "sub", "two"), "two\n")
 	assertContents(t, filepath.Join(dst, "sub", "nested", "three"), "three\n")
-	info, err := os.Stat(filepath.Join(dst, "sub"))
-	if err != nil || info.Mode().Perm() != 0700 {
-		t.Errorf("sub has mode %v (%v), want 0700", info.Mode().Perm(), err)
-	}
+	assertMode(t, filepath.Join(dst, "sub"), os.ModeDir|0700)
 }
 
 func TestDirHonoursTheSkipFunc(t *testing.T) {

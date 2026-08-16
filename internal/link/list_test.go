@@ -62,7 +62,8 @@ func TestListStatesMatchWhatApplyingDoes(t *testing.T) {
 	write(t, repoPath, "$HOME/.missing", "missing\n")
 	write(t, repoPath, "$HOME/.broken", "broken\n")
 	write(t, repoPath, "$HOME/.same", "same\n")
-	write(t, repoPath, "$HOME/.mine", "theirs\n")
+	// The same length as what is in the way, so the contents decide
+	write(t, repoPath, "$HOME/.mine", "them\n")
 
 	if err := os.Symlink(filepath.Join(repoPath, repository.ContentDirName, "$HOME", ".linked"), filepath.Join(homeDir, ".linked")); err != nil {
 		t.Fatal(err)

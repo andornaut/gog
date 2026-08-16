@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/andornaut/gog/internal/cli"
 )
 
 // setupResolveGitPaths creates a repository holding one file and a symbolic
@@ -172,6 +174,7 @@ func TestTakeRepositoryFlag(t *testing.T) {
 		args     []string
 		wantName string
 		wantArgs []string
+		wantErr  bool
 	}{
 		{name: "a separate value", args: []string{"-r", "work", "status"}, wantName: "work", wantArgs: []string{"status"}},
 		{name: "the long form", args: []string{"--repository", "work", "status"}, wantName: "work", wantArgs: []string{"status"}},
@@ -180,11 +183,18 @@ func TestTakeRepositoryFlag(t *testing.T) {
 		{name: "git's own -r is left alone", args: []string{"branch", "-r"}, wantArgs: []string{"branch", "-r"}},
 		{name: "and so is one that follows a subcommand", args: []string{"ls-tree", "-r", "HEAD"}, wantArgs: []string{"ls-tree", "-r", "HEAD"}},
 		{name: "no arguments at all", args: []string{}, wantArgs: []string{}},
+		{name: "nothing after the flag", args: []string{"-r"}, wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repositoryFlag = ""
 			got, err := takeRepositoryFlag(tt.args)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("takeRepositoryFlag(%q) = %q, want a failure", tt.args, got)
+				}
+				return
+			}
 			if err != nil {
 				t.Fatalf("takeRepositoryFlag(%q) = %v", tt.args, err)
 			}
@@ -198,13 +208,6 @@ func TestTakeRepositoryFlag(t *testing.T) {
 	}
 }
 
-func TestTakeRepositoryFlagWithoutAName(t *testing.T) {
-	repositoryFlag = ""
-	if _, err := takeRepositoryFlag([]string{"-r"}); err == nil {
-		t.Error("takeRepositoryFlag() accepted a flag with nothing after it")
-	}
-}
-
 // Cobra's own message ("requires at least 1 arg(s), only received 0") names
 // neither the command nor what it wanted
 func TestRequirePaths(t *testing.T) {
@@ -213,6 +216,22 @@ func TestRequirePaths(t *testing.T) {
 	}
 	if err := requirePaths(add, []string{"/etc/hosts"}); err != nil {
 		t.Errorf("requirePaths() = %v, want success", err)
+	}
+}
+
+// cobra.NoArgs reports an operand as an unknown command, which misdescribes
+// `gog apply /etc/hosts`: apply takes no operands at all
+func TestNoArgs(t *testing.T) {
+	err := noArgs(apply, []string{"/etc/hosts"})
+
+	if err == nil || err.Error() != `gog apply takes no arguments, but got "/etc/hosts"` {
+		t.Errorf("noArgs() = %v, want the command and the operand named", err)
+	}
+	if got := ExitCode(err); got != exitUsage {
+		t.Errorf("ExitCode() = %d, want %d", got, exitUsage)
+	}
+	if err := noArgs(apply, nil); err != nil {
+		t.Errorf("noArgs() = %v, want success", err)
 	}
 }
 
@@ -232,23 +251,27 @@ func TestNeedsCommand(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), tt.want) {
 			t.Errorf("Args(%q) = %v, want %q", tt.args, err, tt.want)
 		}
-		// A wrong invocation exits 2, so that a script can tell it from a
-		// command that ran and failed.
-		if got := ExitCode(err); got != exitUsage {
-			t.Errorf("ExitCode() = %d, want %d", got, exitUsage)
-		}
 	}
 }
 
-// Only `gog git` reports a status of its own; every other failure is gog's
+// Only `gog git` reports a status of its own. A wrong invocation exits 2, so
+// that a script can tell it from a command that ran and failed.
 func TestExitCode(t *testing.T) {
-	if got := ExitCode(&exitCodeError{code: 128}); got != 128 {
-		t.Errorf("ExitCode() = %d, want 128", got)
+	tests := []struct {
+		name string
+		err  error
+		want int
+	}{
+		{name: "git's own status", err: &exitCodeError{code: 128}, want: 128},
+		{name: "a wrapped status", err: fmt.Errorf("wrapped: %w", &exitCodeError{code: 3}), want: 3},
+		{name: "a wrong invocation", err: cli.Usagef("gog requires a command"), want: exitUsage},
+		{name: "gog's own failure", err: errors.New("gog's own failure"), want: exitFailed},
 	}
-	if got := ExitCode(fmt.Errorf("wrapped: %w", &exitCodeError{code: 3})); got != 3 {
-		t.Errorf("ExitCode() of a wrapped status = %d, want 3", got)
-	}
-	if got := ExitCode(errors.New("gog's own failure")); got != 1 {
-		t.Errorf("ExitCode() = %d, want 1", got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ExitCode(tt.err); got != tt.want {
+				t.Errorf("ExitCode(%v) = %d, want %d", tt.err, got, tt.want)
+			}
+		})
 	}
 }
