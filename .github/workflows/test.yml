@@ -104,7 +104,9 @@ jobs:
         with:
           version: v2.10.1
           # Verification fetches a JSONSchema from golangci-lint.run on every
-          # run, which makes a red Lint a question of whether that host was
-          # reachable. golangci-lint rejects a config it cannot parse either
-          # way, so what this gives up is schema advice, not enforcement.
-          verify: false
+          # run, so this step depends on that host being reachable. Kept on
+          # regardless: `run` accepts an unknown key inside `linters.settings`
+          # and exits 0, which leaves that setting disabled while CI stays
+          # green, and only `config verify` rejects it. An unknown linter name
+          # is caught either way.
+          verify: true
