@@ -35,6 +35,9 @@ jobs:
   test-platform:
     name: Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # Capped well under the six-hour default: nothing here runs longer than
+    # six minutes, so a job still going at fifteen has hung rather than failed.
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -81,6 +84,7 @@ jobs:
     needs: test-platform
     if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - name: Check that every platform passed
@@ -89,6 +93,7 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout code
         uses: actions/checkout@v7.0.1
