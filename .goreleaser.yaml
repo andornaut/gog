@@ -23,6 +23,11 @@ builds:
         goarch: amd64
     main: ./main.go
     binary: gog
+    # -trimpath keeps the build machine's absolute paths out of the binary, and
+    # -s -w drops the symbol table and DWARF. The dev build in release.yml
+    # passes the same pair, so a dev archive holds what a tagged one holds.
+    flags: [-trimpath]
+    ldflags: [-s -w]
 
 archives:
   - formats: [tar.gz]

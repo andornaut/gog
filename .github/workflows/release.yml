@@ -76,8 +76,10 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      # The flags .goreleaser.yaml builds a tag with, so what a dev archive
+      # holds is what a tagged one holds.
       - name: Build
-        run: go build -o gog ./main.go
+        run: go build -ldflags="-s -w" -trimpath -o gog ./main.go
         env:
           CGO_ENABLED: 0
           GOOS: ${{ matrix.goos }}
