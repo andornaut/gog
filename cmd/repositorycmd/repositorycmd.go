@@ -99,8 +99,8 @@ var list = &cobra.Command{
 	},
 }
 
-var remove = &cobra.Command{
-	Use:                   "remove <name>",
+var rm = &cobra.Command{
+	Use:                   "rm <name>",
 	Short:                 "Remove a repository",
 	Args:                  requireArgs(1, 1, "a repository name"),
 	ValidArgsFunction:     CompleteNames,
@@ -167,6 +167,6 @@ func init() {
 	// trap for the person typing, not for the parser.
 	getDefault.Flags().BoolVar(&isPath, "path", false, "print the path instead of the name")
 	list.Flags().BoolVar(&isPath, "path", false, "print paths instead of names")
-	remove.Flags().BoolVar(&isForced, "force", false, "remove even if the repository holds work that no remote has")
-	Cmd.AddCommand(add, remove, getDefault, list)
+	rm.Flags().BoolVar(&isForced, "force", false, "remove even if the repository holds work that no remote has")
+	Cmd.AddCommand(add, rm, getDefault, list)
 }

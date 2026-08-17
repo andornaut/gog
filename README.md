@@ -72,7 +72,7 @@ gog apply
 | `gog repository add <name> [url]` | Create a repository, by clone if a URL is given |
 | `gog repository default` | Print the default repository |
 | `gog repository list` | Print every repository |
-| `gog repository remove <name>` | Restore what the repository holds, then delete it |
+| `gog repository rm <name>` | Restore what the repository holds, then delete it |
 
 | Flag | Commands | Description |
 | --- | --- | --- |
@@ -80,7 +80,7 @@ gog apply
 | `-s, --status` | `list` | Print what applying would do to each path |
 | `--path` | `repository default`, `repository list` | Print paths instead of names |
 | `--force` | `add` | Take a path over from the repository that manages it |
-| `--force` | `repository remove` | Delete even if the repository holds work that no remote has |
+| `--force` | `repository rm` | Delete even if the repository holds work that no remote has |
 | `--version` | `gog` | Print the version |
 
 A short flag means the same thing in every tool that has it, so `--path`,
@@ -233,13 +233,13 @@ gog git log -- ~/.bashrc   # the same, after the separator
 - Reports a path the repository never held (`Skipped: ...`) rather than failing.
 - Validates the whole batch before restoring anything.
 
-### `gog repository remove`
+### `gog repository rm`
 
 Deleting a repository cannot be undone by cloning again, so it is refused
 while the repository holds work that exists nowhere else:
 
 ```text
-$ gog repository remove dotfiles
+$ gog repository rm dotfiles
 Error: refusing to remove dotfiles: it holds 1 commit that no remote has and 2 uncommitted changes (pass --force to delete it anyway)
 ```
 

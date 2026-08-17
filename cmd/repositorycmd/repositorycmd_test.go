@@ -101,13 +101,13 @@ func newSandbox(t *testing.T) (repoPath, extPath string) {
 // Deleting a repository cannot be undone by cloning again, so a repository
 // holding work that no remote has is refused before anything is restored or
 // deleted. A repository with no remote holds its whole history.
-func TestRemoveRefusesBeforeItRestoresAnything(t *testing.T) {
+func TestRmRefusesBeforeItRestoresAnything(t *testing.T) {
 	repoPath, extPath := newSandbox(t)
 
-	err := remove.RunE(remove, []string{"dots"})
+	err := rm.RunE(rm, []string{"dots"})
 
 	if err == nil || !strings.Contains(err.Error(), "refusing to remove dots: it holds 1 commit that no remote has") {
-		t.Fatalf("remove = %v, want a refusal counting the unsaved work", err)
+		t.Fatalf("rm = %v, want a refusal counting the unsaved work", err)
 	}
 	if target, readErr := os.Readlink(extPath); readErr != nil || target != filepath.Join(repoPath, repository.ContentDirName, "$HOME", ".bashrc") {
 		t.Errorf("%s -> %q (%v), want the link left in place", extPath, target, readErr)
@@ -119,13 +119,13 @@ func TestRemoveRefusesBeforeItRestoresAnything(t *testing.T) {
 
 // --force deletes it, and what the repository held is restored as ordinary
 // files rather than left as links to nothing
-func TestRemoveRestoresWhatItHeld(t *testing.T) {
+func TestRmRestoresWhatItHeld(t *testing.T) {
 	repoPath, extPath := newSandbox(t)
 	isForced = true
 	t.Cleanup(func() { isForced = false })
 
-	if err := remove.RunE(remove, []string{"dots"}); err != nil {
-		t.Fatalf("remove = %v", err)
+	if err := rm.RunE(rm, []string{"dots"}); err != nil {
+		t.Fatalf("rm = %v", err)
 	}
 
 	if _, statErr := os.Stat(repoPath); !os.IsNotExist(statErr) {

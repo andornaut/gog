@@ -103,7 +103,7 @@ func TestList(t *testing.T) {
 	gittest.Init(t, filepath.Join(base, "work"))
 	gittest.Init(t, filepath.Join(base, "personal"))
 	// A repository whose name gog cannot select is not one it offers: -r and
-	// `repository remove` refuse the name it would be listed under
+	// `repository rm` refuse the name it would be listed under
 	gittest.Init(t, filepath.Join(base, "not a name"))
 	if err := os.Mkdir(filepath.Join(base, "not-a-repository"), 0755); err != nil {
 		t.Fatal(err)
