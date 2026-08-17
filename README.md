@@ -232,6 +232,9 @@ gog git log -- ~/.bashrc   # the same, after the separator
   of your own, or was deleted.
 - Reports a path the repository never held (`Skipped: ...`) rather than failing.
 - Validates the whole batch before restoring anything.
+- Not `gog git rm`, which deletes the repository's copy and stages the deletion,
+  leaving the link outside it pointing at nothing. `gog rm` is the one that
+  hands the file back.
 
 ### `gog repository rm`
 
