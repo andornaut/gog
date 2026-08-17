@@ -67,7 +67,7 @@ gog apply
 | `gog add <paths>...` | Copy paths into the repository, link them back, and stage them |
 | `gog apply` | Link the repository's contents to the filesystem |
 | `gog list` | Print the paths the repository holds |
-| `gog remove <paths>...` | Restore paths as ordinary files and untrack them |
+| `gog rm <paths>...` | Restore paths as ordinary files and untrack them |
 | `gog git ...` | Run git in the repository's directory |
 | `gog repository add <name> [url]` | Create a repository, by clone if a URL is given |
 | `gog repository default` | Print the default repository |
@@ -76,7 +76,7 @@ gog apply
 
 | Flag | Commands | Description |
 | --- | --- | --- |
-| `-r, --repository NAME` | `add`, `apply`, `list`, `remove`, `git` | Repository to use. A unique prefix of the name is accepted |
+| `-r, --repository NAME` | `add`, `apply`, `list`, `rm`, `git` | Repository to use. A unique prefix of the name is accepted |
 | `-s, --status` | `list` | Print what applying would do to each path |
 | `--path` | `repository default`, `repository list` | Print paths instead of names |
 | `--force` | `add` | Take a path over from the repository that manages it |
@@ -143,7 +143,7 @@ say so rather than exiting silently.
   ```
 
 - A path inside a repository is refused, naming the path it is linked from,
-  which is the one `gog add` and `gog remove` mean.
+  which is the one `gog add` and `gog rm` mean.
 - Skipping the irregular entries lets a directory such as `~/.gnupg` be added
   while the agent sockets in it are left alone.
 - A file with more than one name is copied once per name. Git records contents
@@ -224,7 +224,7 @@ gog git add ~/.bashrc      # resolves to the repository's copy
 gog git log -- ~/.bashrc   # the same, after the separator
 ```
 
-### `gog remove`
+### `gog rm`
 
 - Restores each path as an ordinary file, then drops it from the repository and
   the index.

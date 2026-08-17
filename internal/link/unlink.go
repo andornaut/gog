@@ -28,7 +28,7 @@ func UnlinkDir(repoPath, intPath string) error {
 }
 
 // UnlinkFile replaces a symbolic link with the file that it linked to, and
-// reports success when there is no link of gog's to replace: `gog remove` means
+// reports success when there is no link of gog's to replace: `gog rm` means
 // the same thing whether its link is still there, was replaced with a file of
 // the user's, or was deleted, and the caller removes the repository's copy
 // either way.

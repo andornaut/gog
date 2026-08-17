@@ -231,8 +231,8 @@ var list = &cobra.Command{
 	},
 }
 
-var remove = &cobra.Command{
-	Use:                   "remove <paths>...",
+var rm = &cobra.Command{
+	Use:                   "rm <paths>...",
 	Short:                 "Remove files or directories from a repository",
 	Args:                  requirePaths,
 	DisableFlagsInUseLine: true,
@@ -335,7 +335,7 @@ func init() {
 	// DisableFlagParsing to pass arguments through. It is not registered on the
 	// root either: `gog -r NAME repository list` would then be accepted and
 	// ignored, since no `repository` subcommand selects a repository that way.
-	for _, c := range []*cobra.Command{add, apply, list, remove} {
+	for _, c := range []*cobra.Command{add, apply, list, rm} {
 		c.Flags().StringVarP(&repositoryFlag, "repository", "r", "", "name of repository")
 		if err := c.RegisterFlagCompletionFunc("repository", repositorycmd.CompleteNames); err != nil {
 			panic(err)
@@ -357,5 +357,5 @@ func init() {
 	// The generated completion command still works when it is not listed, and
 	// gog has too few commands to spend a line on it
 	Cmd.CompletionOptions.HiddenDefaultCmd = true
-	Cmd.AddCommand(add, apply, git_, list, remove, repositorycmd.Cmd)
+	Cmd.AddCommand(add, apply, git_, list, rm, repositorycmd.Cmd)
 }

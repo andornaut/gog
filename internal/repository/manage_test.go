@@ -333,7 +333,7 @@ func TestAsTyped(t *testing.T) {
 	}
 }
 
-// `gog remove` checks the whole batch before it restores anything
+// `gog rm` checks the whole batch before it restores anything
 func TestValidateTargetPaths(t *testing.T) {
 	repoPath, homeDir := newSandbox(t)
 	mine := filepath.Join(homeDir, ".bashrc")

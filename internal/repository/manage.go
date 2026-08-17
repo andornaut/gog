@@ -267,7 +267,7 @@ func RemovePaths(repoPath string, targetPaths []string) error {
 }
 
 // ValidateTargetPaths returns an error if any of the given paths is one gog
-// must not manage. `gog remove` checks the whole batch before it restores
+// must not manage. `gog rm` checks the whole batch before it restores
 // anything, so that an unusable path fails the command outright instead of
 // leaving the paths before it half-restored.
 func ValidateTargetPaths(targetPaths []string) error {

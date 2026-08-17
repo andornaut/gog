@@ -101,14 +101,14 @@ func newSandbox(t *testing.T) (repoPath, extPath string) {
 
 // The batch is checked before anything is restored, so that an unusable path
 // does not leave the paths before it half-removed
-func TestRemoveChecksTheBatchBeforeRestoringAnything(t *testing.T) {
+func TestRmChecksTheBatchBeforeRestoringAnything(t *testing.T) {
 	repoPath, extPath := newSandbox(t)
 	inRepository := filepath.Join(repoPath, repository.ContentDirName, "$HOME", ".bashrc")
 
-	err := remove.RunE(remove, []string{extPath, inRepository})
+	err := rm.RunE(rm, []string{extPath, inRepository})
 
 	if err == nil || !strings.Contains(err.Error(), "repository dots holds it") {
-		t.Fatalf("remove = %v, want the batch refused", err)
+		t.Fatalf("rm = %v, want the batch refused", err)
 	}
 	if target, readErr := os.Readlink(extPath); readErr != nil || target != inRepository {
 		t.Errorf("%s -> %q (%v), want the link left in place", extPath, target, readErr)
