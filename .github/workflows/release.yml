@@ -50,8 +50,8 @@ jobs:
   build-platform:
     runs-on: ubuntu-latest
     # Capped well under the six-hour default: nothing here runs longer than
-    # six minutes, so a job still going at thirty has hung rather than failed.
-    timeout-minutes: 30
+    # six minutes, so a job still going at fifteen has hung rather than failed.
+    timeout-minutes: 15
 
     # The platforms .goreleaser.yaml builds for a tag. macOS is Apple Silicon
     # only, for the reason given there. CGO_ENABLED=0 makes every one of these a
@@ -122,7 +122,7 @@ jobs:
     needs: build-platform
     if: always()
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
 
     steps:
       - name: Check that every platform built
@@ -131,7 +131,7 @@ jobs:
   goreleaser:
     needs: [build, test, attributions]
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
@@ -160,7 +160,7 @@ jobs:
   dev-release:
     needs: [build, test, attributions]
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: write
