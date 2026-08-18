@@ -60,6 +60,13 @@ jobs:
       - name: Verify dependencies
         run: go mod verify
 
+      # verify checks the downloaded modules against go.sum, and says nothing
+      # about whether go.mod still describes what the code imports: a dependency
+      # that became direct keeps its // indirect marker until someone runs tidy,
+      # and the next contributor to run it finds a dirty tree.
+      - name: The module file must be tidy
+        run: go mod tidy -diff
+
       - name: Build
         run: go build -v ./...
 
