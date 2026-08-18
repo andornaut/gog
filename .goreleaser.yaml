@@ -19,10 +19,13 @@ builds:
     main: ./main.go
     binary: gog
     # -trimpath keeps the build machine's absolute paths out of the binary, and
-    # -s -w drops the symbol table and DWARF. The dev build in release.yml
-    # passes the same pair, so a dev archive holds what a tagged one holds.
+    # -s -w drops the symbol table and DWARF. Declaring ldflags replaces
+    # goreleaser's defaults rather than adding to them, so the version stamp has
+    # to be restated here: without it a tagged binary reports the "dev" its
+    # source declares. The dev build in release.yml passes the same pair without
+    # the stamp, which is what makes a dev archive report dev.
     flags: [-trimpath]
-    ldflags: [-s -w]
+    ldflags: ['-s -w -X main.version={{.Version}}']
 
 archives:
   - formats: [tar.gz]

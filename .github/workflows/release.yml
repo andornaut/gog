@@ -83,8 +83,9 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      # The flags .goreleaser.yaml builds a tag with, so what a dev archive
-      # holds is what a tagged one holds.
+      # The flags .goreleaser.yaml builds a tag with, less the version stamp:
+      # everything about the binary matches a tagged one, and a dev archive is
+      # meant to report the "dev" its source declares rather than a version.
       - name: Build
         run: go build -ldflags="-s -w" -trimpath -o gog ./main.go
         env:
