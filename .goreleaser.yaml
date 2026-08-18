@@ -21,7 +21,7 @@ builds:
     # source declares. The dev build in release.yml passes the same pair without
     # the stamp, which is what makes a dev archive report dev.
     flags: [-trimpath]
-    ldflags: ['-s -w -X main.version={{.Version}}']
+    ldflags: ['-s -w -X github.com/andornaut/gog/internal/version.Version={{.Version}}']
 
 archives:
   - formats: [tar.gz]
