@@ -31,32 +31,36 @@ func TestTheUnstampedDefaultIsDev(t *testing.T) {
 	}
 }
 
-// isRelease is what decides whether an unstamped binary may claim a version, so
-// it has to reject everything the module system records that is not one.
-func TestIsReleaseAcceptsOnlyAReleasedVersion(t *testing.T) {
+// releaseVersion is what decides whether an unstamped binary may claim a
+// version, and what it claims. It has to reject everything the module system
+// records that is not a release, and to spell a release the way the stamp does:
+// the two halves reporting one release differently would make the version
+// depend on how the binary was installed.
+func TestReleaseVersionAcceptsOnlyAReleaseAndDropsThePrefix(t *testing.T) {
 	for _, tc := range []struct {
-		version string
-		want    bool
+		recorded string
+		want     string
 	}{
-		{"v1.3.4", true},
-		{"v0.0.0", true},
-		{"v10.20.30", true},
+		{"v1.3.4", "1.3.4"},
+		{"v0.0.0", "0.0.0"},
+		{"v10.20.30", "10.20.30"},
 		// A pseudo-version: `go install <module>@main` records one of these.
-		{"v1.3.5-0.20260819015529-2246f658d5ff", false},
+		{"v1.3.5-0.20260819015529-2246f658d5ff", ""},
 		// A build off a modified tree.
-		{"v1.3.4+dirty", false},
+		{"v1.3.4+dirty", ""},
 		// Built outside the module system.
-		{"(devel)", false},
-		{"", false},
-		{"dev", false},
-		{"1.3.4", false},
-		{"v1.3", false},
-		{"v1.3.4.5", false},
-		{"v1.3.x", false},
-		{"v1..4", false},
+		{"(devel)", ""},
+		{"", ""},
+		{"dev", ""},
+		{"1.3.4", ""},
+		{"v1.3", ""},
+		{"v1.3.4.5", ""},
+		{"v1.3.x", ""},
+		{"v1..4", ""},
+		{"v2.0.0+incompatible", ""},
 	} {
-		if got := isRelease(tc.version); got != tc.want {
-			t.Errorf("isRelease(%q) = %v, want %v", tc.version, got, tc.want)
+		if got := releaseVersion(tc.recorded); got != tc.want {
+			t.Errorf("releaseVersion(%q) = %q, want %q", tc.recorded, got, tc.want)
 		}
 	}
 }

@@ -32,30 +32,36 @@ func init() {
 			return
 		}
 	}
-	if isRelease(info.Main.Version) {
-		Version = info.Main.Version
+	if v := releaseVersion(info.Main.Version); v != "" {
+		Version = v
 	}
 }
 
-// isRelease reports whether the module system recorded a released version
-// rather than something derived from one. A pseudo-version carries a timestamp
-// and a revision, a build off a modified tree carries +dirty, and a module
-// built outside the module system reports "(devel)"; none of those names a
-// release, and a binary reporting one would be claiming to be something it is
-// not.
-func isRelease(v string) bool {
+// releaseVersion returns what to report for a version the module system
+// recorded, or "" where that version does not name a release. A pseudo-version
+// carries a timestamp and a revision, a build off a modified tree carries
+// +dirty, and a module built outside the module system reports "(devel)"; none
+// of those names a release, and a binary reporting one would be claiming to be
+// something it is not.
+//
+// The leading v is dropped so that both halves spell one release the same way:
+// the stamp is goreleaser's {{.Version}}, which is the tag without it, and the
+// module system records the tag with it. Reporting 1.3.4 from the published
+// archive and v1.3.4 from `go install` would make the version depend on how the
+// binary arrived.
+func releaseVersion(v string) string {
 	digits, found := strings.CutPrefix(v, "v")
 	if !found {
-		return false
+		return ""
 	}
 	parts := strings.Split(digits, ".")
 	if len(parts) != 3 {
-		return false
+		return ""
 	}
 	for _, part := range parts {
 		if part == "" || strings.TrimLeft(part, "0123456789") != "" {
-			return false
+			return ""
 		}
 	}
-	return true
+	return digits
 }
