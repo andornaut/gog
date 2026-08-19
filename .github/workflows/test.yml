@@ -131,6 +131,20 @@ jobs:
           # is caught either way.
           verify: true
 
+      # The release config, checked here rather than at the tag. goreleaser
+      # validates it as `release` starts, which is after the tag is pushed and
+      # protect-release-tags has no bypass to take one back with. Held to the
+      # same version constraint as the release job, since a check run against a
+      # different goreleaser says nothing about the one that will publish, and
+      # floating is the point: a deprecation lands on a push here rather than
+      # on the one run that cannot be repeated.
+      - name: Check the release config
+        uses: goreleaser/goreleaser-action@v7.2.3
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: check
+
       # The action bundles markdownlint-cli2, so its own tag is the tool pin and
       # Dependabot proposes the bump through the github-actions ecosystem. It
       # fetches nothing at run time, so a slow host cannot turn this red.
