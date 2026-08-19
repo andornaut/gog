@@ -6,33 +6,27 @@ TARGET    := gog
 # The flags .goreleaser.yaml builds a tag with, so a binary built here is the
 # binary a release ships rather than an unstripped one carrying local paths.
 LDFLAGS   := -s -w
-PLATFORMS := darwin freebsd linux
 
-.PHONY: $(PLATFORMS) $(TARGET) all build clean coverage fmt install lint release test uninstall
+.PHONY: $(TARGET) all build clean coverage fmt install lint test uninstall
 
 all: $(TARGET)
 
 build: $(TARGET)
 
-# CGO_ENABLED=0 on each recipe rather than exported for the file, because the
+# CGO_ENABLED=0 on the recipe rather than exported for the file, because the
 # test target runs with -race, which needs cgo. Nothing here imports os/user or
 # net outside a test, so this only settles how the binary links.
-$(PLATFORMS):
-	CGO_ENABLED=0 GOARCH=amd64 GOOS=$@ go build -ldflags="$(LDFLAGS)" -trimpath -o "$(DISTDIR)/$(TARGET)-$@-amd64"
-
 $(TARGET):
 	CGO_ENABLED=0 go build -ldflags="$(LDFLAGS)" -trimpath -o $@
 
 clean:
 	go clean
-	rm -f $(DISTDIR)/$(TARGET)*
+	rm -rf $(DISTDIR)
 	rm -f coverage.txt
 
 install: $(TARGET)
 	sudo mkdir -p "$(DESTDIR)$(BINPREFIX)"
 	sudo cp -pf $(TARGET) "$(DESTDIR)$(BINPREFIX)/"
-
-release: clean $(PLATFORMS)
 
 test:
 	go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
