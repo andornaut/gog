@@ -8,7 +8,7 @@ TARGET    := gog
 LDFLAGS   := -s -w
 PLATFORMS := darwin freebsd linux
 
-.PHONY: $(PLATFORMS) $(TARGET) all build clean coverage coverage-html fmt install lint release test uninstall
+.PHONY: $(PLATFORMS) $(TARGET) all build clean coverage fmt install lint release test uninstall
 
 all: $(TARGET)
 
@@ -26,7 +26,7 @@ $(TARGET):
 clean:
 	go clean
 	rm -f $(DISTDIR)/$(TARGET)*
-	rm -f coverage.txt coverage.html
+	rm -f coverage.txt
 
 install: $(TARGET)
 	sudo mkdir -p "$(DESTDIR)$(BINPREFIX)"
@@ -39,10 +39,6 @@ test:
 
 coverage: test
 	go tool cover -func=coverage.txt
-
-coverage-html: test
-	go tool cover -html=coverage.txt -o coverage.html
-	@echo "Coverage report generated: coverage.html"
 
 fmt:
 	golangci-lint fmt

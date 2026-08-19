@@ -322,7 +322,7 @@ release from the same builds.
 | --- | --- |
 | `make build` | Build `./gog` |
 | `make test` | Run the tests with the race detector and coverage |
-| `make coverage`, `make coverage-html` | Report coverage |
+| `make coverage` | Report coverage |
 | `make lint` | Run golangci-lint |
 | `make fmt` | Rewrite the source with golangci-lint's formatter |
 | `make install`, `make uninstall` | Copy to `/usr/local/bin` and remove it. Both use sudo |
