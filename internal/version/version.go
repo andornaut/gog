@@ -46,8 +46,8 @@ func init() {
 //
 // The leading v is dropped so that both halves spell one release the same way:
 // the stamp is goreleaser's {{.Version}}, which is the tag without it, and the
-// module system records the tag with it. Reporting 1.3.4 from the published
-// archive and v1.3.4 from `go install` would make the version depend on how the
+// module system records the tag with it. Reporting 1.2.3 from the published
+// archive and v1.2.3 from `go install` would make the version depend on how the
 // binary arrived.
 func releaseVersion(v string) string {
 	digits, found := strings.CutPrefix(v, "v")
