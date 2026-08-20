@@ -70,6 +70,11 @@ linters:
       # a map key and elsewhere can fall under min-occurrences and go
       # unreported.
       ignore-map-keys: true
+      # Fixture literals repeat by nature. goconst's own setting rather than a
+      # path match, and it costs nothing: test and non-test files are counted
+      # as separate populations, so a production string never had its count
+      # topped up by a test one to begin with.
+      ignore-tests: true
     gomodguard_v2:
       # A module allowlist by host rather than by name, so a version bump is
       # never a config change and a dependency from somewhere new is a decision
@@ -114,11 +119,10 @@ linters:
   exclusions:
     generated: lax
     rules:
-      # Tests get a longer leash than the code they exercise, but only where the
-      # finding is about being a test: fixture literals repeat by nature
-      # (goconst) and helpers take parameters only some cases use (unparam).
+      # Helpers in tests take parameters only some cases use. goconst is told
+      # the same thing by ignore-tests above, which is its own setting rather
+      # than a path match; unparam has no equivalent, so it stays here.
       - linters:
-          - goconst
           - unparam
         path: _test\.go
       # gosec by rule rather than wholesale, so everything it checks still
