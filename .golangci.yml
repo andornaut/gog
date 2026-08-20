@@ -72,10 +72,12 @@ linters:
     exhaustive:
       default-signifies-exhaustive: true
     goconst:
-      # A map key is where a wire format gets spelled: the fields of a record,
-      # a JSON-RPC envelope, a JSON Schema. The literal around it already names
-      # it, and a constant would move the spelling away from where it is read.
-      # Everything else goconst looks at still applies.
+      # A map key is where a wire format gets spelled, and the literal around it
+      # already names it, so a constant would move the spelling away from where
+      # it is read. This drops map-key occurrences from the count rather than
+      # only suppressing a report positioned at one, so a string spelled both as
+      # a map key and elsewhere can fall under min-occurrences and go
+      # unreported.
       ignore-map-keys: true
     gosec:
       excludes:
