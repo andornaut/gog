@@ -13,9 +13,11 @@ linters:
     - whitespace
     # Bans `if err := f(); err != nil`, which is the error idiom used here.
     - noinlineerr
-    # Superseded by gomodguard_v2, which `default: all` enables in its place.
-    # Named here only to stop the deprecation warning it prints otherwise.
+    # Import allowlist, same reason as depguard below. Both names: the
+    # deprecated one to stop the warning it prints, the successor because
+    # `default: all` would otherwise enable it in its place.
     - gomodguard
+    - gomodguard_v2
     # Every struct literal must set every field, including its zero values. Both
     # names: `default: all` enables what a rename leaves unmatched, so a stale
     # entry here reads as disabled and is not.
@@ -56,16 +58,6 @@ linters:
     # init() is how cobra registers commands and their flags, and the ones here
     # say in a comment why a flag is registered where it is.
     - gochecknoinits
-  enable:
-    - bodyclose
-    - copyloopvar
-    - goconst
-    - gocritic
-    - gosec
-    - misspell
-    - revive
-    - unconvert
-    - unparam
   settings:
     # A default clause handles the cases not named, which is how these switches
     # are written; without this the linter wants every case spelled out anyway.
