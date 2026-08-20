@@ -13,11 +13,9 @@ linters:
     - whitespace
     # Bans `if err := f(); err != nil`, which is the error idiom used here.
     - noinlineerr
-    # Import allowlist, same reason as depguard below. Both names: the
-    # deprecated one to stop the warning it prints, the successor because
-    # `default: all` would otherwise enable it in its place.
+    # Deprecated in favour of gomodguard_v2, which is enabled and configured
+    # below. Named here only to stop the warning it prints otherwise.
     - gomodguard
-    - gomodguard_v2
     # Every struct literal must set every field, including its zero values. Both
     # names: `default: all` enables what a rename leaves unmatched, so a stale
     # entry here reads as disabled and is not.
@@ -26,7 +24,8 @@ linters:
     # Minimum identifier length, and a ban on named returns.
     - varnamelen
     - nonamedreturns
-    # Import allowlist. Nothing here vendors a dependency worth policing that way.
+    # Package-level import allowlist. gomodguard_v2 below polices the same
+    # thing a level up, at the module a dependency actually enters by.
     - depguard
     # Every returned error wrapped, and every error a declared sentinel.
     - wrapcheck
@@ -71,6 +70,22 @@ linters:
       # a map key and elsewhere can fall under min-occurrences and go
       # unreported.
       ignore-map-keys: true
+    gomodguard_v2:
+      # A module allowlist by host rather than by name, so a version bump is
+      # never a config change and a dependency from somewhere new is a decision
+      # taken rather than a `go get` that happened to work. filippo.io and
+      # go.yaml.in are here because faramir holds age and yaml; the other three
+      # repositories reach neither, and one shared list is what keeps this file
+      # the same in all four.
+      allowed:
+        - module: github.com/
+          match-type: prefix
+        - module: golang.org/
+          match-type: prefix
+        - module: filippo.io/
+          match-type: prefix
+        - module: go.yaml.in/
+          match-type: prefix
     gosec:
       excludes:
         # Flags a filesystem call in a walk callback because the path the walk
