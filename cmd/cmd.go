@@ -109,12 +109,10 @@ const (
 // ExitCode returns the status that gog should exit with for the given error.
 // Only `gog git` reports a status of its own.
 func ExitCode(err error) int {
-	var e *exitCodeError
-	if errors.As(err, &e) {
+	if e, ok := errors.AsType[*exitCodeError](err); ok {
 		return e.code
 	}
-	var u cli.UsageError
-	if errors.As(err, &u) {
+	if _, ok := errors.AsType[cli.UsageError](err); ok {
 		return exitUsage
 	}
 	return exitFailed
@@ -192,8 +190,7 @@ var git_ = &cobra.Command{
 			return err
 		}
 		err = git.Run(repoPath, resolveGitPaths(repoPath, args)...)
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
+		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 			// git has already explained itself on stderr, so restating the
 			// wait status here would only add noise above it
 			c.SilenceErrors = true

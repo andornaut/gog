@@ -13,8 +13,14 @@ linters:
     - whitespace
     # Bans `if err := f(); err != nil`, which is the error idiom used here.
     - noinlineerr
-    # Every struct literal must set every field, including its zero values.
+    # Superseded by gomodguard_v2, which `default: all` enables in its place.
+    # Named here only to stop the deprecation warning it prints otherwise.
+    - gomodguard
+    # Every struct literal must set every field, including its zero values. Both
+    # names: `default: all` enables what a rename leaves unmatched, so a stale
+    # entry here reads as disabled and is not.
     - exhaustruct
+    - exhaustruct_v5
     # Minimum identifier length, and a ban on named returns.
     - varnamelen
     - nonamedreturns
@@ -67,6 +73,14 @@ linters:
       default-signifies-exhaustive: true
     gosec:
       excludes:
+        # Flags a filesystem call in a walk callback because the path the walk
+        # handed the callback may have been replaced since it was read. The two
+        # calls here do not touch that path: the walk covers the repository, and
+        # they act on the external path derived from it, which the walk never
+        # visited. The remedy the rule names does not apply either, because gog
+        # links into the whole filesystem rather than one subtree, so there is
+        # no root to scope an os.Root to.
+        - G122 # filesystem operation in a walk callback
         - G204 # subprocess launched with variable - git commands
         - G301 # directory permissions 0755 are standard and appropriate
         - G304 # file operations with user paths are the tool's purpose
