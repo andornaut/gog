@@ -71,6 +71,12 @@ linters:
     # are written; without this the linter wants every case spelled out anyway.
     exhaustive:
       default-signifies-exhaustive: true
+    goconst:
+      # A map key is where a wire format gets spelled: the fields of a record,
+      # a JSON-RPC envelope, a JSON Schema. The literal around it already names
+      # it, and a constant would move the spelling away from where it is read.
+      # Everything else goconst looks at still applies.
+      ignore-map-keys: true
     gosec:
       excludes:
         # Flags a filesystem call in a walk callback because the path the walk
