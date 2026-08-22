@@ -34,7 +34,7 @@ sudo install -m 755 gog /usr/local/bin/gog
 
 ### Compile from source
 
-Requires [Go](https://golang.org/doc/install) and
+Requires [Go](https://go.dev/doc/install) and
 [Make](https://www.gnu.org/software/make/).
 
 ```bash
