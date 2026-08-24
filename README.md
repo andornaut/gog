@@ -308,10 +308,12 @@ export GOG_IGNORE_FILES_REGEX='^secrets\.env$'  # one file, by name
 The expression is matched against paths relative to `root/`, so `^secrets\.env$`
 names a file at the top of the linked tree. It is read only by the commands that
 link: `add`, `apply` and `list`. `gog add` still copies a matching path into the
-repository; the expression decides what is linked and staged, so the copy is left
-untracked. It stays in the repository's working tree, where a later `git add .`
-would commit it, so a path named for its contents belongs in the repository's
-`.gitignore` as well.
+repository; the expression decides what is linked and staged, so gog does not
+stage the copy. It stays in the repository's working tree, where a later
+`git add .` stages it and the next commit records it, so a path named for its
+contents belongs in the repository's `.gitignore` as well. A path that was
+already tracked when the expression started matching it stays tracked, and
+`git commit -a` records the copy that overwrote it.
 
 ## Releasing
 
