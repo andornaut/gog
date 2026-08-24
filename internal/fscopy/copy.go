@@ -192,13 +192,10 @@ func copyDir(src, dst, dstRoot string, skipFunc SkipFunc, report ReportFunc, ens
 }
 
 // FileKind names what a mode describes, for reporting a path that gog cannot
-// manage. Only the kinds that can be met in a home directory are distinguished.
+// manage. A directory and a symbolic link never reach here: gog manages
+// directories, and a link is reported with the path to add in its place.
 func FileKind(mode os.FileMode) string {
 	switch {
-	case mode.IsDir():
-		return "directory"
-	case mode&os.ModeSymlink != 0:
-		return "symbolic link"
 	case mode&os.ModeNamedPipe != 0:
 		return "named pipe"
 	case mode&os.ModeSocket != 0:
