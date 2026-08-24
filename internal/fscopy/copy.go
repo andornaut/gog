@@ -192,8 +192,9 @@ func copyDir(src, dst, dstRoot string, skipFunc SkipFunc, report ReportFunc, ens
 }
 
 // FileKind names what a mode describes, for reporting a path that gog cannot
-// manage. A directory and a symbolic link never reach here: gog manages
-// directories, and a link is reported with the path to add in its place.
+// manage. A directory, a symbolic link and a regular file never reach here: gog
+// manages files and directories, and a link is reported with the path to add in
+// its place.
 func FileKind(mode os.FileMode) string {
 	switch {
 	case mode&os.ModeNamedPipe != 0:
@@ -204,8 +205,6 @@ func FileKind(mode os.FileMode) string {
 		return "character device"
 	case mode&os.ModeDevice != 0:
 		return "block device"
-	case mode.IsRegular():
-		return "file"
 	}
 	return "irregular file"
 }
