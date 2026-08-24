@@ -1,10 +1,14 @@
 package repositorycmd
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 
 	"github.com/andornaut/gog/internal/gittest"
 	"github.com/andornaut/gog/internal/repository"
@@ -88,6 +92,10 @@ func newSandbox(t *testing.T) (repoPath, extPath string) {
 	gittest.Run(t, repoPath, "add", "-A")
 	gittest.Run(t, repoPath, "commit", "-q", "-m", "init")
 
+	// The repository package reads this. Cleared here, so a host that has gog
+	// configured for its own use does not decide which repository is default.
+	t.Setenv("GOG_DEFAULT_REPOSITORY_NAME", "")
+
 	originalBase := repository.BaseDir
 	repository.BaseDir = baseDir
 	originalHome := repository.SetHomeDirForTest(homeDir)
@@ -114,6 +122,74 @@ func TestRmRefusesBeforeItRestoresAnything(t *testing.T) {
 	}
 	if _, statErr := os.Stat(repoPath); statErr != nil {
 		t.Errorf("the repository was deleted although the removal was refused: %v", statErr)
+	}
+}
+
+// Deleting cannot be undone, so the name is given in full here rather than
+// resolved from a prefix as the commands that only read a repository do
+func TestRmRefusesAPrefix(t *testing.T) {
+	repoPath, _ := newSandbox(t)
+	isForced = true
+	t.Cleanup(func() { isForced = false })
+
+	err := rm.RunE(rm, []string{"dot"})
+
+	if err == nil {
+		t.Fatal("rm resolved a prefix")
+	}
+	if _, statErr := os.Stat(repoPath); statErr != nil {
+		t.Errorf("the repository was deleted although the name was a prefix: %v", statErr)
+	}
+}
+
+// setFlag sets one of a command's flags for the duration of the test, so that
+// the flag a command registered decides what its run reads
+func setFlag(t *testing.T, c *cobra.Command, name string, value bool) {
+	t.Helper()
+	set := func(v bool) {
+		if err := c.Flags().Set(name, strconv.FormatBool(v)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	set(value)
+	t.Cleanup(func() { set(false) })
+}
+
+// `list` and `default` print what a script reads, on standard output, and
+// --path chooses between the repository's name and its path
+func TestListAndDefaultPrintNamesOrPaths(t *testing.T) {
+	tests := []struct {
+		name string
+		cmd  *cobra.Command
+		path bool
+	}{
+		{name: "the repositories by name", cmd: list},
+		{name: "the repositories by path", cmd: list, path: true},
+		{name: "the default by name", cmd: getDefault},
+		{name: "the default by path", cmd: getDefault, path: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repoPath, _ := newSandbox(t)
+			// Set through the flag rather than the variable behind it, so that
+			// each command is held to the one it registered
+			setFlag(t, tt.cmd, "path", tt.path)
+			var out bytes.Buffer
+			tt.cmd.SetOut(&out)
+			t.Cleanup(func() { tt.cmd.SetOut(nil) })
+
+			if err := tt.cmd.RunE(tt.cmd, nil); err != nil {
+				t.Fatalf("%s = %v", tt.cmd.Name(), err)
+			}
+
+			want := "dots\n"
+			if tt.path {
+				want = repoPath + "\n"
+			}
+			if got := out.String(); got != want {
+				t.Errorf("%s printed %q, want %q", tt.cmd.Name(), got, want)
+			}
+		})
 	}
 }
 

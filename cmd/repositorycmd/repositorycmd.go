@@ -23,9 +23,12 @@ var Cmd = &cobra.Command{
 	RunE: func(c *cobra.Command, args []string) error { return nil },
 }
 
+// --path belongs to two commands, and each keeps its own variable so that
+// neither can be handed the other's flag
 var (
-	isPath   bool
-	isForced bool
+	isDefaultPath bool
+	isListPath    bool
+	isForced      bool
 )
 
 // CompleteNames completes an argument or flag value that names a repository
@@ -70,10 +73,10 @@ var getDefault = &cobra.Command{
 			return err
 		}
 
-		if isPath {
-			fmt.Println(repoPath)
+		if isDefaultPath {
+			_, _ = fmt.Fprintln(c.OutOrStdout(), repoPath)
 		} else {
-			fmt.Println(filepath.Base(repoPath))
+			_, _ = fmt.Fprintln(c.OutOrStdout(), filepath.Base(repoPath))
 		}
 		return nil
 	},
@@ -90,10 +93,10 @@ var list = &cobra.Command{
 			return err
 		}
 		for _, msg := range names {
-			if isPath {
+			if isListPath {
 				msg = filepath.Join(repository.BaseDir, msg)
 			}
-			fmt.Println(msg)
+			_, _ = fmt.Fprintln(c.OutOrStdout(), msg)
 		}
 		return nil
 	},
@@ -120,14 +123,6 @@ var rm = &cobra.Command{
 					filepath.Base(repoPath), strings.Join(unsaved, " and "))
 			}
 		}
-		// Content at the top level converts to no external path, so nothing here
-		// can restore what it links: what gog links is decided from the content
-		// directory alone. Deleting the repository would take those files with
-		// it and leave links to nothing, so the move is asked for first.
-		//
-		// --force is the answer for a repository whose links are already gone or
-		// not wanted back, and it says what it could not restore rather than
-		// passing over it.
 		// Restore what the repository holds before deleting it, so that the
 		// user is left with their files rather than with links to nothing
 		if err := link.UnlinkDir(repoPath, repository.ContentPath(repoPath)); err != nil {
@@ -165,8 +160,8 @@ func init() {
 	// --path and --force are spelled out: -p is the password file and -f is
 	// --full in mrs, and a letter that means two things across the tools is a
 	// trap for the person typing, not for the parser.
-	getDefault.Flags().BoolVar(&isPath, "path", false, "print the path instead of the name")
-	list.Flags().BoolVar(&isPath, "path", false, "print paths instead of names")
+	getDefault.Flags().BoolVar(&isDefaultPath, "path", false, "print the path instead of the name")
+	list.Flags().BoolVar(&isListPath, "path", false, "print paths instead of names")
 	rm.Flags().BoolVar(&isForced, "force", false, "remove even if the repository holds work that no remote has")
 	Cmd.AddCommand(add, rm, getDefault, list)
 }

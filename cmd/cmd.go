@@ -219,10 +219,10 @@ var list = &cobra.Command{
 		}
 		for _, entry := range entries {
 			if isStatus {
-				fmt.Printf("%-8s %s\n", entry.State, entry.ExternalPath)
+				_, _ = fmt.Fprintf(c.OutOrStdout(), "%-8s %s\n", entry.State, entry.ExternalPath)
 				continue
 			}
-			fmt.Println(entry.ExternalPath)
+			_, _ = fmt.Fprintln(c.OutOrStdout(), entry.ExternalPath)
 		}
 		return nil
 	},
