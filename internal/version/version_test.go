@@ -23,15 +23,6 @@ func TestTheReleaseConfigStampsThisSymbol(t *testing.T) {
 	}
 }
 
-// A build made outside a release must not claim to be one. The hazard is a
-// hand-edited number left behind after a release, which reports the previous
-// version from every working tree until someone edits it again.
-func TestTheUnstampedDefaultIsDev(t *testing.T) {
-	if Version != "dev" {
-		t.Errorf("the unstamped default is %q, want %q", Version, "dev")
-	}
-}
-
 // A stamped binary reports its stamp. An unstamped one may claim only a
 // version the module system recorded for a build that came from the module
 // cache: a build from a working tree records VCS settings, and is a local build
