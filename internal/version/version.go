@@ -11,30 +11,37 @@ import (
 // Version is the build version reported by the version command. A var rather
 // than a const because the linker stamps it: -X takes a variable and silently
 // does nothing to a constant. The ldflags in .goreleaser.yaml set it for a
-// tagged build, and init below decides what an unstamped one reports.
+// tagged build, and reported below decides what an unstamped one says.
 var Version = "dev"
 
+func init() {
+	// The second return value is dropped: no build info is a nil *BuildInfo,
+	// which reported already has to answer for
+	info, _ := debug.ReadBuildInfo()
+	Version = reported(Version, info)
+}
+
+// reported returns the version a binary should report, given the one the linker
+// stamped and what the module system recorded.
+//
 // A binary the linker did not stamp can still know what it was built from:
 // `go install <module>@v1.2.3` records the version and records no VCS settings,
 // having built from the module cache rather than from a checkout. A build made
 // from a working tree records vcs.revision, and is a local build whatever the
 // tree is sitting on, so it keeps "dev" rather than claiming the tag under it.
-func init() {
-	if Version != "dev" {
-		return
-	}
-	info, ok := debug.ReadBuildInfo()
-	if !ok {
-		return
+func reported(stamped string, info *debug.BuildInfo) string {
+	if stamped != "dev" || info == nil {
+		return stamped
 	}
 	for _, setting := range info.Settings {
 		if strings.HasPrefix(setting.Key, "vcs") {
-			return
+			return stamped
 		}
 	}
 	if v := releaseVersion(info.Main.Version); v != "" {
-		Version = v
+		return v
 	}
+	return stamped
 }
 
 // releaseVersion returns what to report for a version the module system

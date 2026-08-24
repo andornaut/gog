@@ -2,6 +2,7 @@ package version
 
 import (
 	"os"
+	"runtime/debug"
 	"strings"
 	"testing"
 )
@@ -28,6 +29,43 @@ func TestTheReleaseConfigStampsThisSymbol(t *testing.T) {
 func TestTheUnstampedDefaultIsDev(t *testing.T) {
 	if Version != "dev" {
 		t.Errorf("the unstamped default is %q, want %q", Version, "dev")
+	}
+}
+
+// A stamped binary reports its stamp. An unstamped one may claim only a
+// version the module system recorded for a build that came from the module
+// cache: a build from a working tree records VCS settings, and is a local build
+// whatever tag the tree is sitting on.
+func TestReported(t *testing.T) {
+	fromCache := &debug.BuildInfo{Main: debug.Module{Version: "v1.3.4"}}
+	fromWorkingTree := &debug.BuildInfo{
+		Main:     debug.Module{Version: "v1.3.4"},
+		Settings: []debug.BuildSetting{{Key: "vcs.revision", Value: "2246f658d5ff"}},
+	}
+
+	tests := []struct {
+		name    string
+		stamped string
+		info    *debug.BuildInfo
+		want    string
+	}{
+		{name: "the stamp is kept", stamped: "1.2.3", info: fromCache, want: "1.2.3"},
+		{name: "a module cache build reports what was recorded", stamped: "dev", info: fromCache, want: "1.3.4"},
+		{name: "a working tree build stays dev", stamped: "dev", info: fromWorkingTree, want: "dev"},
+		{
+			name:    "a recorded version that names no release stays dev",
+			stamped: "dev",
+			info:    &debug.BuildInfo{Main: debug.Module{Version: "(devel)"}},
+			want:    "dev",
+		},
+		{name: "no build info at all stays dev", stamped: "dev", want: "dev"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := reported(tt.stamped, tt.info); got != tt.want {
+				t.Errorf("reported(%q) = %q, want %q", tt.stamped, got, tt.want)
+			}
+		})
 	}
 }
 
