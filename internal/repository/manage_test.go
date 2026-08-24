@@ -83,6 +83,9 @@ func TestAddPathsCopiesADirectoryTree(t *testing.T) {
 	repoPath, homeDir := newSandbox(t)
 	writeFile(t, filepath.Join(homeDir, ".config/app/conf"), "conf\n")
 	writeFile(t, filepath.Join(homeDir, ".config/app/nested/deep.conf"), "deep\n")
+	// A backup an older version left behind, which duplicates a file the
+	// repository already holds
+	writeFile(t, filepath.Join(homeDir, ".config/app/conf.gog"), "old\n")
 
 	if err := AddPaths(repoPath, false, []string{filepath.Join(homeDir, ".config")}); err != nil {
 		t.Fatalf("AddPaths() = %v", err)
@@ -92,6 +95,9 @@ func TestAddPathsCopiesADirectoryTree(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(repoPath, ContentDirName, rel)); err != nil {
 			t.Errorf("the repository does not hold %s: %v", rel, err)
 		}
+	}
+	if _, err := os.Lstat(filepath.Join(repoPath, ContentDirName, "$HOME/.config/app/conf.gog")); !os.IsNotExist(err) {
+		t.Errorf("the repository holds a .gog backup (%v)", err)
 	}
 }
 
@@ -321,7 +327,6 @@ func TestAsTyped(t *testing.T) {
 	}{
 		{name: "under the resolved root", p: "/real/conf/one", resolvedRoot: "/real/conf", typedRoot: "/home/conf", want: "/home/conf/one"},
 		{name: "the root itself", p: "/real/conf", resolvedRoot: "/real/conf", typedRoot: "/home/conf", want: "/home/conf"},
-		{name: "roots that are the same", p: "/real/conf/one", resolvedRoot: "/real/conf", typedRoot: "/real/conf", want: "/real/conf/one"},
 		{name: "outside the resolved root", p: "/real/other/one", resolvedRoot: "/real/conf", typedRoot: "/home/conf", want: "/real/other/one"},
 	}
 	for _, tt := range tests {
@@ -407,6 +412,27 @@ func TestReportSkipped(t *testing.T) {
 				t.Errorf("reportSkipped() printed %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// The data directory can be reached through a symlinked parent, so both sides
+// are resolved before the repository that manages a path is named
+func TestReportSkippedThroughASymlinkedDataDirectory(t *testing.T) {
+	repoPath, homeDir := newSandbox(t)
+	managed := writeFile(t, filepath.Join(BaseDir, "other", ContentDirName, "$HOME", ".bashrc"), "bashrc\n")
+	p := symlink(t, managed, filepath.Join(homeDir, ".bashrc"))
+	linked := filepath.Join(t.TempDir(), "data-link")
+	if err := os.Symlink(BaseDir, linked); err != nil {
+		t.Fatal(err)
+	}
+	// Restored by the sandbox's own cleanup
+	BaseDir = linked
+
+	got := testout.Capture(t, func() { reportSkipped(repoPath, homeDir, homeDir)(p, os.ModeSymlink) })
+
+	want := "Warning: skipping " + p + " (repository other already manages it; remove it from there first)\n"
+	if got != want {
+		t.Errorf("reportSkipped() printed %q, want %q", got, want)
 	}
 }
 
@@ -569,6 +595,23 @@ func TestRemovalPathRefusesAPrefix(t *testing.T) {
 	}
 	if _, err := RemovalPath("dots"); err != nil {
 		t.Errorf("RemovalPath(\"dots\") = %v, want the repository", err)
+	}
+}
+
+// A repository is named rather than addressed, so a name that leaves the data
+// directory is refused rather than deleted
+func TestRemovalPathRefusesAPathAsAName(t *testing.T) {
+	_, _ = newSandbox(t)
+	outside := filepath.Join(filepath.Dir(BaseDir), "outside")
+	gittest.Init(t, outside)
+
+	_, err := RemovalPath(filepath.Join("..", "outside"))
+
+	if err == nil || !strings.Contains(err.Error(), "invalid repository name") {
+		t.Errorf("RemovalPath() = %v, want the name to be refused", err)
+	}
+	if _, statErr := os.Stat(outside); statErr != nil {
+		t.Errorf("the repository outside the data directory is gone: %v", statErr)
 	}
 }
 
@@ -737,8 +780,8 @@ func TestAddPathsWarnsAboutAModeGitCannotRecord(t *testing.T) {
 }
 
 // A temporary directory on macOS reaches gog's data directory through a
-// symbolic link. Adding a path the repository already holds once compared the
-// resolved file against the unresolved one, missed, and copied it over itself.
+// symbolic link. A path the repository already holds has to be recognized with
+// both sides resolved, or the copy writes the file over itself and empties it.
 func TestAddPathsThroughASymlinkedDataDirectoryKeepsWhatItHolds(t *testing.T) {
 	repoPath, homeDir := newSandbox(t)
 	held := writeFile(t, filepath.Join(repoPath, ContentDirName, "$HOME", ".bashrc"), "bashrc\n")

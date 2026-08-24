@@ -159,8 +159,12 @@ func TestDirFailsWhenTheSourceIsNotADirectory(t *testing.T) {
 	root := t.TempDir()
 	src := write(t, filepath.Join(root, "file"), "x\n", 0644)
 
-	if err := Dir(src, filepath.Join(root, "dst"), copyNothing, reportNothing); err == nil {
-		t.Error("Dir() reported success for a source that is not a directory")
+	err := Dir(src, filepath.Join(root, "dst"), copyNothing, reportNothing)
+
+	// Named as the wrong kind of source rather than as a directory that could
+	// not be read, which is what reading it as one would report
+	if err == nil || !strings.Contains(err.Error(), "must be a directory") {
+		t.Errorf("Dir() = %v, want a failure naming the source's kind", err)
 	}
 }
 

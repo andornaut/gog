@@ -55,6 +55,24 @@ func TestListLeavesOutWhatIsNeverLinked(t *testing.T) {
 	}
 }
 
+// A repository has no content directory until its first `gog add`, so listing
+// one is not a failure
+func TestListOnARepositoryWithNoContentDirectory(t *testing.T) {
+	repoPath, _ := newSandbox(t)
+	if err := os.WriteFile(filepath.Join(repoPath, "README.md"), []byte("readme"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, err := List(repoPath)
+
+	if err != nil {
+		t.Fatalf("List() = %v", err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("List() = %v, want nothing", externalPaths(entries))
+	}
+}
+
 // A path gog cannot examine is a conflict rather than a missing one: applying
 // would report it and leave it alone rather than link it
 func TestListStateOfAPathItCannotExamine(t *testing.T) {

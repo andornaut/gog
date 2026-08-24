@@ -131,6 +131,17 @@ func TestUnlinkDirRestoresEveryFileInTheTree(t *testing.T) {
 	}
 }
 
+// A repository has no content directory until its first `gog add`, so there is
+// nothing to restore rather than a tree that could not be walked. `gog
+// repository rm` restores what a repository holds before deleting it.
+func TestUnlinkDirOnARepositoryWithNoContentDirectory(t *testing.T) {
+	repoPath, _ := newSandbox(t)
+
+	if err := UnlinkDir(repoPath, repository.ContentPath(repoPath)); err != nil {
+		t.Errorf("UnlinkDir() = %v", err)
+	}
+}
+
 // Unlink takes paths as they are named outside the repository, and hands each
 // to UnlinkDir or UnlinkFile by what the repository holds at it
 func TestUnlinkDispatchesOnWhatTheRepositoryHolds(t *testing.T) {

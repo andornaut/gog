@@ -51,6 +51,16 @@ func setupResolveGitPaths(t *testing.T) (repoPath, linkPath string) {
 	if err := os.WriteFile(filepath.Join(home, "outside.conf"), []byte("contents\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
+	// A link named after a subcommand whose operands are pathspecs, so that a
+	// first argument left alone can be told from one that was converted. Its
+	// name differs from the file it links to for the same reason.
+	addPath := filepath.Join(repoPath, "add-target")
+	if err := os.WriteFile(addPath, []byte("contents\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(addPath, filepath.Join(home, "add")); err != nil {
+		t.Fatal(err)
+	}
 	t.Chdir(home)
 	return repoPath, linkPath
 }
@@ -84,24 +94,27 @@ func TestResolveGitPaths(t *testing.T) {
 			want: []string{"add", "--force", "tracked"},
 		},
 		{
+			// Named absolutely, here and below, or a converted argument would be
+			// indistinguishable from one that was passed through
 			name: "operand of any other subcommand is passed through",
-			args: []string{"branch", "tracked"},
-			want: []string{"branch", "tracked"},
+			args: []string{"branch", linkPath},
+			want: []string{"branch", linkPath},
 		},
 		{
 			name: "value of a flag is passed through",
-			args: []string{"commit", "-m", "tracked"},
-			want: []string{"commit", "-m", "tracked"},
+			args: []string{"commit", "-m", linkPath},
+			want: []string{"commit", "-m", linkPath},
 		},
 		{
-			name: "subcommand is passed through",
-			args: []string{"tracked"},
-			want: []string{"tracked"},
+			// The first argument is the subcommand even when it names a path
+			name: "the subcommand itself is passed through",
+			args: []string{"add"},
+			want: []string{"add"},
 		},
 		{
-			name: "nothing before a separator is resolved without a pathspec subcommand",
-			args: []string{"checkout", "tracked", "--", "tracked"},
-			want: []string{"checkout", "tracked", "--", "tracked"},
+			name: "without a pathspec subcommand only what follows a separator is resolved",
+			args: []string{"checkout", linkPath, "--", linkPath},
+			want: []string{"checkout", linkPath, "--", "tracked"},
 		},
 		{
 			name: "a pathspec that looks like a flag is resolved after a separator",
