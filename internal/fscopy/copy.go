@@ -194,8 +194,12 @@ func copyDir(src, dst, dstRoot string, skipFunc SkipFunc, report ReportFunc, ens
 // FileKind names what a mode describes, for reporting a path that gog cannot
 // manage. A directory, a symbolic link and a regular file never reach here: gog
 // manages files and directories, and a link is reported with the path to add in
-// its place.
+// its place. Passing one panics, rather than naming it an irregular file, so
+// that a caller which widens its guard fails where it is wrong.
 func FileKind(mode os.FileMode) string {
+	if mode.IsDir() || mode.IsRegular() || mode&os.ModeSymlink != 0 {
+		panic(fmt.Sprintf("FileKind(%s): gog manages this mode", mode))
+	}
 	switch {
 	case mode&os.ModeNamedPipe != 0:
 		return "named pipe"

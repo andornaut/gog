@@ -369,6 +369,50 @@ func TestDirRefusesASourceInsideTheDestination(t *testing.T) {
 	}
 }
 
+// The kinds gog reports are the ones its callers can reach: a mode gog manages
+// is a caller's mistake, and says so rather than being named an irregular file
+func TestFileKindNamesWhatItIsGiven(t *testing.T) {
+	tests := []struct {
+		name string
+		mode os.FileMode
+		want string
+	}{
+		{name: "a named pipe", mode: os.ModeNamedPipe, want: "named pipe"},
+		{name: "a socket", mode: os.ModeSocket, want: "socket"},
+		{name: "a character device", mode: os.ModeDevice | os.ModeCharDevice, want: "character device"},
+		{name: "a block device", mode: os.ModeDevice, want: "block device"},
+		{name: "anything else", mode: os.ModeIrregular, want: "irregular file"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := FileKind(tt.mode); got != tt.want {
+				t.Errorf("FileKind(%s) = %q, want %q", tt.mode, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFileKindRefusesAModeGogManages(t *testing.T) {
+	tests := []struct {
+		name string
+		mode os.FileMode
+	}{
+		{name: "a directory", mode: os.ModeDir | 0755},
+		{name: "a regular file", mode: 0644},
+		{name: "a symbolic link", mode: os.ModeSymlink | 0777},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("FileKind(%s) returned, want a panic", tt.mode)
+				}
+			}()
+			t.Errorf("FileKind(%s) = %q, want a panic", tt.mode, FileKind(tt.mode))
+		})
+	}
+}
+
 func link(t *testing.T, target, p string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
