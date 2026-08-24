@@ -125,23 +125,6 @@ func TestRmRefusesBeforeItRestoresAnything(t *testing.T) {
 	}
 }
 
-// Deleting cannot be undone, so the name is given in full here rather than
-// resolved from a prefix as the commands that only read a repository do
-func TestRmRefusesAPrefix(t *testing.T) {
-	repoPath, _ := newSandbox(t)
-	isForced = true
-	t.Cleanup(func() { isForced = false })
-
-	err := rm.RunE(rm, []string{"dot"})
-
-	if err == nil {
-		t.Fatal("rm resolved a prefix")
-	}
-	if _, statErr := os.Stat(repoPath); statErr != nil {
-		t.Errorf("the repository was deleted although the name was a prefix: %v", statErr)
-	}
-}
-
 // setFlag sets one of a command's flags for the duration of the test, so that
 // the flag a command registered decides what its run reads
 func setFlag(t *testing.T, c *cobra.Command, name string, value bool) {
@@ -153,6 +136,22 @@ func setFlag(t *testing.T, c *cobra.Command, name string, value bool) {
 	}
 	set(value)
 	t.Cleanup(func() { set(false) })
+}
+
+// Deleting cannot be undone, so the name is given in full here rather than
+// resolved from a prefix as the commands that only read a repository do
+func TestRmRefusesAPrefix(t *testing.T) {
+	repoPath, _ := newSandbox(t)
+	setFlag(t, rm, "force", true)
+
+	err := rm.RunE(rm, []string{"dot"})
+
+	if err == nil || !strings.Contains(err.Error(), `repository "dot" not found`) {
+		t.Fatalf("rm = %v, want the prefix to be refused", err)
+	}
+	if _, statErr := os.Stat(repoPath); statErr != nil {
+		t.Errorf("the repository was deleted although the name was a prefix: %v", statErr)
+	}
 }
 
 // `list` and `default` print what a script reads, on standard output, and
@@ -197,8 +196,7 @@ func TestListAndDefaultPrintNamesOrPaths(t *testing.T) {
 // files rather than left as links to nothing
 func TestRmRestoresWhatItHeld(t *testing.T) {
 	repoPath, extPath := newSandbox(t)
-	isForced = true
-	t.Cleanup(func() { isForced = false })
+	setFlag(t, rm, "force", true)
 
 	if err := rm.RunE(rm, []string{"dots"}); err != nil {
 		t.Fatalf("rm = %v", err)
