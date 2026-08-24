@@ -1,6 +1,7 @@
 # gog - Go Overlay Git
 
-[![CI](https://github.com/andornaut/gog/actions/workflows/release.yml/badge.svg)](https://github.com/andornaut/gog/actions/workflows/release.yml)
+[![Test](https://github.com/andornaut/gog/actions/workflows/test.yml/badge.svg)](https://github.com/andornaut/gog/actions/workflows/test.yml)
+[![Release](https://github.com/andornaut/gog/actions/workflows/release.yml/badge.svg)](https://github.com/andornaut/gog/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/license/MIT)
 
 Link files to Git repositories.
@@ -35,7 +36,8 @@ sudo install -m 755 gog /usr/local/bin/gog
 ### Compile from source
 
 Requires [Go](https://go.dev/doc/install) and
-[Make](https://www.gnu.org/software/make/).
+[Make](https://www.gnu.org/software/make/). `make install` copies the binary to
+`/usr/local/bin` with `sudo`; `PREFIX` chooses another destination.
 
 ```bash
 git clone https://github.com/andornaut/gog.git
@@ -209,9 +211,12 @@ Runs git in the repository's directory and exits with git's own status.
 
 - A path argument is rewritten to the file inside the repository that its link
   points at, but only where git is certain to read an argument as a path: after
-  a `--` separator, and for `add`, `check-ignore`, `clean`, `rm` and `stage`.
-  Everywhere else it is passed through, so `gog git commit -m .bashrc` records
-  the message `.bashrc` and `gog git branch wip` creates a branch.
+  a `--` separator, and for the operands of `add`, `check-ignore`, `clean`, `rm`
+  and `stage` when one of those is the first argument. Everywhere else it is
+  passed through, so `gog git commit -m .bashrc` records the message `.bashrc`
+  and `gog git branch wip` creates a branch. A global flag before the subcommand
+  leaves it unidentified, so the path in `gog git -C . add ~/.bashrc` is passed
+  through, and only a `--` separator still converts one.
 - `-r NAME` has to be the first argument. Anywhere else it belongs to git, so
   `gog git branch -r` and `gog git ls-tree -r HEAD` keep their meaning.
 - `--help` reaches git. Run `gog help git` for gog's own.
@@ -258,7 +263,7 @@ Error: refusing to remove dotfiles: it holds 1 commit that no remote has and 2 u
 | Stream | Carries |
 | --- | --- |
 | stdout | What a caller consumes: everything `git`, `list`, `repository list` and `repository default` print |
-| stderr | What gog did and what went wrong: the `Repository:`, `Linked:`, `Restored:`, `Skipped:`, `Added repository:` and `Removed repository:` lines, and `Warning:` and `Error:` |
+| stderr | What gog did and what went wrong: the `Repository:`, `Linked:`, `Restored:`, `Skipped:`, `Added repository:` and `Removed repository:` lines, and `Note:`, `Warning:` and `Error:` |
 
 So `gog list | xargs` and `gog apply > log` each carry one kind of thing.
 
@@ -302,7 +307,9 @@ export GOG_IGNORE_FILES_REGEX='^secrets\.env$'  # one file, by name
 
 The expression is matched against paths relative to `root/`, so `^secrets\.env$`
 names a file at the top of the linked tree. It is read only by the commands that
-link: `add`, `apply` and `list`.
+link: `add`, `apply` and `list`. `gog add` still copies a matching path into the
+repository; the expression decides what is linked and staged, so the copy is left
+untracked.
 
 ## Releasing
 
@@ -312,9 +319,10 @@ git push origin v0.1.0
 ```
 
 The [release workflow](.github/workflows/release.yml) builds every platform in
-the table above, and [GoReleaser](https://goreleaser.com/) publishes the
-archives and their checksums. Every push to `main` republishes the `dev`
-release from the same builds.
+the table above, and publishes nothing until the tests pass.
+[GoReleaser](https://goreleaser.com/) builds and publishes a tag's archives.
+Every push to `main` republishes the `dev` release from the archives the workflow
+built itself. Both carry a `checksums.txt`.
 
 ## Developing
 
@@ -325,4 +333,5 @@ release from the same builds.
 | `make coverage` | Report coverage |
 | `make lint` | Run golangci-lint |
 | `make fmt` | Rewrite the source with golangci-lint's formatter |
+| `make clean` | Run `go clean`, and remove `dist/` and `coverage.txt` |
 | `make install`, `make uninstall` | Copy to `/usr/local/bin` and remove it. Both use sudo |
