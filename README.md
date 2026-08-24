@@ -309,7 +309,9 @@ The expression is matched against paths relative to `root/`, so `^secrets\.env$`
 names a file at the top of the linked tree. It is read only by the commands that
 link: `add`, `apply` and `list`. `gog add` still copies a matching path into the
 repository; the expression decides what is linked and staged, so the copy is left
-untracked.
+untracked. It stays in the repository's working tree, where a later `git add .`
+would commit it, so a path named for its contents belongs in the repository's
+`.gitignore` as well.
 
 ## Releasing
 
