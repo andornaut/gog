@@ -38,9 +38,6 @@ type Entry struct {
 // repository meets them. The files that are never linked are left out, so the
 // listing is what `apply` would act on rather than what the directory contains.
 func List(repoPath string) ([]Entry, error) {
-	if err := Configure(); err != nil {
-		return nil, err
-	}
 	contentPath := repository.ContentPath(repoPath)
 	// A repository with no content directory holds nothing to link.
 	if _, err := os.Stat(contentPath); os.IsNotExist(err) {
@@ -51,7 +48,7 @@ func List(repoPath string) ([]Entry, error) {
 		if err != nil {
 			return err
 		}
-		if info.IsDir() || skipped(repoPath, p) {
+		if info.IsDir() {
 			return nil
 		}
 		extPath := repository.ToExternalPath(repoPath, p)

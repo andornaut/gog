@@ -85,11 +85,10 @@ func newSandbox(t *testing.T) (repoPath, extPath string) {
 	}
 	gittest.Init(t, repoPath)
 	gittest.Isolate(t, homeDir)
-	// The repository and link packages read these. Cleared here, so a host that
-	// has gog configured for its own use does not decide what the test sees.
+	// The repository package reads these. Cleared here, so a host that has gog
+	// configured for its own use does not decide what the test sees.
 	t.Setenv("GOG_DEFAULT_REPOSITORY_NAME", "")
 	t.Setenv("GOG_HOME", "")
-	t.Setenv("GOG_IGNORE_FILES_REGEX", "")
 
 	originalBase := repository.BaseDir
 	repository.BaseDir = baseDir
@@ -101,9 +100,9 @@ func newSandbox(t *testing.T) (repoPath, extPath string) {
 	return repoPath, extPath
 }
 
-// `gog list` prints the paths a repository holds on standard output, which is
+// `gog ls` prints the paths a repository holds on standard output, which is
 // what a caller reads, and -s prefixes each with what applying would do to it
-func TestListPrintsWhatApplyingWouldDo(t *testing.T) {
+func TestLsPrintsWhatApplyingWouldDo(t *testing.T) {
 	_, extPath := newSandbox(t)
 	tests := []struct {
 		name   string
@@ -117,24 +116,24 @@ func TestListPrintsWhatApplyingWouldDo(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Set through the flag rather than the variable behind it, so that
 			// the flag the command registered decides what its run reads
-			if err := list.Flags().Set("status", strconv.FormatBool(tt.status)); err != nil {
+			if err := ls.Flags().Set("status", strconv.FormatBool(tt.status)); err != nil {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() {
-				if err := list.Flags().Set("status", "false"); err != nil {
+				if err := ls.Flags().Set("status", "false"); err != nil {
 					t.Fatal(err)
 				}
 			})
 			var out bytes.Buffer
-			list.SetOut(&out)
-			t.Cleanup(func() { list.SetOut(nil) })
+			ls.SetOut(&out)
+			t.Cleanup(func() { ls.SetOut(nil) })
 
-			if err := list.RunE(list, nil); err != nil {
-				t.Fatalf("list = %v", err)
+			if err := ls.RunE(ls, nil); err != nil {
+				t.Fatalf("ls = %v", err)
 			}
 
 			if got := out.String(); got != tt.want {
-				t.Errorf("list printed %q, want %q", got, tt.want)
+				t.Errorf("ls printed %q, want %q", got, tt.want)
 			}
 		})
 	}

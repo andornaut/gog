@@ -62,7 +62,7 @@ func TestRootPathRefusesAnAmbiguousPrefix(t *testing.T) {
 	_, err := RootPath("myrepo")
 
 	// The candidates are named, so that the whole name to use is in front of
-	// the reader rather than left to `gog repository list`.
+	// the reader rather than left to `gog repository ls`.
 	if err == nil || !strings.Contains(err.Error(), "myrepo-v1, myrepo-v2") {
 		t.Errorf("RootPath(\"myrepo\") = %v, want a failure naming the candidates", err)
 	}

@@ -67,19 +67,19 @@ gog apply
 | --- | --- |
 | `gog add <paths>...` | Copy paths into the repository, link them back, and stage them |
 | `gog apply` | Link the repository's contents to the filesystem |
-| `gog list` | Print the paths the repository holds |
+| `gog ls` | Print the paths the repository holds |
 | `gog rm <paths>...` | Restore paths as ordinary files and untrack them |
 | `gog git ...` | Run git in the repository's directory |
 | `gog repository add <name> [url]` | Create a repository, by clone if a URL is given |
 | `gog repository default` | Print the default repository |
-| `gog repository list` | Print every repository |
+| `gog repository ls` | Print every repository |
 | `gog repository rm <name>` | Restore what the repository holds, then delete it |
 
 | Flag | Commands | Description |
 | --- | --- | --- |
-| `-r, --repository NAME` | `add`, `apply`, `list`, `rm`, `git` | Repository to use. A unique prefix of the name is accepted |
-| `-s, --status` | `list` | Print what applying would do to each path |
-| `--path` | `repository default`, `repository list` | Print paths instead of names |
+| `-r, --repository NAME` | `add`, `apply`, `ls`, `rm`, `git` | Repository to use. A unique prefix of the name is accepted |
+| `-s, --status` | `ls` | Print what applying would do to each path |
+| `--path` | `repository default`, `repository ls` | Print paths instead of names |
 | `--force` | `add` | Take a path over from the repository that manages it |
 | `--force` | `repository rm` | Delete even if the repository holds work that no remote has |
 | `--version` | `gog` | Print the version |
@@ -108,7 +108,7 @@ dotfiles/
   README.md
 ```
 
-A repository with no `root/` has nothing to link, and `gog apply` and `gog list`
+A repository with no `root/` has nothing to link, and `gog apply` and `gog ls`
 say so rather than exiting silently.
 
 ### `$HOME` substitution
@@ -183,10 +183,10 @@ A path is replaced without asking only when nothing of yours is lost:
 - a file whose contents the repository already holds, which is what `gog add`
   leaves behind after copying it in
 
-### `gog list`
+### `gog ls`
 
 ```text
-$ gog list --status
+$ gog ls --status
 linked   /home/example/.bashrc
 missing  /home/example/.vimrc
 replace  /home/example/.inputrc
@@ -201,8 +201,7 @@ conflict /home/example/.gitconfig
 | `conflict` | Report it and leave it alone |
 
 A repository's own `.git`, `.gitignore`, `LICENSE` and `README.md` are never
-linked, and neither is anything `GOG_IGNORE_FILES_REGEX` matches. `gog list`
-leaves them out.
+linked. `gog ls` leaves them out.
 
 ### `gog git`
 
@@ -261,10 +260,10 @@ Error: refusing to remove dotfiles: it holds 1 commit that no remote has and 2 u
 
 | Stream | Carries |
 | --- | --- |
-| stdout | What a caller consumes: everything `git`, `list`, `repository list` and `repository default` print |
+| stdout | What a caller consumes: everything `git`, `ls`, `repository ls` and `repository default` print |
 | stderr | What gog did and what went wrong: the `Repository:`, `Linked:`, `Restored:`, `Skipped:`, `Added repository:` and `Removed repository:` lines, and `Note:`, `Warning:` and `Error:` |
 
-So `gog list | xargs` and `gog apply > log` each carry one kind of thing.
+So `gog ls | xargs` and `gog apply > log` each carry one kind of thing.
 
 | Code | Meaning |
 | --- | --- |
@@ -283,7 +282,7 @@ ran and failed does not. `gog --help` writes help to stdout and reports success.
 overlapping paths, and the one applied last owns the link.
 
 ```bash
-for repoName in $(gog repository list | sort -r); do
+for repoName in $(gog repository ls | sort -r); do
   gog apply --repository ${repoName}
 done
 ```
@@ -296,23 +295,10 @@ done
 | --- | --- |
 | `GOG_DEFAULT_REPOSITORY_NAME` | Repository to use when `-r` is not given. Default: the first repository, which `gog repository default` prints |
 | `GOG_HOME` | Where gog stores repositories. Default: `${XDG_DATA_HOME}/gog` if set, otherwise `${HOME}/.local/share/gog` |
-| `GOG_IGNORE_FILES_REGEX` | Do not link paths that match this regular expression, named as they sit under `root/` |
 
-```bash
-export GOG_IGNORE_FILES_REGEX='\.swp$|\.tmp$'   # Vim temporary files
-export GOG_IGNORE_FILES_REGEX='\.cache/'        # everything under .cache
-export GOG_IGNORE_FILES_REGEX='^secrets\.env$'  # one file, by name
-```
-
-The expression is matched against paths relative to `root/`, so `^secrets\.env$`
-names a file at the top of the linked tree. It is read only by the commands that
-link: `add`, `apply` and `list`. `gog add` still copies a matching path into the
-repository; the expression decides what is linked and staged, so gog does not
-stage the copy. It stays in the repository's working tree, where a later
-`git add .` stages it and the next commit records it, so a path named for its
-contents belongs in the repository's `.gitignore` as well. A path that was
-already tracked when the expression started matching it stays tracked, and
-`git commit -a` records the copy that overwrote it.
+Every path a repository holds under `root/` is linked. To keep a file out of the
+linked tree, keep it out of the repository, or store it beside `root/` where
+nothing is linked from.
 
 ## Releasing
 

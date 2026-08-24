@@ -27,7 +27,7 @@ var Cmd = &cobra.Command{
 // neither can be handed the other's flag
 var (
 	isDefaultPath bool
-	isListPath    bool
+	isLsPath      bool
 	isForced      bool
 )
 
@@ -82,8 +82,8 @@ var getDefault = &cobra.Command{
 	},
 }
 
-var list = &cobra.Command{
-	Use:                   "list [--path]",
+var ls = &cobra.Command{
+	Use:                   "ls [--path]",
 	Short:                 "Print the names or paths of all repositories",
 	Args:                  noArgs,
 	DisableFlagsInUseLine: true,
@@ -93,7 +93,7 @@ var list = &cobra.Command{
 			return err
 		}
 		for _, msg := range names {
-			if isListPath {
+			if isLsPath {
 				msg = filepath.Join(repository.BaseDir, msg)
 			}
 			_, _ = fmt.Fprintln(c.OutOrStdout(), msg)
@@ -161,7 +161,7 @@ func init() {
 	// --full in mrs, and a letter that means two things across the tools is a
 	// trap for the person typing, not for the parser.
 	getDefault.Flags().BoolVar(&isDefaultPath, "path", false, "print the path instead of the name")
-	list.Flags().BoolVar(&isListPath, "path", false, "print paths instead of names")
+	ls.Flags().BoolVar(&isLsPath, "path", false, "print paths instead of names")
 	rm.Flags().BoolVar(&isForced, "force", false, "remove even if the repository holds work that no remote has")
-	Cmd.AddCommand(add, rm, getDefault, list)
+	Cmd.AddCommand(add, rm, getDefault, ls)
 }

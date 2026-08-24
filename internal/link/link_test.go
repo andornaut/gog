@@ -28,9 +28,6 @@ func newSandbox(t *testing.T) (repoPath, homeDir string) {
 	gittest.Init(t, repoPath)
 	gittest.Isolate(t, homeDir)
 
-	// Whatever the developer has set would otherwise decide what is linked
-	t.Setenv("GOG_IGNORE_FILES_REGEX", "")
-
 	originalHome := repository.SetHomeDirForTest(homeDir)
 	originalBase := repository.BaseDir
 	repository.BaseDir = baseDir

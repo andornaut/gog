@@ -7,38 +7,11 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
-	"strings"
 
 	"github.com/andornaut/gog/internal/git"
 	"github.com/andornaut/gog/internal/paths"
 	"github.com/andornaut/gog/internal/repository"
 )
-
-// ignoreFilesRegex is the compiled GOG_IGNORE_FILES_REGEX, matching nothing
-// until Configure reads one
-var ignoreFilesRegex = matchNothing
-
-// matchNothing is a pattern that no path satisfies
-var matchNothing = regexp.MustCompile("a^")
-
-// Configure reads the environment that linking depends on. Every entry point
-// calls it for itself, so that a pattern that cannot be compiled fails the
-// command that reads it. `gog add` calls it before copying, so that such a
-// pattern fails before the repository holds a file that was never linked.
-func Configure() error {
-	pattern := os.Getenv("GOG_IGNORE_FILES_REGEX")
-	if pattern == "" {
-		ignoreFilesRegex = matchNothing
-		return nil
-	}
-	compiled, err := regexp.Compile(pattern)
-	if err != nil {
-		return fmt.Errorf("invalid GOG_IGNORE_FILES_REGEX %q: %w", pattern, err)
-	}
-	ignoreFilesRegex = compiled
-	return nil
-}
 
 // ErrIncomplete reports that some paths could not be linked. Each failure is
 // printed as it happens; this is returned so that the command exits non-zero.
@@ -64,9 +37,6 @@ func Unlink(repoPath string, paths []string) error {
 
 // Link links the given external paths to what the repository holds at them
 func Link(repoPath string, paths []string) error {
-	if err := Configure(); err != nil {
-		return err
-	}
 	before := failures
 	return reportFailures(before, syncLinks(repoPath, paths, Dir, File))
 }
@@ -100,9 +70,6 @@ func syncLinks(repoPath string, paths []string, updateDir, updateFile syncFunc) 
 // Dir recursively creates symbolic links from a repository directory's files
 // to the root filesystem
 func Dir(repoPath, intPath string) error {
-	if err := Configure(); err != nil {
-		return err
-	}
 	// A repository with no content directory holds nothing to link.
 	if _, err := os.Stat(intPath); os.IsNotExist(err) {
 		return nil
@@ -154,9 +121,6 @@ func Dir(repoPath, intPath string) error {
 // File creates a symbolic link from a repository file to the root filesystem.
 // It returns ErrIncomplete when the link could not be made, having printed why.
 func File(repoPath, intPath string) error {
-	if err := Configure(); err != nil {
-		return err
-	}
 	before := failures
 	shouldAdd, err := linkFile(repoPath, intPath)
 	if shouldAdd {
@@ -170,10 +134,6 @@ func File(repoPath, intPath string) error {
 // git. A failure that leaves the path alone is printed and returns (false,
 // nil); only one that stops the run is returned.
 func linkFile(repoPath, intPath string) (bool, error) {
-	if skipped(repoPath, intPath) {
-		return false, nil
-	}
-
 	extPath := repository.ToExternalPath(repoPath, intPath)
 	err := os.Symlink(intPath, extPath)
 	if err == nil {
@@ -220,15 +180,6 @@ func linkFile(repoPath, intPath string) (bool, error) {
 	}
 	printLinked(intPath, extPath)
 	return true, nil
-}
-
-// skipped reports whether a path is one GOG_IGNORE_FILES_REGEX names.
-func skipped(repoPath, intPath string) bool {
-	// Matched against the path under the content directory rather than under
-	// the repository, so that a pattern names what it appears to: with the
-	// repository as the root, every path would carry a root/ prefix and an
-	// anchored pattern such as `^secrets\.env$` would match nothing.
-	return ignoreFilesRegex.MatchString(strings.TrimPrefix(intPath, repository.ContentPath(repoPath)+"/"))
 }
 
 // maxGitAddBatch bounds the number of paths passed to a single git

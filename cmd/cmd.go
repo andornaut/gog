@@ -124,7 +124,7 @@ var (
 	addRepositoryFlag   string
 	applyRepositoryFlag string
 	gitRepositoryFlag   string
-	listRepositoryFlag  string
+	lsRepositoryFlag    string
 	rmRepositoryFlag    string
 	isForced            bool
 	isStatus            bool
@@ -141,12 +141,6 @@ var add = &cobra.Command{
 		// the command will not use
 		paths, err := cleanPaths(args)
 		if err != nil {
-			return err
-		}
-		// Linking is configured before anything is copied, so that a pattern
-		// that cannot be compiled does not leave the repository holding a file
-		// that was never linked or staged
-		if err = link.Configure(); err != nil {
 			return err
 		}
 		repoPath, err := repoPath(addRepositoryFlag)
@@ -206,15 +200,14 @@ var git_ = &cobra.Command{
 	},
 }
 
-var list = &cobra.Command{
-	Use:   "list",
-	Short: "Print the paths that a repository holds",
-	Long: "Print the paths that `gog apply` would link, as they appear outside the\n" +
-		"repository. Whatever GOG_IGNORE_FILES_REGEX names is left out.",
+var ls = &cobra.Command{
+	Use:                   "ls",
+	Short:                 "Print the paths that a repository holds",
+	Long:                  "Print the paths that `gog apply` would link, as they appear outside the repository.",
 	Args:                  noArgs,
 	DisableFlagsInUseLine: true,
 	RunE: func(c *cobra.Command, args []string) error {
-		repoPath, err := repoPath(listRepositoryFlag)
+		repoPath, err := repoPath(lsRepositoryFlag)
 		if err != nil {
 			return err
 		}
@@ -336,7 +329,7 @@ func init() {
 	// -r belongs to the commands that select a repository, and is not persistent
 	// because that would inherit it to `git`, which has its own -r flag and uses
 	// DisableFlagParsing to pass arguments through. It is not registered on the
-	// root either: `gog -r NAME repository list` would then be accepted and
+	// root either: `gog -r NAME repository ls` would then be accepted and
 	// ignored, since no `repository` subcommand selects a repository that way.
 	for _, selects := range []struct {
 		c    *cobra.Command
@@ -344,7 +337,7 @@ func init() {
 	}{
 		{add, &addRepositoryFlag},
 		{apply, &applyRepositoryFlag},
-		{list, &listRepositoryFlag},
+		{ls, &lsRepositoryFlag},
 		{rm, &rmRepositoryFlag},
 	} {
 		selects.c.Flags().StringVarP(selects.flag, "repository", "r", "", "name of repository")
@@ -352,7 +345,7 @@ func init() {
 			panic(err)
 		}
 	}
-	list.Flags().BoolVarP(&isStatus, "status", "s", false, "print what applying would do to each path")
+	ls.Flags().BoolVarP(&isStatus, "status", "s", false, "print what applying would do to each path")
 	add.Flags().BoolVar(&isForced, "force", false, "take a path over from the repository that manages it")
 	// A flag cobra could not parse is a wrong invocation, and exits 2 like one.
 	Cmd.SetFlagErrorFunc(func(c *cobra.Command, err error) error { return cli.Usage(err) })
@@ -368,5 +361,5 @@ func init() {
 	// The generated completion command still works when it is not listed, and
 	// gog has too few commands to spend a line on it
 	Cmd.CompletionOptions.HiddenDefaultCmd = true
-	Cmd.AddCommand(add, apply, git_, list, rm, repositorycmd.Cmd)
+	Cmd.AddCommand(add, apply, git_, ls, rm, repositorycmd.Cmd)
 }

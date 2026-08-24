@@ -34,7 +34,6 @@ func TestListLeavesOutWhatIsNeverLinked(t *testing.T) {
 	repoPath, homeDir := newSandbox(t)
 	write(t, repoPath, "$HOME/.bashrc", "bashrc\n")
 	write(t, repoPath, "$HOME/.vimrc", "vimrc\n")
-	write(t, repoPath, "$HOME/.cache/state", "state\n")
 	// The repository's own files, which sit beside the directory whose tree is
 	// linked rather than in it.
 	for _, name := range []string{".gitignore", "LICENSE", "README.md"} {
@@ -42,7 +41,6 @@ func TestListLeavesOutWhatIsNeverLinked(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	t.Setenv("GOG_IGNORE_FILES_REGEX", `\.cache/`)
 
 	entries, err := List(repoPath)
 	if err != nil {

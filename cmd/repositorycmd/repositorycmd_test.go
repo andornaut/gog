@@ -34,14 +34,14 @@ func TestRequireArgs(t *testing.T) {
 }
 
 // cobra.NoArgs reports an operand as an unknown command, which misdescribes
-// `gog repository list extra`: list takes no operands at all
+// `gog repository ls extra`: ls takes no operands at all
 func TestNoArgs(t *testing.T) {
-	err := noArgs(list, []string{"extra"})
+	err := noArgs(ls, []string{"extra"})
 
-	if err == nil || err.Error() != `repository list takes no arguments, but got "extra"` {
+	if err == nil || err.Error() != `repository ls takes no arguments, but got "extra"` {
 		t.Errorf("noArgs() = %v, want the command and the operand named", err)
 	}
-	if err := noArgs(list, nil); err != nil {
+	if err := noArgs(ls, nil); err != nil {
 		t.Errorf("noArgs() = %v, want success", err)
 	}
 }
@@ -154,7 +154,7 @@ func TestRmRefusesAPrefix(t *testing.T) {
 	}
 }
 
-// `list` and `default` print what a script reads, on standard output, and
+// `ls` and `default` print what a script reads, on standard output, and
 // --path chooses between the repository's name and its path
 func TestListAndDefaultPrintNamesOrPaths(t *testing.T) {
 	tests := []struct {
@@ -162,8 +162,8 @@ func TestListAndDefaultPrintNamesOrPaths(t *testing.T) {
 		cmd  *cobra.Command
 		path bool
 	}{
-		{name: "the repositories by name", cmd: list},
-		{name: "the repositories by path", cmd: list, path: true},
+		{name: "the repositories by name", cmd: ls},
+		{name: "the repositories by path", cmd: ls, path: true},
 		{name: "the default by name", cmd: getDefault},
 		{name: "the default by path", cmd: getDefault, path: true},
 	}

@@ -20,7 +20,7 @@ func printError(err error) {
 }
 
 // Reported on stderr, with every other line gog writes about what it did.
-// stdout carries what a caller consumes: `list`, `repository list`,
+// stdout carries what a caller consumes: `ls`, `repository ls`,
 // `repository default` and git's own output.
 func printLinked(intPath string, extPath string) {
 	fmt.Fprintf(os.Stderr, "Linked: %s -> %s\n", extPath, escapeHomeVar(intPath))
