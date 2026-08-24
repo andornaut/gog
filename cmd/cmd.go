@@ -118,10 +118,16 @@ func ExitCode(err error) int {
 	return exitFailed
 }
 
+// Each command that selects a repository has its own flag variable, so that
+// one command's run cannot read a name another command's flag left behind.
 var (
-	repositoryFlag string
-	isForced       bool
-	isStatus       bool
+	addRepositoryFlag   string
+	applyRepositoryFlag string
+	gitRepositoryFlag   string
+	listRepositoryFlag  string
+	rmRepositoryFlag    string
+	isForced            bool
+	isStatus            bool
 )
 
 var add = &cobra.Command{
@@ -143,7 +149,7 @@ var add = &cobra.Command{
 		if err = link.Configure(); err != nil {
 			return err
 		}
-		repoPath, err := repoPath()
+		repoPath, err := repoPath(addRepositoryFlag)
 		if err != nil {
 			return err
 		}
@@ -160,7 +166,7 @@ var apply = &cobra.Command{
 	Args:                  noArgs,
 	DisableFlagsInUseLine: true,
 	RunE: func(c *cobra.Command, args []string) error {
-		repoPath, err := repoPath()
+		repoPath, err := repoPath(applyRepositoryFlag)
 		if err != nil {
 			return err
 		}
@@ -185,7 +191,7 @@ var git_ = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		repoPath, err := repoPath()
+		repoPath, err := repoPath(gitRepositoryFlag)
 		if err != nil {
 			return err
 		}
@@ -208,7 +214,7 @@ var list = &cobra.Command{
 	Args:                  noArgs,
 	DisableFlagsInUseLine: true,
 	RunE: func(c *cobra.Command, args []string) error {
-		repoPath, err := repoPath()
+		repoPath, err := repoPath(listRepositoryFlag)
 		if err != nil {
 			return err
 		}
@@ -238,7 +244,7 @@ var rm = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		repoPath, err := repoPath()
+		repoPath, err := repoPath(rmRepositoryFlag)
 		if err != nil {
 			return err
 		}
@@ -294,13 +300,13 @@ func takeRepositoryFlag(args []string) ([]string, error) {
 		if len(args) < 2 {
 			return nil, fmt.Errorf("flag needs an argument: %s", arg)
 		}
-		repositoryFlag = args[1]
+		gitRepositoryFlag = args[1]
 		return args[2:], nil
 	case strings.HasPrefix(arg, "--repository="):
-		repositoryFlag = strings.TrimPrefix(arg, "--repository=")
+		gitRepositoryFlag = strings.TrimPrefix(arg, "--repository=")
 		return args[1:], nil
 	case strings.HasPrefix(arg, "-r") && len(arg) > 2:
-		repositoryFlag = arg[2:]
+		gitRepositoryFlag = arg[2:]
 		return args[1:], nil
 	}
 	return args, nil
@@ -332,9 +338,17 @@ func init() {
 	// DisableFlagParsing to pass arguments through. It is not registered on the
 	// root either: `gog -r NAME repository list` would then be accepted and
 	// ignored, since no `repository` subcommand selects a repository that way.
-	for _, c := range []*cobra.Command{add, apply, list, rm} {
-		c.Flags().StringVarP(&repositoryFlag, "repository", "r", "", "name of repository")
-		if err := c.RegisterFlagCompletionFunc("repository", repositorycmd.CompleteNames); err != nil {
+	for _, selects := range []struct {
+		c    *cobra.Command
+		flag *string
+	}{
+		{add, &addRepositoryFlag},
+		{apply, &applyRepositoryFlag},
+		{list, &listRepositoryFlag},
+		{rm, &rmRepositoryFlag},
+	} {
+		selects.c.Flags().StringVarP(selects.flag, "repository", "r", "", "name of repository")
+		if err := selects.c.RegisterFlagCompletionFunc("repository", repositorycmd.CompleteNames); err != nil {
 			panic(err)
 		}
 	}

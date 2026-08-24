@@ -210,7 +210,7 @@ func TestTakeRepositoryFlag(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			repositoryFlag = ""
+			gitRepositoryFlag = ""
 			got, err := takeRepositoryFlag(tt.args)
 			if tt.wantErr {
 				if err == nil {
@@ -221,8 +221,8 @@ func TestTakeRepositoryFlag(t *testing.T) {
 			if err != nil {
 				t.Fatalf("takeRepositoryFlag(%q) = %v", tt.args, err)
 			}
-			if repositoryFlag != tt.wantName {
-				t.Errorf("selected repository %q, want %q", repositoryFlag, tt.wantName)
+			if gitRepositoryFlag != tt.wantName {
+				t.Errorf("selected repository %q, want %q", gitRepositoryFlag, tt.wantName)
 			}
 			if !slices.Equal(got, tt.wantArgs) {
 				t.Errorf("takeRepositoryFlag(%q) = %q, want %q", tt.args, got, tt.wantArgs)

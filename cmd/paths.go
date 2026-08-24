@@ -40,8 +40,8 @@ func normalizePath(p string) (string, error) {
 	return filepath.Clean(p), nil
 }
 
-func repoPath() (string, error) {
-	repoPath, err := repository.RootPath(repositoryFlag)
+func repoPath(repoName string) (string, error) {
+	repoPath, err := repository.RootPath(repoName)
 	if err != nil {
 		return "", err
 	}
