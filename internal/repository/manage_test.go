@@ -277,6 +277,10 @@ func TestOwnPathError(t *testing.T) {
 	linked := writeFile(t, filepath.Join(repoPath, ContentDirName, "$HOME", ".bashrc"), "bashrc\n")
 	symlink(t, linked, filepath.Join(homeDir, ".bashrc"))
 	unlinked := writeFile(t, filepath.Join(repoPath, ContentDirName, "$HOME", ".vimrc"), "vimrc\n")
+	// A path the repository holds whose external path is a link to something
+	// else, so that path does not name this one
+	borrowed := writeFile(t, filepath.Join(repoPath, ContentDirName, "$HOME", ".inputrc"), "inputrc\n")
+	symlink(t, writeFile(t, filepath.Join(homeDir, "elsewhere"), "elsewhere\n"), filepath.Join(homeDir, ".inputrc"))
 
 	tests := []struct {
 		name string
@@ -301,6 +305,11 @@ func TestOwnPathError(t *testing.T) {
 		{
 			name: "a path it holds that is linked nowhere",
 			p:    unlinked,
+			want: "repository dots holds it",
+		},
+		{
+			name: "a path it holds whose external path links elsewhere",
+			p:    borrowed,
 			want: "repository dots holds it",
 		},
 	}

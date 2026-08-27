@@ -159,11 +159,15 @@ func TestSameContents(t *testing.T) {
 }
 
 // Replacing a symbolic link discards the link itself, which no copy of the
-// contents preserves
+// contents preserves. Either argument may be the link: a repository can hold
+// one at a path it is asked to link.
 func TestSameContentsExcludesASymbolicLink(t *testing.T) {
 	root := t.TempDir()
 	target := filepath.Join(root, "target")
-	if err := os.WriteFile(target, []byte("same\n"), 0644); err != nil {
+	// A link's own size is the length of the path it holds, so the file is
+	// written to that length: the sizes then match and only the exclusion can
+	// decide, rather than the comparison stopping at differing lengths
+	if err := os.WriteFile(target, []byte(strings.Repeat("x", len(target))), 0644); err != nil {
 		t.Fatal(err)
 	}
 	linkPath := filepath.Join(root, "link")
@@ -171,8 +175,33 @@ func TestSameContentsExcludesASymbolicLink(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if sameContents(linkPath, target) {
-		t.Error("sameContents() called a symbolic link the same as what it points at")
+	for _, args := range [][2]string{{linkPath, target}, {target, linkPath}} {
+		if sameContents(args[0], args[1]) {
+			t.Errorf("sameContents(%s, %s) called a symbolic link the same as what it points at",
+				filepath.Base(args[0]), filepath.Base(args[1]))
+		}
+	}
+}
+
+// A file gog cannot read reports false, so that it is backed up rather than
+// removed to make way for a copy that was never compared with it
+func TestSameContentsRefusesAFileItCannotRead(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads a file whose mode forbids it")
+	}
+	root := t.TempDir()
+	unreadable := filepath.Join(root, "unreadable")
+	if err := os.WriteFile(unreadable, []byte("same\n"), 0000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(unreadable, 0644) })
+	readable := filepath.Join(root, "readable")
+	if err := os.WriteFile(readable, []byte("same\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if sameContents(unreadable, readable) {
+		t.Error("sameContents() called a file it cannot read the same as one it can")
 	}
 }
 

@@ -2,12 +2,15 @@ package cmd
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 
 	"github.com/andornaut/gog/internal/gittest"
 	"github.com/andornaut/gog/internal/repository"
@@ -100,6 +103,111 @@ func newSandbox(t *testing.T) (repoPath, extPath string) {
 	return repoPath, extPath
 }
 
+// `gog add` copies a path into the repository and then links it to what was
+// copied. Linking first would leave the path unlinked and unstaged, because
+// the repository does not hold it yet.
+func TestAddCopiesAPathThenLinksIt(t *testing.T) {
+	repoPath, extPath := newSandbox(t)
+	target := filepath.Join(filepath.Dir(extPath), ".vimrc")
+	if err := os.WriteFile(target, []byte("vimrc\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := add.RunE(add, []string{target}); err != nil {
+		t.Fatalf("add = %v", err)
+	}
+
+	intPath := filepath.Join(repoPath, repository.ContentDirName, "$HOME", ".vimrc")
+	if contents, readErr := os.ReadFile(intPath); readErr != nil || string(contents) != "vimrc\n" {
+		t.Errorf("the repository holds %q (%v), want the file's contents", contents, readErr)
+	}
+	if got, readErr := os.Readlink(target); readErr != nil || got != intPath {
+		t.Errorf("%s -> %q (%v), want the repository's copy", target, got, readErr)
+	}
+}
+
+// The arguments are checked before the repository is selected, so that an
+// unusable one fails before anything is reported about a repository the
+// command will not use
+func TestAddChecksItsArgumentsBeforeSelectingARepository(t *testing.T) {
+	newSandbox(t)
+
+	out := testout.Capture(t, func() {
+		if err := add.RunE(add, []string{"   "}); err == nil {
+			t.Error("add reported success for an empty path")
+		}
+	})
+
+	if strings.Contains(out, "Repository:") {
+		t.Errorf("add printed %q, want nothing about a repository", out)
+	}
+}
+
+// `gog apply` links the tree of the content directory alone. What sits beside
+// it is the repository's own, and the repository it used is named on standard
+// error so that standard output carries only what the command produces.
+func TestApplyLinksTheContentDirectoryAlone(t *testing.T) {
+	repoPath, extPath := newSandbox(t)
+	homeDir := filepath.Dir(extPath)
+	if err := os.Remove(extPath); err != nil {
+		t.Fatal(err)
+	}
+	readme := filepath.Join(repoPath, "README.md")
+	if err := os.WriteFile(readme, []byte("readme"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	out := testout.Capture(t, func() {
+		if err := apply.RunE(apply, nil); err != nil {
+			t.Fatalf("apply = %v", err)
+		}
+	})
+
+	intPath := filepath.Join(repoPath, repository.ContentDirName, "$HOME", ".bashrc")
+	if got, readErr := os.Readlink(extPath); readErr != nil || got != intPath {
+		t.Errorf("%s -> %q (%v), want the repository's copy", extPath, got, readErr)
+	}
+	if info, statErr := os.Lstat(readme); statErr != nil || !info.Mode().IsRegular() {
+		t.Errorf("the repository's own README.md is no longer a regular file (%v)", statErr)
+	}
+	for _, name := range []string{"README.md", ".git", repository.ContentDirName} {
+		if _, statErr := os.Lstat(filepath.Join(homeDir, name)); !os.IsNotExist(statErr) {
+			t.Errorf("%s was linked from outside the content directory (%v)", name, statErr)
+		}
+	}
+	if !strings.Contains(out, "Repository: dots\n") {
+		t.Errorf("apply printed %q, want the repository named on standard error", out)
+	}
+}
+
+// A repository has no content directory until its first `gog add`, and the
+// commands that link from it say so: a run that linked nothing and one that
+// linked everything are otherwise the same, both silent and exit 0
+func TestApplyAndLsNoteARepositoryWithNothingToLink(t *testing.T) {
+	repoPath, _ := newSandbox(t)
+	if err := os.RemoveAll(repository.ContentPath(repoPath)); err != nil {
+		t.Fatal(err)
+	}
+	want := "Note: dots holds no root/, so there is nothing to link\n"
+
+	for _, c := range []*cobra.Command{apply, ls} {
+		t.Run(c.Name(), func(t *testing.T) {
+			c.SetOut(io.Discard)
+			t.Cleanup(func() { c.SetOut(nil) })
+
+			out := testout.Capture(t, func() {
+				if err := c.RunE(c, nil); err != nil {
+					t.Fatalf("%s = %v", c.Name(), err)
+				}
+			})
+
+			if !strings.Contains(out, want) {
+				t.Errorf("%s printed %q, want it to contain %q", c.Name(), out, want)
+			}
+		})
+	}
+}
+
 // `gog ls` prints the paths a repository holds on standard output, which is
 // what a caller reads, and -s prefixes each with what applying would do to it
 func TestLsPrintsWhatApplyingWouldDo(t *testing.T) {
@@ -136,6 +244,24 @@ func TestLsPrintsWhatApplyingWouldDo(t *testing.T) {
 				t.Errorf("ls printed %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// `gog rm` restores the file before the repository gives up its copy: removing
+// the copy first would leave the path a link to nothing
+func TestRmRestoresBeforeTheRepositoryGivesUpItsCopy(t *testing.T) {
+	repoPath, extPath := newSandbox(t)
+
+	if err := rm.RunE(rm, []string{extPath}); err != nil {
+		t.Fatalf("rm = %v", err)
+	}
+
+	if contents, readErr := os.ReadFile(extPath); readErr != nil || string(contents) != "bashrc\n" {
+		t.Errorf("%s holds %q (%v), want the contents restored", extPath, contents, readErr)
+	}
+	intPath := filepath.Join(repoPath, repository.ContentDirName, "$HOME", ".bashrc")
+	if _, statErr := os.Lstat(intPath); !os.IsNotExist(statErr) {
+		t.Errorf("the repository still holds the path (%v)", statErr)
 	}
 }
 
