@@ -28,6 +28,32 @@ var gitPathspecSubcommands = map[string]bool{
 	"stage":        true,
 }
 
+// gitOptionsWithValue lists, for the subcommands above, the options whose value
+// is the next argument. That argument is the option's, such as the pattern of
+// `clean -e`, rather than a pathspec.
+var gitOptionsWithValue = map[string]map[string]bool{
+	"clean": {"-e": true, "--exclude": true},
+}
+
+// takesValue reports whether the subcommand's option arg is followed by its
+// value as the next argument. A group of short options is read as git reads
+// it, left to right: the first option that takes a value takes the rest of the
+// group, and the next argument only when nothing of the group follows it. So
+// `clean -fde build` gives -e the pattern build, and `clean -e.cache` gives it
+// .cache.
+func takesValue(subcommand, arg string) bool {
+	options := gitOptionsWithValue[subcommand]
+	if strings.HasPrefix(arg, "--") {
+		return options[arg]
+	}
+	for i := 1; i < len(arg); i++ {
+		if options["-"+arg[i:i+1]] {
+			return i == len(arg)-1
+		}
+	}
+	return false
+}
+
 // resolveGitPaths converts symlinked paths to repo-relative paths so that git
 // commands operate on the underlying files within the repository rather than on
 // the symlinks outside it.
@@ -53,7 +79,7 @@ func resolveGitPaths(repoPath string, args []string) []string {
 	// The subcommand is the first argument only when no global flag precedes
 	// it. Otherwise it is not identified, and nothing before `--` is converted.
 	takesPathspecs := len(args) > 0 && gitPathspecSubcommands[args[0]]
-	afterSeparator := false
+	afterSeparator, isOptionValue := false, false
 	for i, arg := range args {
 		switch {
 		case afterSeparator:
@@ -61,7 +87,13 @@ func resolveGitPaths(repoPath string, args []string) []string {
 		case arg == "--":
 			afterSeparator = true
 			continue
-		case i == 0 || !takesPathspecs || strings.HasPrefix(arg, "-"):
+		case isOptionValue:
+			isOptionValue = false
+			continue
+		case i == 0 || !takesPathspecs:
+			continue
+		case strings.HasPrefix(arg, "-"):
+			isOptionValue = takesValue(args[0], arg)
 			continue
 		}
 		resolved[i] = resolveGitPath(realRepoPath, arg)

@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"syscall"
 
 	"github.com/andornaut/gog/internal/git"
 	"github.com/andornaut/gog/internal/paths"
@@ -85,8 +87,9 @@ func syncLinks(repoPath string, paths []string, updateDir, updateFile syncFunc) 
 // to the root filesystem. With force, a link that another repository made is
 // replaced.
 func Dir(repoPath string, force bool, intPath string) error {
-	// A repository with no content directory holds nothing to link.
-	if _, err := os.Stat(intPath); os.IsNotExist(err) {
+	// A repository with no content directory holds nothing to link, and a
+	// file or a link where a directory belongs is not one
+	if info, err := os.Lstat(intPath); os.IsNotExist(err) || (err == nil && !info.IsDir()) {
 		return nil
 	}
 	before := reported
@@ -158,9 +161,15 @@ func linkFile(repoPath string, force bool, intPath string) (bool, error) {
 		printLinked(intPath, extPath)
 		return true, nil
 	}
+	if errors.Is(err, fs.ErrPermission) || errors.Is(err, syscall.EROFS) {
+		// A directory gog cannot write to leaves this path alone, as a
+		// conflict does, rather than the rest of the repository unlinked
+		printError(fmt.Errorf("cannot create symlink %s: %w", extPath, err))
+		return false, nil
+	}
 	if !os.IsExist(err) {
-		// The only recoverable failure is extPath already existing, which is
-		// decided below
+		// The other recoverable failure is extPath already existing, which
+		// is decided below
 		return false, fmt.Errorf("failed to create symlink from %s to %s: %w", extPath, intPath, err)
 	}
 
@@ -170,8 +179,22 @@ func linkFile(repoPath string, force bool, intPath string) (bool, error) {
 		return false, nil
 	}
 	if extFileInfo.IsDir() {
-		printError(fmt.Errorf("cannot create symlink: %s exists and is a directory (remove the directory or use a different location)", extPath))
-		return false, nil
+		if !holdsOnlyStaleLinks(repoPath, extPath) {
+			printError(fmt.Errorf("cannot create symlink: %s exists and is a directory (remove the directory or use a different location)", extPath))
+			return false, nil
+		}
+		// What the repository held there as a directory is now a file, and
+		// the directory holds only the links to what it held
+		if err = os.RemoveAll(extPath); err != nil {
+			printError(fmt.Errorf("failed to remove %s: %w", extPath, err))
+			return false, nil
+		}
+		if err = os.Symlink(intPath, extPath); err != nil {
+			printError(fmt.Errorf("failed to create symlink from %s to %s: %w", extPath, intPath, err))
+			return false, nil
+		}
+		printLinked(intPath, extPath)
+		return true, nil
 	}
 
 	// Already linked, so the link is not recreated
@@ -270,13 +293,20 @@ const (
 )
 
 // symlinkedDir decides what applying does with a symbolic link at a path where
-// the repository holds a directory. A link that holds nothing of the user's is
-// replaced with a real directory. A link of the user's to a directory, such as
+// the repository holds a directory. A link that gog made, broken or not, holds
+// nothing of the user's and is replaced with a real directory. A link of the user's to a directory, such as
 // a home directory reached through one, is descended through: the repository's
 // files are linked inside the directory it points at. Anything else is refused,
 // with the error that says why, because creating the directory would write
 // through the link.
 func symlinkedDir(p string) (dirAction, error) {
+	// A broken link of the user's may point at a drive that is not mounted, or
+	// at a path that exists only on some hosts: it is the user's layout rather
+	// than something gog left behind
+	if _, err := os.Stat(p); os.IsNotExist(err) && !repository.IsGogLink(p) {
+		target, _ := os.Readlink(p)
+		return refuseDir, fmt.Errorf("%q is a symbolic link to %s, which does not exist (mount or create it, or remove the link, then run the command again)", p, target)
+	}
 	ok, discardErr := discardable(p)
 	if ok {
 		return replaceDir, nil
@@ -329,6 +359,36 @@ func gogLinkConflict(repoPath string, force bool, extPath string) error {
 		return nil
 	}
 	return fmt.Errorf("%q is repository %s's link (remove it from there first, or pass --force to take it over)", extPath, repository.NameOf(target))
+}
+
+// errNotStale stops a walk at the first entry that is not a stale link
+var errNotStale = errors.New("not a stale link")
+
+// holdsOnlyStaleLinks reports whether dir holds at least one link, and nothing
+// at any depth but directories and broken links into this repository: what an
+// earlier run linked from a directory the repository no longer holds. Removing
+// it discards nothing of the user's.
+func holdsOnlyStaleLinks(repoPath, dir string) bool {
+	contentPath := paths.Resolve(repository.ContentPath(repoPath))
+	found := false
+	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		target, ok := repository.LinkTarget(p)
+		if !ok || !paths.Within(contentPath, target) {
+			return errNotStale
+		}
+		if _, statErr := os.Stat(p); statErr == nil {
+			return errNotStale
+		}
+		found = true
+		return nil
+	})
+	return err == nil && found
 }
 
 // refusal reports that a path was left alone, naming the error that decided it

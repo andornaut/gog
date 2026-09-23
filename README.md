@@ -110,7 +110,8 @@ dotfiles/
 ```
 
 A repository with no `root/` has nothing to link, and `gog apply` and `gog ls`
-say so rather than exiting silently.
+say so rather than exiting silently. A `root/` that is a file or a symbolic link
+counts as none, and `gog add` refuses to write through it.
 
 ### `$HOME` substitution
 
@@ -154,6 +155,8 @@ say so rather than exiting silently.
   skipped: linking its files breaks that repository.
 - Skipping the irregular entries lets a directory such as `~/.gnupg` be added
   while the agent sockets in it are left alone.
+- A directory with nothing in it that can be added is skipped
+  (`Skipped: ...`): git does not track directories.
 - A file with more than one name is copied once per name. Git records contents
   per path, so a hard link is not preserved.
 - Every path is checked before any is copied, so one unusable argument fails
@@ -195,9 +198,20 @@ A path is replaced without asking only when nothing of yours is lost:
 
 Another repository's link is otherwise a conflict, naming that repository.
 
+Where the repository holds a file and the path is a directory, the directory is
+replaced only when it holds nothing but broken links into the repository: what
+an earlier run linked from a directory the repository has since turned into a
+file. Anything else in it makes the path a conflict.
+
+A path in a directory gog cannot write to is a conflict too, and `gog add`
+refuses it before copying anything. Running gog under `sudo -E` to manage a path
+such as `/etc/hosts` works, but leaves files that root owns in the repository.
+
 A symbolic link to a directory, such as a `~/.config` that points elsewhere or
 a home directory reached through a link, is kept, and the repository's files are
-linked inside the directory it points at.
+linked inside the directory it points at. A broken one of yours, such as a link
+to a drive that is not mounted, is kept too and reported as a conflict, naming
+its missing target.
 
 A link to a file the repository no longer holds, such as one a pull deleted or
 renamed, points at nothing. `gog apply` reports it and leaves it alone:

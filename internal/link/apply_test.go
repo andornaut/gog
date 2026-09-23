@@ -234,34 +234,39 @@ func TestDirReplacesASymlinkedDirectoryOfItsOwn(t *testing.T) {
 	assertLink(t, filepath.Join(homeDir, ".config/app/conf"), intPath)
 }
 
-// A path that cannot be linked at all fails the command, naming what could not
-// be done; only a conflict is reported and passed over. What was linked before
-// the failure is still staged, so that it is not left untracked.
-func TestDirFailsWhenTheLinkCannotBeMade(t *testing.T) {
+// A path in a directory gog cannot write to is reported and passed over, as a
+// conflict is, and the rest of the repository is still linked and staged
+func TestDirCarriesOnPastAPathItCannotWrite(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root writes to a directory whose mode forbids it")
 	}
 	repoPath, homeDir := newSandbox(t)
-	// Walked first, so it is linked before the failure below
 	linked := write(t, repoPath, "$HOME/.bashrc", "bashrc\n")
 	write(t, repoPath, "$HOME/locked/conf", "conf\n")
+	// Walked after the locked directory
+	later := write(t, repoPath, "$HOME/zz/conf", "conf\n")
 	locked := filepath.Join(homeDir, "locked")
 	if err := os.Mkdir(locked, 0500); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(locked, 0755) })
 
-	err := Dir(repoPath, false, repository.ContentPath(repoPath))
+	var err error
+	out := testout.Capture(t, func() { err = Dir(repoPath, false, repository.ContentPath(repoPath)) })
 
-	if err == nil || !strings.Contains(err.Error(), "failed to create symlink") {
-		t.Errorf("Dir() = %v, want a failure naming what could not be done", err)
+	if !errors.Is(err, ErrIncomplete) {
+		t.Errorf("Dir() = %v, want ErrIncomplete", err)
+	}
+	if !strings.Contains(out, "cannot create symlink "+filepath.Join(locked, "conf")) {
+		t.Errorf("Dir() printed %q, want the path named", out)
 	}
 	if _, statErr := os.Lstat(filepath.Join(locked, "conf")); !os.IsNotExist(statErr) {
 		t.Errorf("the path was linked although the directory forbids it (%v)", statErr)
 	}
 	assertLink(t, filepath.Join(homeDir, ".bashrc"), linked)
-	if got := staged(t, repoPath); !strings.Contains(got, "$HOME/.bashrc") {
-		t.Errorf("index holds %q, want the path linked before the failure", got)
+	assertLink(t, filepath.Join(homeDir, "zz", "conf"), later)
+	if got := staged(t, repoPath); !strings.Contains(got, "$HOME/.bashrc") || !strings.Contains(got, "$HOME/zz/conf") {
+		t.Errorf("index holds %q, want both linked paths", got)
 	}
 }
 
@@ -403,5 +408,112 @@ func TestDirLinksAFileMetTwiceFromOnePath(t *testing.T) {
 	for range 2 {
 		testout.Capture(t, func() { _ = Dir(repoPath, false, repository.ContentPath(repoPath)) })
 		assertLink(t, filepath.Join(homeDir, ".config", "vim", "vimrc"), realInt)
+	}
+}
+
+// A broken link of the user's where the repository holds a directory, such as
+// one to a drive that is not mounted, is the user's layout: it is refused and
+// kept, and listed as a conflict. One that gog made is replaced.
+func TestDirRefusesABrokenLinkOfTheUsersWhereADirectoryBelongs(t *testing.T) {
+	repoPath, homeDir := newSandbox(t)
+	write(t, repoPath, "$HOME/.mounted/config", "config\n")
+	unmounted := filepath.Join(homeDir, "mnt", "mounted")
+	extDir := filepath.Join(homeDir, ".mounted")
+	if err := os.Symlink(unmounted, extDir); err != nil {
+		t.Fatal(err)
+	}
+
+	var err error
+	out := testout.Capture(t, func() { err = Dir(repoPath, false, repository.ContentPath(repoPath)) })
+
+	if !errors.Is(err, ErrIncomplete) || !strings.Contains(out, "which does not exist") {
+		t.Errorf("Dir() = %v, printed %q, want the missing target named", err, out)
+	}
+	if target, readErr := os.Readlink(extDir); readErr != nil || target != unmounted {
+		t.Errorf("%s -> %s (%v), want the user's link kept", extDir, target, readErr)
+	}
+	entries, listErr := List(repoPath)
+	if listErr != nil {
+		t.Fatal(listErr)
+	}
+	if got := stateOf(t, entries, filepath.Join(extDir, "config")); got != StateConflict {
+		t.Errorf("state = %s, want %s", got, StateConflict)
+	}
+}
+
+// A directory the repository no longer holds, which now holds a file there,
+// is replaced when it holds nothing but broken links into the repository, and
+// is a conflict when it holds anything else
+func TestDirReplacesADirectoryOfStaleLinksWithAFile(t *testing.T) {
+	for _, withOwnFile := range []bool{false, true} {
+		repoPath, homeDir := newSandbox(t)
+		intPath := write(t, repoPath, "$HOME/.app", "now a file\n")
+		extPath := filepath.Join(homeDir, ".app")
+		gone := filepath.Join(repository.ContentPath(repoPath), "$HOME", ".app.d", "conf")
+		if err := os.MkdirAll(filepath.Join(extPath, "sub"), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(gone, filepath.Join(extPath, "sub", "conf")); err != nil {
+			t.Fatal(err)
+		}
+		if withOwnFile {
+			if err := os.WriteFile(filepath.Join(extPath, "mine"), []byte("mine\n"), 0644); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		entries, listErr := List(repoPath)
+		if listErr != nil {
+			t.Fatal(listErr)
+		}
+		var err error
+		testout.Capture(t, func() { err = Dir(repoPath, false, repository.ContentPath(repoPath)) })
+
+		wantState := StateReplace
+		if withOwnFile {
+			wantState = StateConflict
+		}
+		if got := stateOf(t, entries, extPath); got != wantState {
+			t.Errorf("with a file of the user's = %v: state = %s, want %s", withOwnFile, got, wantState)
+		}
+		if withOwnFile {
+			if !errors.Is(err, ErrIncomplete) {
+				t.Errorf("Dir() = %v, want ErrIncomplete", err)
+			}
+			if _, statErr := os.Stat(filepath.Join(extPath, "mine")); statErr != nil {
+				t.Errorf("the user's file is gone (%v)", statErr)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("Dir() = %v", err)
+		}
+		assertLink(t, extPath, intPath)
+	}
+}
+
+// A path in a directory gog cannot write to is listed as a conflict, since
+// applying cannot link it
+func TestListStateOfAPathInADirectoryItCannotWrite(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root writes a directory whatever its mode")
+	}
+	repoPath, homeDir := newSandbox(t)
+	write(t, repoPath, "$HOME/locked/conf", "conf\n")
+	locked := filepath.Join(homeDir, "locked")
+	if err := os.MkdirAll(locked, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(locked, 0555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(locked, 0755) })
+
+	entries, err := List(repoPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := stateOf(t, entries, filepath.Join(locked, "conf")); got != StateConflict {
+		t.Errorf("state = %s, want %s", got, StateConflict)
 	}
 }

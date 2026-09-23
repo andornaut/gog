@@ -3,6 +3,7 @@ package repository
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -276,8 +277,12 @@ func reportSkipped(repoPath, resolvedRoot, typedRoot string) fscopy.ReportFunc {
 			if paths.Within(paths.Resolve(repoPath), resolved) {
 				return
 			}
-			fmt.Fprintf(os.Stderr, "Warning: skipping %s (repository %s already manages it; remove it from there first)\n",
-				shown, repoNameOf(resolved))
+			if name := repoNameOf(resolved); name != "" && name != "." {
+				fmt.Fprintf(os.Stderr, "Warning: skipping %s (repository %s already manages it; remove it from there first)\n",
+					shown, name)
+				return
+			}
+			fmt.Fprintf(os.Stderr, "Warning: skipping symbolic link %s (it links to gog's data directory)\n", shown)
 			return
 		}
 		if target, err := os.Readlink(p); err == nil {
@@ -367,6 +372,10 @@ func resolveAddPath(repoPath string, force bool, targetPath string) (string, err
 	// A link at the last component is checked once the kind of path is known:
 	// a file's copy replaces it, and a directory's is refused below.
 	intPath := ToInternalPath(repoPath, targetPath)
+	if info, err := os.Lstat(ContentPath(repoPath)); err == nil && !info.IsDir() {
+		return "", fmt.Errorf("cannot add %q: %s is not a directory (remove it from the repository first)",
+			targetPath, ContentPath(repoPath))
+	}
 	if contentPath := paths.Resolve(ContentPath(repoPath)); !paths.Within(contentPath, paths.ResolveParent(intPath)) {
 		return "", linkInRepositoryError(repoPath, targetPath, intPath)
 	}
@@ -415,12 +424,66 @@ func resolveAddPath(repoPath string, force bool, targetPath string) (string, err
 	if !info.Mode().IsRegular() && !info.IsDir() {
 		return "", fmt.Errorf("%q is a %s (gog manages files and directories)", targetPath, fscopy.FileKind(info.Mode()))
 	}
+	// The links are made where the path is: a file is replaced by one in its
+	// directory, and a directory's files by links inside it. The copy has to
+	// be able to count on that before it is made. A path that is already this
+	// repository's link needs nothing written.
+	if !LinksTo(targetPath, intPath) {
+		dir := filepath.Dir(targetPath)
+		if info.IsDir() {
+			dir = unwritableDir(extPath, targetPath)
+		} else if paths.Writable(dir) {
+			dir = ""
+		}
+		if dir != "" {
+			return "", fmt.Errorf("cannot add %q: %s is not writable, and the links are made in it", targetPath, dir)
+		}
+	}
 	// A directory is copied into, rather than over, what the repository holds
 	// at its path, so a link there would be written through
 	if info.IsDir() && paths.IsSymlink(intPath) {
 		return "", linkInRepositoryError(repoPath, targetPath, intPath)
 	}
 	return extPath, nil
+}
+
+// unwritableDir returns the first directory of the tree at extPath, the resolved
+// form of typedRoot, that gog cannot write to but would have to, named as
+// typedRoot names it, or "" if there is none. A link is made only beside a
+// regular file that is copied: a directory that holds none, such as an empty
+// one or one whose files are already links, needs nothing written. The
+// entries the copy passes over are left out too.
+func unwritableDir(extPath, typedRoot string) string {
+	var found string
+	skip := skipFor(extPath, typedRoot)
+	checked := map[string]bool{}
+	_ = filepath.WalkDir(extPath, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil //nolint:nilerr // an unreadable entry is the copy's to report
+		}
+		// Checked by name first, so that the copy's warning about it is not
+		// printed twice
+		if p != extPath && (d.Name() == ".git" || skip(p, "")) {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !d.Type().IsRegular() {
+			return nil
+		}
+		dir := filepath.Dir(p)
+		if checked[dir] {
+			return nil
+		}
+		checked[dir] = true
+		if !paths.Writable(dir) {
+			found = asTyped(dir, extPath, typedRoot)
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	return found
 }
 
 // linkInRepositoryError refuses a path whose copy would be written through a
@@ -484,6 +547,12 @@ func addTargetPath(repoPath string, force bool, targetPath string) error {
 	}
 	if err != nil {
 		return undoCopy(repoPath, intPath, held, err)
+	}
+	// Git does not track directories, so a directory whose entries were all
+	// empty or passed over is left out by the copy, and nothing else would say
+	// so
+	if _, statErr := os.Lstat(intPath); extFileInfo.IsDir() && os.IsNotExist(statErr) {
+		fmt.Fprintf(os.Stderr, "Skipped: %s (nothing in it could be added)\n", paths.Display(targetPath))
 	}
 	return nil
 }

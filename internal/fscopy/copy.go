@@ -71,7 +71,7 @@ func File(src, dst string) (err error) {
 	// limit still has room for its temporary file beside it
 	out, err := os.CreateTemp(filepath.Dir(dst), ".gog-tmp-*")
 	if err != nil {
-		return err
+		return fmt.Errorf("cannot write %s: %w", dst, err)
 	}
 	tmp := out.Name()
 	defer func() {

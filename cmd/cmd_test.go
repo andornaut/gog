@@ -106,6 +106,22 @@ func TestResolveGitPaths(t *testing.T) {
 			want: []string{"commit", "-m", linkPath},
 		},
 		{
+			// clean's -e takes a pattern, not a pathspec
+			name: "value of a pathspec subcommand's flag is passed through",
+			args: []string{"clean", "-n", "-e", linkPath, linkPath},
+			want: []string{"clean", "-n", "-e", linkPath, "tracked"},
+		},
+		{
+			name: "value of a flag that ends a group of short flags is passed through",
+			args: []string{"clean", "-fde", linkPath, linkPath},
+			want: []string{"clean", "-fde", linkPath, "tracked"},
+		},
+		{
+			name: "a value attached to its flag leaves the next argument a pathspec",
+			args: []string{"clean", "-f", "-e.cache", linkPath},
+			want: []string{"clean", "-f", "-e.cache", "tracked"},
+		},
+		{
 			// The first argument is the subcommand even when it names a path
 			name: "the subcommand itself is passed through",
 			args: []string{"add"},

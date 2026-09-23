@@ -24,7 +24,9 @@ func ContentPath(repoPath string) string {
 // A regular file or a link of that name is not one, and walking it would not be
 // walking a tree.
 func HasContentDir(repoPath string) bool {
-	info, err := os.Stat(ContentPath(repoPath))
+	// Not followed: a link named root would have gog read and write wherever it
+	// points
+	info, err := os.Lstat(ContentPath(repoPath))
 	return err == nil && info.IsDir()
 }
 

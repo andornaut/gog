@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"unicode"
 )
 
@@ -84,4 +85,23 @@ func Display(s string) string {
 
 func isUnprintable(r rune) bool {
 	return !unicode.IsPrint(r)
+}
+
+// Writable reports whether the current user can create and remove entries in
+// dir, or, if dir does not exist yet, in the nearest directory above it that
+// does, where dir would be created
+func Writable(dir string) bool {
+	// W_OK and X_OK: writing an entry needs both on its directory
+	const writeAndSearch = 0x2 | 0x1
+	for {
+		info, err := os.Stat(dir)
+		if err == nil {
+			return info.IsDir() && syscall.Access(dir, writeAndSearch) == nil
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return false
+		}
+		dir = parent
+	}
 }

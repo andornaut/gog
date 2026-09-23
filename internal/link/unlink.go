@@ -24,8 +24,9 @@ func UnlinkFile(repoPath, intPath string) error {
 }
 
 func unlinkDir(repoPath, intPath string, restoreMissing bool) error {
-	// Nothing there is nothing to restore.
-	if _, err := os.Lstat(intPath); os.IsNotExist(err) {
+	// Nothing there is nothing to restore, and a file or a link where a
+	// directory belongs is not a tree the repository linked
+	if info, err := os.Lstat(intPath); os.IsNotExist(err) || (err == nil && !info.IsDir()) {
 		return nil
 	}
 	return filepath.Walk(intPath, func(p string, info os.FileInfo, err error) error {

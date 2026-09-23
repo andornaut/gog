@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/andornaut/gog/internal/gittest"
@@ -240,5 +241,82 @@ func TestStaleOnARepositoryWithNoCommits(t *testing.T) {
 
 	if stale, err := Stale(repoPath); err != nil || len(stale) != 0 {
 		t.Errorf("Stale() = %q, %v, want nothing", stale, err)
+	}
+}
+
+// A root/ that is a file or a symbolic link is not a content directory: nothing
+// is listed or linked from it, and nothing is written wherever it points
+func TestAContentPathThatIsNotADirectoryHoldsNothing(t *testing.T) {
+	tests := []struct {
+		name    string
+		prepare func(t *testing.T, contentPath, elsewhere string)
+	}{
+		{
+			name: "a file",
+			prepare: func(t *testing.T, contentPath, _ string) {
+				t.Helper()
+				if err := os.WriteFile(contentPath, []byte("not a tree\n"), 0644); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "a symbolic link to a directory",
+			prepare: func(t *testing.T, contentPath, elsewhere string) {
+				t.Helper()
+				if err := os.Symlink(elsewhere, contentPath); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repoPath, homeDir := newSandbox(t)
+			elsewhere := filepath.Join(t.TempDir(), "tree")
+			if err := os.MkdirAll(filepath.Join(elsewhere, "$HOME"), 0755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(elsewhere, "$HOME", ".bashrc"), []byte("bashrc\n"), 0644); err != nil {
+				t.Fatal(err)
+			}
+			tt.prepare(t, repository.ContentPath(repoPath), elsewhere)
+
+			if entries, err := List(repoPath); err != nil || len(entries) != 0 {
+				t.Errorf("List() = %v, %v, want nothing", entries, err)
+			}
+			if err := Dir(repoPath, false, repository.ContentPath(repoPath)); err != nil {
+				t.Errorf("Dir() = %v", err)
+			}
+			if _, err := os.Lstat(filepath.Join(homeDir, ".bashrc")); !os.IsNotExist(err) {
+				t.Errorf("%s exists (%v), want nothing linked", filepath.Join(homeDir, ".bashrc"), err)
+			}
+			if repository.HasContentDir(repoPath) {
+				t.Error("HasContentDir() = true")
+			}
+		})
+	}
+}
+
+// Each guard against linking a repository's file to itself holds on its own
+func TestSelfLinkGuardsHoldAlone(t *testing.T) {
+	repoPath, homeDir := newSandbox(t)
+	intPath := write(t, repoPath, "$HOME/.config/app/conf", "conf\n")
+	cfg := filepath.Join(homeDir, "cfg")
+	if err := os.Symlink(filepath.Join(repository.ContentPath(repoPath), "$HOME", ".config"), cfg); err != nil {
+		t.Fatal(err)
+	}
+	config := filepath.Join(homeDir, ".config")
+	if err := os.Symlink(cfg, config); err != nil {
+		t.Fatal(err)
+	}
+
+	// A link resolving into the data directory through one gog did not make
+	if action, err := symlinkedDir(config); action != refuseDir || err == nil || !strings.Contains(err.Error(), "into gog's data directory") {
+		t.Errorf("symlinkedDir() = %v, %v, want it refused as a link into gog's data directory", action, err)
+	}
+	// One file reached by two paths is not a copy of itself
+	if sameContents(filepath.Join(config, "app", "conf"), intPath) {
+		t.Error("sameContents() = true for one file reached by two paths")
 	}
 }

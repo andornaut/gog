@@ -447,6 +447,174 @@ func TestAddPathsWarnsAboutANarrowParentDirectory(t *testing.T) {
 	}
 }
 
+// A root/ that is not a directory is refused, rather than written through
+func TestAddPathsRefusesAContentPathThatIsNotADirectory(t *testing.T) {
+	repoPath, homeDir := newSandbox(t)
+	elsewhere := t.TempDir()
+	symlink(t, elsewhere, ContentPath(repoPath))
+	target := writeFile(t, filepath.Join(homeDir, ".bashrc"), "bashrc\n")
+
+	err := AddPaths(repoPath, false, []string{target})
+
+	if err == nil || !strings.Contains(err.Error(), "is not a directory") {
+		t.Errorf("AddPaths() = %v, want root/ refused", err)
+	}
+	if entries, readErr := os.ReadDir(elsewhere); readErr != nil || len(entries) != 0 {
+		t.Errorf("%s holds %d entries (%v), want nothing written through root/", elsewhere, len(entries), readErr)
+	}
+}
+
+// A git rm that fails leaves the repository's copy, so that the index and the
+// directory still agree
+func TestRemovePathsKeepsTheCopyWhenGitFails(t *testing.T) {
+	repoPath, homeDir := newSandbox(t)
+	target := writeFile(t, filepath.Join(homeDir, ".bashrc"), "bashrc\n")
+	if err := AddPaths(repoPath, false, []string{target}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repoPath, ".git", "index.lock"), nil, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := RemovePaths(repoPath, []string{target}); err == nil {
+		t.Error("RemovePaths() reported success although git rm failed")
+	}
+	if _, err := os.Lstat(filepath.Join(repoPath, ContentDirName, "$HOME", ".bashrc")); err != nil {
+		t.Errorf("the repository's copy is gone (%v)", err)
+	}
+}
+
+// A directory that holds no files leaves nothing to add, and says so
+func TestAddPathsReportsADirectoryWithNoFiles(t *testing.T) {
+	repoPath, homeDir := newSandbox(t)
+	empty := filepath.Join(homeDir, ".empty", "sub")
+	if err := os.MkdirAll(empty, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	out := testout.Capture(t, func() {
+		if err := AddPaths(repoPath, false, []string{filepath.Dir(empty)}); err != nil {
+			t.Errorf("AddPaths() = %v", err)
+		}
+	})
+
+	if want := "Skipped: " + filepath.Dir(empty) + " (nothing in it could be added)"; !strings.Contains(out, want) {
+		t.Errorf("AddPaths() printed %q, want %q", out, want)
+	}
+}
+
+// A path in a directory gog cannot write to is refused before anything is
+// copied: the link could not be made, and the copy would be left unstaged
+func TestAddPathsRefusesAPathInADirectoryItCannotWrite(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root writes a directory whatever its mode")
+	}
+	repoPath, homeDir := newSandbox(t)
+	target := writeFile(t, filepath.Join(homeDir, "locked", "conf"), "conf\n")
+	if err := os.Chmod(filepath.Dir(target), 0555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(filepath.Dir(target), 0755) })
+
+	err := AddPaths(repoPath, false, []string{target})
+
+	if err == nil || !strings.Contains(err.Error(), "is not writable") {
+		t.Errorf("AddPaths() = %v, want the path refused", err)
+	}
+	if _, statErr := os.Lstat(ContentPath(repoPath)); !os.IsNotExist(statErr) {
+		t.Errorf("the repository holds %s (%v), want nothing copied", ContentDirName, statErr)
+	}
+}
+
+// Adding a directory makes links inside it, so the directory itself has to be
+// writable rather than its parent. A path that is already this repository's
+// link needs nothing written.
+func TestAddPathsChecksWhereTheLinksAreMade(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root writes a directory whatever its mode")
+	}
+	repoPath, homeDir := newSandbox(t)
+	locked := filepath.Join(homeDir, "locked")
+	writable := writeFile(t, filepath.Join(locked, "writable", "conf"), "conf\n")
+	readOnly := writeFile(t, filepath.Join(homeDir, "ro", "conf"), "conf\n")
+	held := writeFile(t, filepath.Join(repoPath, ContentDirName, "$HOME", "locked", ".held"), "held\n")
+	linked := symlink(t, held, filepath.Join(locked, ".held"))
+	for _, dir := range []string{locked, filepath.Dir(readOnly)} {
+		if err := os.Chmod(dir, 0555); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(dir, 0755) })
+	}
+
+	if err := AddPaths(repoPath, false, []string{filepath.Dir(writable)}); err != nil {
+		t.Errorf("AddPaths() of a writable directory in a read-only one = %v", err)
+	}
+	if err := AddPaths(repoPath, false, []string{filepath.Dir(readOnly)}); err == nil || !strings.Contains(err.Error(), "is not writable") {
+		t.Errorf("AddPaths() of a read-only directory = %v, want it refused", err)
+	}
+	if err := AddPaths(repoPath, false, []string{linked}); err != nil {
+		t.Errorf("AddPaths() of a path already linked = %v", err)
+	}
+}
+
+// Links are made in every directory of an added tree, so one gog cannot write
+// to anywhere in it refuses the add before anything is copied
+func TestAddPathsRefusesATreeWithADirectoryItCannotWrite(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root writes a directory whatever its mode")
+	}
+	repoPath, homeDir := newSandbox(t)
+	tree := filepath.Join(homeDir, ".config", "foo")
+	writeFile(t, filepath.Join(tree, "conf"), "conf\n")
+	sub := filepath.Join(tree, "sub")
+	writeFile(t, filepath.Join(sub, "conf"), "conf\n")
+	if err := os.Chmod(sub, 0555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(sub, 0755) })
+
+	err := AddPaths(repoPath, false, []string{tree})
+
+	if err == nil || !strings.Contains(err.Error(), sub+" is not writable") {
+		t.Errorf("AddPaths() = %v, want %s named", err, sub)
+	}
+	if _, statErr := os.Lstat(ContentPath(repoPath)); !os.IsNotExist(statErr) {
+		t.Errorf("the repository holds %s (%v), want nothing copied", ContentDirName, statErr)
+	}
+}
+
+// A directory gog cannot write to but holds nothing to link, such as an empty
+// one or one whose files are already this repository's links, does not stop
+// the add
+func TestAddPathsIgnoresADirectoryItNeedNotWrite(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root writes a directory whatever its mode")
+	}
+	repoPath, homeDir := newSandbox(t)
+	tree := filepath.Join(homeDir, ".config", "foo")
+	writeFile(t, filepath.Join(tree, "conf"), "conf\n")
+	empty := filepath.Join(tree, "empty")
+	if err := os.MkdirAll(empty, 0755); err != nil {
+		t.Fatal(err)
+	}
+	linkedDir := filepath.Join(tree, "linked")
+	held := writeFile(t, filepath.Join(ContentPath(repoPath), "$HOME", ".config", "foo", "linked", "conf"), "held\n")
+	symlink(t, held, filepath.Join(linkedDir, "conf"))
+	for _, dir := range []string{empty, linkedDir} {
+		if err := os.Chmod(dir, 0555); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(dir, 0755) })
+	}
+
+	if err := AddPaths(repoPath, false, []string{tree}); err != nil {
+		t.Errorf("AddPaths() = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(ContentPath(repoPath), "$HOME", ".config", "foo", "conf")); err != nil {
+		t.Errorf("the repository does not hold conf: %v", err)
+	}
+}
+
 // A path inside the data directory is refused by the repository that holds it,
 // and by the path it is linked from
 func TestOwnPathError(t *testing.T) {
@@ -580,6 +748,12 @@ func TestReportSkipped(t *testing.T) {
 			p:    symlink(t, writeFile(t, filepath.Join(repoPath, ContentDirName, "$HOME", ".inputrc"), "inputrc\n"), filepath.Join(homeDir, ".inputrc")),
 			mode: os.ModeSymlink,
 			want: "",
+		},
+		{
+			name: "a link to the data directory itself",
+			p:    symlink(t, BaseDir, filepath.Join(homeDir, "data")),
+			mode: os.ModeSymlink,
+			want: "Warning: skipping symbolic link " + filepath.Join(homeDir, "data") + " (it links to gog's data directory)\n",
 		},
 		{
 			name: "an irregular file",
@@ -960,17 +1134,17 @@ func TestWidenedMode(t *testing.T) {
 // had overwritten.
 func TestAddPathsUndoesAFailedCopy(t *testing.T) {
 	if os.Geteuid() == 0 {
-		t.Skip("root reads a directory whose mode forbids it")
+		t.Skip("root reads a file whose mode forbids it")
 	}
 	repoPath, homeDir := newSandbox(t)
 	conf := filepath.Join(homeDir, ".conf")
 	writeFile(t, filepath.Join(conf, "a", "file"), "file\n")
 	// Sorted last, so the copy fails only once it has written something
-	unreadable := filepath.Join(conf, "z")
-	if err := os.Mkdir(unreadable, 0000); err != nil {
+	unreadable := writeFile(t, filepath.Join(conf, "z"), "z\n")
+	if err := os.Chmod(unreadable, 0000); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(unreadable, 0755) })
+	t.Cleanup(func() { _ = os.Chmod(unreadable, 0644) })
 	intPath := filepath.Join(repoPath, ContentDirName, "$HOME", ".conf")
 
 	if err := AddPaths(repoPath, false, []string{conf}); err == nil {
