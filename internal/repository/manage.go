@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -29,7 +30,11 @@ func Add(repoName, repoURL string) (string, error) {
 	case err == nil && len(entries) > 0:
 		// Distinguish an already-configured repository from an unrelated
 		// directory so the user is not told to remove real data
-		if git.Is(repoPath) {
+		isRepo, isErr := git.Is(repoPath)
+		if isErr != nil {
+			return "", fmt.Errorf("a repository named %q already exists (%w)", filepath.Base(repoPath), isErr)
+		}
+		if isRepo {
 			return "", fmt.Errorf("a repository named %q already exists", filepath.Base(repoPath))
 		}
 		return "", fmt.Errorf("%q already exists and is not a gog repository (remove it or choose another name)", repoPath)
@@ -117,7 +122,10 @@ func UnsavedWork(repoPath string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	status, err := git.Output(repoPath, "status", "--porcelain", "--ignored")
+	// Untracked files are asked for explicitly: status.showUntrackedFiles=no,
+	// common in a dotfiles repository, would otherwise hide them and the
+	// ignored files with them
+	status, err := git.Output(repoPath, "status", "--porcelain", "--ignored", "--untracked-files=normal")
 	if err != nil {
 		return nil, err
 	}
@@ -193,6 +201,7 @@ func AddPaths(repoPath string, force bool, targetPaths []string) error {
 // ~/.ssh or ~/.netrc would otherwise find it world-readable on the next
 // machine, with nothing having reported it.
 func warnUnrecordableModes(repoPath string, targetPaths []string) {
+	warnNarrowAncestors(targetPaths)
 	for _, targetPath := range targetPaths {
 		intPath := ToInternalPath(repoPath, targetPath)
 		// Walk errors are ignored: the paths were just written, and a warning
@@ -207,9 +216,45 @@ func warnUnrecordableModes(repoPath string, targetPaths []string) {
 			}
 			fmt.Fprintf(os.Stderr,
 				"Warning: %s has mode %04o, which git does not record; it will be applied as %04o on another machine\n",
-				ToExternalPath(repoPath, p), info.Mode().Perm(), recorded)
+				paths.Display(ToExternalPath(repoPath, p)), info.Mode().Perm(), recorded)
 			return nil
 		})
+	}
+}
+
+// warnNarrowAncestors reports the directories above the given paths whose
+// permissions git will not carry to another machine. Applying creates a
+// directory the path needs as 0755, so a directory that is 0700 here becomes
+// readable by everyone there when only a file inside it is added. The home
+// directory and everything above it are left out: applying never creates them.
+// Each directory is reported once, outermost first.
+func warnNarrowAncestors(targetPaths []string) {
+	seen := map[string]bool{}
+	for _, targetPath := range targetPaths {
+		stop := "/"
+		if paths.Within(homeDir, targetPath) {
+			stop = homeDir
+		}
+		var narrow []string
+		for dir := filepath.Dir(targetPath); dir != stop && paths.Within(stop, dir) && !seen[dir]; dir = filepath.Dir(dir) {
+			seen[dir] = true
+			info, err := os.Stat(dir)
+			if err != nil {
+				continue
+			}
+			if _, widened := widenedMode(info.Mode()); widened {
+				narrow = append(narrow, dir)
+			}
+		}
+		for _, dir := range slices.Backward(narrow) {
+			info, err := os.Stat(dir)
+			if err != nil {
+				continue
+			}
+			fmt.Fprintf(os.Stderr,
+				"Warning: %s has mode %04o, which git does not record; applying on another machine creates it as 0755\n",
+				paths.Display(dir), info.Mode().Perm())
+		}
 	}
 }
 
@@ -220,8 +265,9 @@ func warnUnrecordableModes(repoPath string, targetPaths []string) {
 func reportSkipped(repoPath, resolvedRoot, typedRoot string) fscopy.ReportFunc {
 	return func(p string, mode os.FileMode) {
 		p = asTyped(p, resolvedRoot, typedRoot)
+		shown := paths.Display(p)
 		if mode&os.ModeSymlink == 0 {
-			fmt.Fprintf(os.Stderr, "Warning: skipping %s %s (git cannot store it)\n", fscopy.FileKind(mode), p)
+			fmt.Fprintf(os.Stderr, "Warning: skipping %s %s (git cannot store it)\n", fscopy.FileKind(mode), shown)
 			return
 		}
 		if resolved, err := filepath.EvalSymlinks(p); err == nil && WithinBaseDir(resolved) {
@@ -231,14 +277,14 @@ func reportSkipped(repoPath, resolvedRoot, typedRoot string) fscopy.ReportFunc {
 				return
 			}
 			fmt.Fprintf(os.Stderr, "Warning: skipping %s (repository %s already manages it; remove it from there first)\n",
-				p, repoNameOf(resolved))
+				shown, repoNameOf(resolved))
 			return
 		}
 		if target, err := os.Readlink(p); err == nil {
-			fmt.Fprintf(os.Stderr, "Warning: skipping symbolic link %s -> %s (add that path instead)\n", p, target)
+			fmt.Fprintf(os.Stderr, "Warning: skipping symbolic link %s -> %s (add that path instead)\n", shown, paths.Display(target))
 			return
 		}
-		fmt.Fprintf(os.Stderr, "Warning: skipping symbolic link %s (add its target instead)\n", p)
+		fmt.Fprintf(os.Stderr, "Warning: skipping symbolic link %s (add its target instead)\n", shown)
 	}
 }
 
@@ -349,6 +395,16 @@ func resolveAddPath(repoPath string, force bool, targetPath string) (string, err
 		return "", fmt.Errorf("%q is managed by repository %s (remove it from there first, or pass --force to take it over)",
 			targetPath, repoNameOf(extPath))
 	}
+	// This repository's link for another path, met through a symbolic link to
+	// a directory, is that path: adding it again would store the file twice
+	if paths.IsSymlink(targetPath) && paths.Within(paths.Resolve(repoPath), extPath) && !LinksTo(targetPath, intPath) {
+		target, _ := LinkTarget(targetPath)
+		other := target
+		if rel, relErr := filepath.Rel(paths.Resolve(ContentPath(repoPath)), target); relErr == nil {
+			other = ToExternalPath(repoPath, filepath.Join(ContentPath(repoPath), rel))
+		}
+		return "", fmt.Errorf("%q is this repository's link from %s, reached through a symbolic link to a directory (name that path instead)", targetPath, other)
+	}
 	info, err := os.Stat(extPath)
 	if err != nil {
 		return "", describePathError(targetPath, err)
@@ -420,7 +476,7 @@ func addTargetPath(repoPath string, force bool, targetPath string) error {
 	held := lstatErr == nil
 
 	if extFileInfo.IsDir() {
-		err = fscopy.Dir(extPath, intPath, shouldSkip, reportSkipped(repoPath, extPath, targetPath))
+		err = fscopy.Dir(extPath, intPath, skipFor(extPath, targetPath), reportSkipped(repoPath, extPath, targetPath))
 	} else if err = os.MkdirAll(filepath.Dir(intPath), 0755); err == nil {
 		// The parent directory is created here, because `fscopy.File` does not
 		// create directories

@@ -1,6 +1,7 @@
 package git
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -49,8 +50,8 @@ func TestIs(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := Is(tt.path); got != tt.want {
-				t.Errorf("Is(%s) = %v, want %v", tt.name, got, tt.want)
+			if got, err := Is(tt.path); got != tt.want || err != nil {
+				t.Errorf("Is(%s) = %v, %v, want %v", tt.name, got, err, tt.want)
 			}
 		})
 	}
@@ -58,10 +59,10 @@ func TestIs(t *testing.T) {
 	// An enclosing invocation such as a git hook exports GIT_DIR, which would
 	// otherwise answer for the directory that was asked about
 	t.Setenv("GIT_DIR", filepath.Join(repoPath, ".git"))
-	if Is(plainPath) {
+	if got, _ := Is(plainPath); got {
 		t.Error("Is() answered for GIT_DIR rather than the directory it was given")
 	}
-	if !Is(repoPath) {
+	if got, _ := Is(repoPath); !got {
 		t.Error("Is() = false for a repository root while GIT_DIR is set")
 	}
 }
@@ -98,5 +99,79 @@ func TestEnvScrubsInheritedGitVars(t *testing.T) {
 		if !got[name] {
 			t.Errorf("Env() removed %s", name)
 		}
+	}
+}
+
+// A repository that git refuses over its owner is reported with git's reason,
+// rather than as a directory that holds no repository
+func TestIsReportsARepositoryGitRefusesToUse(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("HOME", root)
+	t.Setenv("XDG_CONFIG_HOME", root)
+	repoPath := filepath.Join(root, "repo")
+	gitInit(t, repoPath)
+	t.Setenv("GIT_TEST_ASSUME_DIFFERENT_OWNER", "1")
+
+	got, err := Is(repoPath)
+
+	if got || !errors.Is(err, ErrUnsafe) || !strings.Contains(err.Error(), "safe.directory") {
+		t.Errorf("Is() = %v, %v, want ErrUnsafe naming safe.directory", got, err)
+	}
+}
+
+// gog names files literally, so a name that would be a glob matches itself
+// alone, whatever the environment says about pathspecs
+func TestRunGivesPathsLiterally(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("HOME", root)
+	t.Setenv("XDG_CONFIG_HOME", root)
+	t.Setenv("GIT_GLOB_PATHSPECS", "1")
+	repoPath := filepath.Join(root, "repo")
+	gitInit(t, repoPath)
+	for _, name := range []string{"notes1.txt", "notes[1].txt"} {
+		if err := os.WriteFile(filepath.Join(repoPath, name), []byte("x\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := Run(repoPath, "add", "notes[1].txt"); err != nil {
+		t.Fatalf("Run() = %v", err)
+	}
+
+	out, err := Output(repoPath, "ls-files")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != "notes[1].txt\n" {
+		t.Errorf("staged %q, want only notes[1].txt", out)
+	}
+}
+
+// A command named by the configuration git reads through $HOME never runs from
+// one of gog's own commands: apply can link that configuration into place
+func TestRunRunsNoConfiguredCommand(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("HOME", root)
+	t.Setenv("XDG_CONFIG_HOME", root)
+	marker := filepath.Join(root, "ran")
+	config := "[core]\n\tfsmonitor = \"touch " + marker + "; false\"\n"
+	if err := os.WriteFile(filepath.Join(root, ".gitconfig"), []byte(config), 0644); err != nil {
+		t.Fatal(err)
+	}
+	repoPath := filepath.Join(root, "repo")
+	gitInit(t, repoPath)
+	if err := os.WriteFile(filepath.Join(repoPath, "f"), []byte("x\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Run(repoPath, "add", "f"); err != nil {
+		t.Fatalf("Run() = %v", err)
+	}
+	if _, err := Output(repoPath, "status", "--porcelain"); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Errorf("the configured fsmonitor ran (%v)", err)
 	}
 }

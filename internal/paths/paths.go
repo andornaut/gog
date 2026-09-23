@@ -4,7 +4,9 @@ package paths
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"unicode"
 )
 
 // Within returns true if p equals base or is contained within it. Matching on
@@ -58,4 +60,28 @@ func IsSymlink(p string) bool {
 		return false
 	}
 	return fileInfo.Mode()&os.ModeSymlink == os.ModeSymlink
+}
+
+// Display returns s with each character that is not printable written as its
+// escape sequence, so that a file name holding a newline, a carriage return or
+// a terminal control sequence cannot add lines to gog's output or rewrite what
+// the terminal shows. Anything printable is left as it is.
+func Display(s string) string {
+	if strings.IndexFunc(s, isUnprintable) < 0 {
+		return s
+	}
+	var b strings.Builder
+	for _, r := range s {
+		if !isUnprintable(r) {
+			b.WriteRune(r)
+			continue
+		}
+		quoted := strconv.QuoteRune(r)
+		b.WriteString(quoted[1 : len(quoted)-1])
+	}
+	return b.String()
+}
+
+func isUnprintable(r rune) bool {
+	return !unicode.IsPrint(r)
 }

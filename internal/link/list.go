@@ -27,6 +27,9 @@ const (
 	// StateConflict is a path holding something of the user's. Applying would
 	// report the path and leave it alone.
 	StateConflict State = "conflict"
+	// StateStale is a link to a file the repository no longer holds, which
+	// points at nothing. Applying reports it and leaves it alone.
+	StateStale State = "stale"
 )
 
 // Entry is one path a repository holds, named as it appears outside the
@@ -63,7 +66,7 @@ func List(repoPath string) ([]Entry, error) {
 			}
 			return nil
 		}
-		st := state(p, extPath)
+		st := state(repoPath, p, extPath)
 		if slices.ContainsFunc(replaced, func(dir string) bool { return paths.Within(dir, p) }) {
 			st = StateMissing
 		}
@@ -78,15 +81,19 @@ func List(repoPath string) ([]Entry, error) {
 
 // state reports what applying would do to extPath, by the same tests linkFile
 // makes
-func state(intPath, extPath string) State {
+func state(repoPath, intPath, extPath string) State {
 	if _, err := os.Lstat(extPath); err != nil {
 		if os.IsNotExist(err) {
 			return StateMissing
 		}
 		return StateConflict
 	}
-	if target, err := os.Readlink(extPath); err == nil && target == intPath {
+	if repository.LinksTo(extPath, intPath) {
 		return StateLinked
+	}
+	// As applying without --force decides it
+	if gogLinkConflict(repoPath, false, extPath) != nil {
+		return StateConflict
 	}
 	if ok, _ := discardable(extPath); ok || sameContents(extPath, intPath) {
 		return StateReplace

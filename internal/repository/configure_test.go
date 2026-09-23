@@ -135,21 +135,21 @@ func TestGetBaseDir(t *testing.T) {
 	}
 }
 
-func TestGetBaseDirResolvesARelativeGogHome(t *testing.T) {
+// A relative data directory would name a different directory from each working
+// directory: GOG_HOME is refused, and XDG_DATA_HOME ignored as the XDG Base
+// Directory specification requires
+func TestGetBaseDirRefusesARelativeDataDirectory(t *testing.T) {
 	t.Chdir(t.TempDir())
-	cwd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
+
 	t.Setenv("GOG_HOME", "relative-gog")
 	t.Setenv("XDG_DATA_HOME", "")
-
-	got, err := getBaseDir("/home/testuser")
-
-	if err != nil {
-		t.Fatalf("getBaseDir() = %v", err)
+	if got, err := getBaseDir("/home/testuser"); err == nil || !strings.Contains(err.Error(), "GOG_HOME must be an absolute path") {
+		t.Errorf("getBaseDir() = %q, %v, want GOG_HOME refused", got, err)
 	}
-	if want := filepath.Join(cwd, "relative-gog"); got != want {
-		t.Errorf("getBaseDir() = %q, want %q", got, want)
+
+	t.Setenv("GOG_HOME", "")
+	t.Setenv("XDG_DATA_HOME", "share")
+	if got, err := getBaseDir("/home/testuser"); err != nil || got != "/home/testuser/.local/share/gog" {
+		t.Errorf("getBaseDir() = %q, %v, want XDG_DATA_HOME ignored", got, err)
 	}
 }

@@ -81,6 +81,7 @@ gog apply
 | `-s, --status` | `ls` | Print what applying would do to each path |
 | `--path` | `repository default`, `repository ls` | Print paths instead of names |
 | `--force` | `add` | Take a path over from the repository that manages it |
+| `--force` | `apply` | Replace links that another repository made |
 | `--force` | `repository rm` | Delete even if the repository holds work that no remote has |
 | `--version` | `gog` | Print the version |
 
@@ -129,6 +130,7 @@ say so rather than exiting silently.
 | Symbolic link | Refused, names its target instead | Skipped, with a warning |
 | Path another repository manages | Refused unless `--force` | Skipped, with a warning |
 | Named pipe, socket, device node | Refused | Skipped, with a warning |
+| A nested repository's `.git` | Refused | Skipped, with a warning |
 
 - A symbolic link that gog created, one whose own target is in gog's data
   directory, is followed, so a path the repository already holds can be added
@@ -145,7 +147,11 @@ say so rather than exiting silently.
   ```
 
 - A path inside a repository is refused, naming the path it is linked from,
-  which is the one `gog add` and `gog rm` mean.
+  which is the one `gog add` and `gog rm` mean. So is a path that reaches a
+  repository through a symbolic link, and one the repository already holds by
+  another name, reached through a symbolic link to a directory.
+- A nested repository's `.git`, such as a plugin that its own git manages, is
+  skipped: linking its files breaks that repository.
 - Skipping the irregular entries lets a directory such as `~/.gnupg` be added
   while the agent sockets in it are left alone.
 - A file with more than one name is copied once per name. Git records contents
@@ -163,6 +169,10 @@ warns:
 Warning: /home/example/.netrc has mode 0600, which git does not record; it will be applied as 0644 on another machine
 ```
 
+A directory above an added path is created as `0755` where it is missing, so
+one that withholds access is reported too, outermost first. The home directory
+and everything above it are left out.
+
 Track `~/.ssh` or `~/.netrc` only if you accept that they will be
 world-readable wherever the repository is applied.
 
@@ -179,14 +189,36 @@ Error: some paths could not be linked
 A path is replaced without asking only when nothing of yours is lost:
 
 - a broken symbolic link
-- a link into gog's data directory, left by an earlier run or by another
-  repository that tracks the same path
 - a file whose contents the repository already holds, which is what `gog add`
   leaves behind after copying it in
+- with `--force`, another repository's link to the same path
+
+Another repository's link is otherwise a conflict, naming that repository.
 
 A symbolic link to a directory, such as a `~/.config` that points elsewhere or
 a home directory reached through a link, is kept, and the repository's files are
 linked inside the directory it points at.
+
+A link to a file the repository no longer holds, such as one a pull deleted or
+renamed, points at nothing. `gog apply` reports it and leaves it alone:
+
+```text
+Warning: /home/example/.old links to a file dotfiles no longer holds (remove the link; the file's last contents are in the repository's history)
+```
+
+### Repositories you did not write
+
+`gog apply` links whatever a repository holds, including shell startup files,
+`~/.ssh/authorized_keys`, and git's own configuration. Run
+`gog ls --status -r NAME` and read what a cloned repository holds before its
+first `apply`.
+
+gog runs its own git commands with `core.fsmonitor` and `core.hooksPath`
+disabled, so a git configuration that `apply` has just linked cannot run a
+command from them. Clean filters still run when `apply` stages what it linked,
+because git-crypt and git-lfs depend on them. A repository that links a git
+configuration defining a filter, and a `.gitattributes` that uses it, runs that
+filter during `apply`.
 
 ### `gog ls`
 
@@ -196,6 +228,7 @@ linked   /home/example/.bashrc
 missing  /home/example/.vimrc
 replace  /home/example/.inputrc
 conflict /home/example/.gitconfig
+stale    /home/example/.old
 ```
 
 | State | What `gog apply` would do |
@@ -204,6 +237,11 @@ conflict /home/example/.gitconfig
 | `missing` | Link it. Nothing is at that path |
 | `replace` | Discard what is there, then link it |
 | `conflict` | Report it and leave it alone |
+| `stale` | Report it and leave it alone. It links to a file the repository no longer holds |
+
+A path whose name holds a newline, a tab or another character that is not
+printable is printed with that character escaped, as `\n` or `\x1b`, here and in
+every message.
 
 A repository's own `.git`, `.gitignore`, `LICENSE` and `README.md` are never
 linked. `gog ls` leaves them out.
@@ -236,8 +274,12 @@ gog git log -- ~/.bashrc   # the same, after the separator
 
 - Restores each path as an ordinary file, then drops it from the repository and
   the index.
-- Behaves the same whether the link is still there, was replaced with a file
-  of your own, or was deleted.
+- A path whose link was deleted is given the file back. A path holding a file
+  of your own, or another repository's link, is left alone.
+- A symbolic link that the repository holds is restored as that link, not as a
+  copy of what it points at.
+- A path that cannot be examined, or that reaches the repository through a
+  symbolic link, fails the command before the repository gives up its copy.
 - Reports a path the repository never held (`Skipped: ...`) rather than failing.
 - Validates the whole batch before restoring anything.
 - Not `gog git rm`, which deletes the repository's copy and stages the deletion,
@@ -287,11 +329,12 @@ ran and failed does not. `gog --help` writes help to stdout and reports success.
 ### Multiple repositories
 
 `gog apply` operates on one repository at a time. Repositories may hold
-overlapping paths, and the one applied last owns the link.
+overlapping paths. The one applied first owns the link, and the others report
+it as a conflict. `--force` makes the one applied last own it instead:
 
 ```bash
 for repoName in $(gog repository ls | sort -r); do
-  gog apply --repository ${repoName}
+  gog apply --force --repository ${repoName}
 done
 ```
 
@@ -302,7 +345,7 @@ done
 | Variable | Description |
 | --- | --- |
 | `GOG_DEFAULT_REPOSITORY_NAME` | Repository to use when `-r` is not given. Default: the first repository, which `gog repository default` prints |
-| `GOG_HOME` | Where gog stores repositories. Default: `${XDG_DATA_HOME}/gog` if set, otherwise `${HOME}/.local/share/gog` |
+| `GOG_HOME` | Where gog stores repositories, as an absolute path. Default: `${XDG_DATA_HOME}/gog` if that is absolute, otherwise `${HOME}/.local/share/gog` |
 
 Every path a repository holds under `root/` is linked. To keep a file out of the
 linked tree, keep it out of the repository, or store it beside `root/` where

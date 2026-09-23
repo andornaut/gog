@@ -203,6 +203,7 @@ func TestTakeRepositoryFlag(t *testing.T) {
 		{name: "the long form", args: []string{"--repository", "work", "status"}, wantName: "work", wantArgs: []string{"status"}},
 		{name: "an attached value", args: []string{"-rwork", "status"}, wantName: "work", wantArgs: []string{"status"}},
 		{name: "the long form with an equals sign", args: []string{"--repository=work", "status"}, wantName: "work", wantArgs: []string{"status"}},
+		{name: "the short form with an equals sign", args: []string{"-r=work", "status"}, wantName: "work", wantArgs: []string{"status"}},
 		{name: "git's own -r is left alone", args: []string{"branch", "-r"}, wantArgs: []string{"branch", "-r"}},
 		{name: "and so is one that follows a subcommand", args: []string{"ls-tree", "-r", "HEAD"}, wantArgs: []string{"ls-tree", "-r", "HEAD"}},
 		{name: "no arguments at all", args: []string{}, wantArgs: []string{}},

@@ -172,3 +172,109 @@ func TestUnlinkDispatchesOnWhatTheRepositoryHolds(t *testing.T) {
 		}
 	}
 }
+
+// `gog rm` names a path, and the repository's copy is removed next, so a path
+// whose link was deleted is given the file back rather than losing it
+func TestUnlinkRestoresANamedPathWithNothingAtIt(t *testing.T) {
+	repoPath, homeDir := newSandbox(t)
+	write(t, repoPath, "$HOME/.config/app/conf", "conf\n")
+	extPath := filepath.Join(homeDir, ".config", "app", "conf")
+
+	testout.Capture(t, func() {
+		if err := Unlink(repoPath, []string{extPath}); err != nil {
+			t.Errorf("Unlink() = %v", err)
+		}
+	})
+
+	if contents, err := os.ReadFile(extPath); err != nil || string(contents) != "conf\n" {
+		t.Errorf("%s holds %q (%v), want the repository's contents", extPath, contents, err)
+	}
+}
+
+// A path that cannot be examined may hold the link, so it fails rather than
+// being taken for one with nothing of gog's at it
+func TestUnlinkFileFailsOnAPathItCannotExamine(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads a directory whatever its mode")
+	}
+	repoPath, homeDir := newSandbox(t)
+	intPath := write(t, repoPath, "$HOME/priv/f", "f\n")
+	priv := filepath.Join(homeDir, "priv")
+	if err := os.MkdirAll(priv, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(intPath, filepath.Join(priv, "f")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(priv, 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(priv, 0755) })
+
+	if err := UnlinkFile(repoPath, intPath); err == nil {
+		t.Error("UnlinkFile() reported success for a path it could not examine")
+	}
+}
+
+// A symbolic link that the repository holds is restored as that link. Its
+// target is never followed: it may be a file of the user's, and a clone of
+// someone else's repository chooses it.
+func TestUnlinkFileRestoresALinkTheRepositoryHolds(t *testing.T) {
+	repoPath, homeDir := newSandbox(t)
+	mine := filepath.Join(homeDir, ".profile")
+	if err := os.WriteFile(mine, []byte("mine\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	intPath := filepath.Join(repository.ContentPath(repoPath), "$HOME", ".alias")
+	if err := os.MkdirAll(filepath.Dir(intPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(mine, intPath); err != nil {
+		t.Fatal(err)
+	}
+	// The path the committed link names, and one gog linked to it
+	profileInt := filepath.Join(repository.ContentPath(repoPath), "$HOME", ".profile")
+	if err := os.Symlink(mine, profileInt); err != nil {
+		t.Fatal(err)
+	}
+	aliasExt := filepath.Join(homeDir, ".alias")
+	if err := os.Symlink(intPath, aliasExt); err != nil {
+		t.Fatal(err)
+	}
+
+	testout.Capture(t, func() {
+		if err := UnlinkDir(repoPath, repository.ContentPath(repoPath)); err != nil {
+			t.Errorf("UnlinkDir() = %v", err)
+		}
+	})
+
+	if contents, err := os.ReadFile(mine); err != nil || string(contents) != "mine\n" {
+		t.Errorf("%s holds %q (%v), want it left alone", mine, contents, err)
+	}
+	if paths.IsSymlink(mine) {
+		t.Errorf("%s was replaced by a link", mine)
+	}
+	if target, err := os.Readlink(aliasExt); err != nil || target != mine {
+		t.Errorf("%s -> %s (%v), want the repository's link to %s", aliasExt, target, err, mine)
+	}
+}
+
+// A path reached through a symbolic link into gog's data directory is the
+// repository's copy itself, which the caller is about to remove
+func TestUnlinkFileRefusesAPathReachedThroughTheDataDirectory(t *testing.T) {
+	repoPath, homeDir := newSandbox(t)
+	intPath := write(t, repoPath, "$HOME/.config/app/conf", "conf\n")
+	if err := os.MkdirAll(filepath.Join(homeDir, ".config"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Dir(intPath), filepath.Join(homeDir, ".config", "app")); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := UnlinkFile(repoPath, intPath); err == nil {
+		t.Error("UnlinkFile() reported success for the repository's own copy")
+	}
+	if contents, err := os.ReadFile(intPath); err != nil || string(contents) != "conf\n" {
+		t.Errorf("%s holds %q (%v), want it kept", intPath, contents, err)
+	}
+}

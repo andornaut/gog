@@ -1,10 +1,43 @@
 package git
 
 import (
+	"bytes"
+	"errors"
+	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 )
+
+// internalArgs precede every git command that gog runs on its own behalf, as
+// opposed to one the user runs through `gog git`:
+//
+//   - --literal-pathspecs, because gog names files, and a name holding `*`, `?`
+//     or `[` would otherwise match other files too.
+//   - core.fsmonitor and core.hooksPath off, because `apply` links a
+//     repository's files, which can include git's own configuration, and then
+//     runs `git add`: a command named there would run before `apply` returns.
+var internalArgs = []string{
+	"--literal-pathspecs",
+	"-c", "core.fsmonitor=false",
+	"-c", "core.hooksPath=/dev/null",
+}
+
+// pathspecEnv lists the variables that change how git reads a pathspec, which
+// gog's own commands always give literally. git refuses to combine some of them
+// with --literal-pathspecs.
+var pathspecEnv = []string{
+	"GIT_LITERAL_PATHSPECS",
+	"GIT_GLOB_PATHSPECS",
+	"GIT_NOGLOB_PATHSPECS",
+	"GIT_ICASE_PATHSPECS",
+}
+
+// ErrUnsafe reports a repository that git refuses to work in because another
+// user owns it. The message is git's own, which names the safe.directory
+// setting that allows it.
+var ErrUnsafe = errors.New("git refuses to use this repository")
 
 // Clone clones repoURL into repoPath. `--` ends the options, so that a URL
 // beginning with a dash is not read as one. -q keeps git's progress off stdout,
@@ -24,28 +57,58 @@ func Init(baseDir, repoPath string) error {
 // repository followed by the relative path to the top level, which is empty
 // at the root itself. Bare repositories have no work tree to link from, so
 // they are rejected.
-func Is(baseDir string) bool {
-	cmd := exec.Command("git", "rev-parse", "--is-bare-repository", "--show-cdup")
-	cmd.Dir = baseDir
-	cmd.Env = Env()
+//
+// A repository that git refuses to use because another user owns it is
+// reported as ErrUnsafe, with git's explanation, rather than as no repository:
+// it is one, and the remedy is git's setting rather than removing it.
+func Is(baseDir string) (bool, error) {
+	cmd := internalCommand(baseDir, "rev-parse", "--is-bare-repository", "--show-cdup")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 	out, err := cmd.Output()
-	return err == nil && strings.TrimSpace(string(out)) == "false"
+	if err == nil {
+		return strings.TrimSpace(string(out)) == "false", nil
+	}
+	if msg := stderr.String(); strings.Contains(msg, "safe.directory") {
+		return false, fmt.Errorf("%w: %s", ErrUnsafe, strings.TrimSpace(msg))
+	}
+	return false, nil
 }
 
-// Output runs a git command in a repository and returns its standard output.
-// Standard error stays attached to gog's own, so that git reports any failure
-// itself.
+// Output runs one of gog's own git commands in a repository and returns its
+// standard output. Standard error stays attached to gog's own, so that git
+// reports any failure itself.
 func Output(baseDir string, arguments ...string) (string, error) {
-	cmd := exec.Command("git", arguments...)
+	cmd := internalCommand(baseDir, arguments...)
 	cmd.Stderr = os.Stderr
-	cmd.Dir = baseDir
-	cmd.Env = Env()
 	out, err := cmd.Output()
 	return string(out), err
 }
 
-// Run runs a git command in a repository, with gog's own streams attached
+// Run runs one of gog's own git commands in a repository, with gog's own
+// streams attached
 func Run(baseDir string, arguments ...string) error {
+	cmd := internalCommand(baseDir, arguments...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+// RunCaptured runs one of gog's own git commands in a repository and returns
+// what it wrote to standard error instead of passing it on, for a caller that
+// reports the failure itself
+func RunCaptured(baseDir string, arguments ...string) (string, error) {
+	cmd := internalCommand(baseDir, arguments...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	return strings.TrimSpace(stderr.String()), err
+}
+
+// RunUser runs a git command the user gave through `gog git`, as they gave it,
+// with gog's own streams attached
+func RunUser(baseDir string, arguments ...string) error {
 	cmd := exec.Command("git", arguments...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
@@ -53,6 +116,16 @@ func Run(baseDir string, arguments ...string) error {
 	cmd.Dir = baseDir
 	cmd.Env = Env()
 	return cmd.Run()
+}
+
+func internalCommand(baseDir string, arguments ...string) *exec.Cmd {
+	cmd := exec.Command("git", append(slices.Clone(internalArgs), arguments...)...)
+	cmd.Dir = baseDir
+	cmd.Env = slices.DeleteFunc(Env(), func(kv string) bool {
+		name, _, _ := strings.Cut(kv, "=")
+		return slices.Contains(pathspecEnv, name)
+	})
+	return cmd
 }
 
 // gitScrubbedEnv lists the environment variables that bind git to a specific

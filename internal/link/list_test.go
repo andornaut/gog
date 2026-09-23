@@ -6,6 +6,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/andornaut/gog/internal/gittest"
 	"github.com/andornaut/gog/internal/repository"
 )
 
@@ -139,7 +140,7 @@ func TestListStatesMatchWhatApplyingDoes(t *testing.T) {
 
 	// Everything the listing did not call a conflict is linked by the run that
 	// follows, and the conflict is the only thing left alone
-	if err := Dir(repoPath, repository.ContentPath(repoPath)); err == nil {
+	if err := Dir(repoPath, false, repository.ContentPath(repoPath)); err == nil {
 		t.Error("Dir() reported success although a conflict was listed")
 	}
 	for name, wantState := range want {
@@ -189,9 +190,55 @@ func TestListStatesUnderASymlinkedDirectory(t *testing.T) {
 		}
 	}
 
-	if err := Dir(repoPath, repository.ContentPath(repoPath)); err != nil {
+	if err := Dir(repoPath, false, repository.ContentPath(repoPath)); err != nil {
 		t.Fatalf("Dir() = %v, although nothing was listed as a conflict", err)
 	}
 	assertLink(t, filepath.Join(elsewhere, "app/conf"), userConf)
 	assertLink(t, filepath.Join(homeDir, ".local/app/conf"), gogConf)
+}
+
+// A link to a file the repository's history deleted, or that was deleted from
+// its directory since, is stale. A link to a file it holds again is not, and
+// neither is a path whose link is not this repository's.
+func TestStaleListsLinksToFilesTheRepositoryNoLongerHolds(t *testing.T) {
+	repoPath, homeDir := newSandbox(t)
+	gone := write(t, repoPath, "$HOME/.gone", "gone\n")
+	back := write(t, repoPath, "$HOME/.back", "back\n")
+	uncommitted := write(t, repoPath, "$HOME/.uncommitted", "uncommitted\n")
+	write(t, repoPath, "$HOME/.mine", "mine\n")
+	gittest.Run(t, repoPath, "add", "-A")
+	gittest.Run(t, repoPath, "commit", "-q", "-m", "init")
+	for _, intPath := range []string{gone, back, uncommitted} {
+		if err := os.Symlink(intPath, filepath.Join(homeDir, filepath.Base(intPath))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(homeDir, ".mine"), []byte("mine\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	gittest.Run(t, repoPath, "rm", "-q", gone, back, filepath.Join(repository.ContentPath(repoPath), "$HOME", ".mine"))
+	gittest.Run(t, repoPath, "commit", "-q", "-m", "remove")
+	write(t, repoPath, "$HOME/.back", "back\n")
+	if err := os.Remove(uncommitted); err != nil {
+		t.Fatal(err)
+	}
+
+	stale, err := Stale(repoPath)
+	if err != nil {
+		t.Fatalf("Stale() = %v", err)
+	}
+
+	want := []string{filepath.Join(homeDir, ".gone"), filepath.Join(homeDir, ".uncommitted")}
+	if !slices.Equal(stale, want) {
+		t.Errorf("Stale() = %q, want %q", stale, want)
+	}
+}
+
+// A repository with no commits has no history to consult
+func TestStaleOnARepositoryWithNoCommits(t *testing.T) {
+	repoPath, _ := newSandbox(t)
+
+	if stale, err := Stale(repoPath); err != nil || len(stale) != 0 {
+		t.Errorf("Stale() = %q, %v, want nothing", stale, err)
+	}
 }

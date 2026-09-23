@@ -42,7 +42,8 @@ import (
 // that dst is never left partly written, a symbolic link at dst is replaced
 // rather than written through, and the contents are never readable with wider
 // permissions than src grants. A dst that is src itself, such as a hard link to
-// it, is refused: nothing would be copied.
+// it, is refused: nothing would be copied. A symbolic link at dst is replaced
+// even when it points at src.
 func File(src, dst string) (err error) {
 	in, err := os.Open(src)
 	if err != nil {
@@ -58,7 +59,9 @@ func File(src, dst string) (err error) {
 	if err != nil {
 		return err
 	}
-	if di, statErr := os.Stat(dst); statErr == nil && os.SameFile(si, di) {
+	// Examined without following a link: a link at dst is replaced by the
+	// rename, whatever it points at
+	if di, statErr := os.Lstat(dst); statErr == nil && os.SameFile(si, di) {
 		return fmt.Errorf("copy: %q and %q are the same file", src, dst)
 	}
 

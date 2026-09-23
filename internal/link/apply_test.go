@@ -47,7 +47,7 @@ func TestDirLinksAndStagesATree(t *testing.T) {
 	repoPath, homeDir := newSandbox(t)
 	intPath := write(t, repoPath, "$HOME/.config/app/conf", "conf\n")
 
-	if err := Dir(repoPath, repository.ContentPath(repoPath)); err != nil {
+	if err := Dir(repoPath, false, repository.ContentPath(repoPath)); err != nil {
 		t.Fatalf("Dir() = %v", err)
 	}
 
@@ -74,7 +74,7 @@ func TestDirOnARepositoryWithNoContentDirectory(t *testing.T) {
 		}
 	}
 
-	if err := Dir(repoPath, repository.ContentPath(repoPath)); err != nil {
+	if err := Dir(repoPath, false, repository.ContentPath(repoPath)); err != nil {
 		t.Fatalf("Dir() = %v", err)
 	}
 
@@ -94,11 +94,11 @@ func TestDirIsIdempotent(t *testing.T) {
 	intPath := write(t, repoPath, "$HOME/.bashrc", "one\n")
 	extPath := filepath.Join(homeDir, ".bashrc")
 
-	if err := Dir(repoPath, repository.ContentPath(repoPath)); err != nil {
+	if err := Dir(repoPath, false, repository.ContentPath(repoPath)); err != nil {
 		t.Fatalf("Dir() = %v", err)
 	}
 	out := testout.Capture(t, func() {
-		if err := Dir(repoPath, repository.ContentPath(repoPath)); err != nil {
+		if err := Dir(repoPath, false, repository.ContentPath(repoPath)); err != nil {
 			t.Errorf("Dir() on the second run = %v", err)
 		}
 	})
@@ -121,7 +121,7 @@ func TestDirReportsAConflictAndCarriesOn(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := Dir(repoPath, repository.ContentPath(repoPath))
+	err := Dir(repoPath, false, repository.ContentPath(repoPath))
 
 	if !errors.Is(err, ErrIncomplete) {
 		t.Errorf("Dir() = %v, want ErrIncomplete", err)
@@ -147,7 +147,7 @@ func TestDirDescendsThroughASymlinkedDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := Dir(repoPath, repository.ContentPath(repoPath)); err != nil {
+	if err := Dir(repoPath, false, repository.ContentPath(repoPath)); err != nil {
 		t.Fatalf("Dir() = %v", err)
 	}
 
@@ -199,7 +199,7 @@ func TestDirRefusesASymlinkedDirectoryItCannotDescend(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			err := Dir(repoPath, repository.ContentPath(repoPath))
+			err := Dir(repoPath, false, repository.ContentPath(repoPath))
 
 			if !errors.Is(err, ErrIncomplete) {
 				t.Errorf("Dir() = %v, want ErrIncomplete", err)
@@ -224,7 +224,7 @@ func TestDirReplacesASymlinkedDirectoryOfItsOwn(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := Dir(repoPath, repository.ContentPath(repoPath)); err != nil {
+	if err := Dir(repoPath, false, repository.ContentPath(repoPath)); err != nil {
 		t.Fatalf("Dir() = %v", err)
 	}
 
@@ -251,7 +251,7 @@ func TestDirFailsWhenTheLinkCannotBeMade(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(locked, 0755) })
 
-	err := Dir(repoPath, repository.ContentPath(repoPath))
+	err := Dir(repoPath, false, repository.ContentPath(repoPath))
 
 	if err == nil || !strings.Contains(err.Error(), "failed to create symlink") {
 		t.Errorf("Dir() = %v, want a failure naming what could not be done", err)
@@ -282,7 +282,7 @@ func TestDirLeavesAlonePathsItCannotResolve(t *testing.T) {
 	}
 
 	out := testout.Capture(t, func() {
-		if err := Dir(repoPath, repository.ContentPath(repoPath)); !errors.Is(err, ErrIncomplete) {
+		if err := Dir(repoPath, false, repository.ContentPath(repoPath)); !errors.Is(err, ErrIncomplete) {
 			t.Errorf("Dir() = %v, want ErrIncomplete", err)
 		}
 	})
@@ -302,6 +302,7 @@ func TestDirReplacesWhatHoldsNothingOfTheUsers(t *testing.T) {
 	tests := []struct {
 		name     string
 		inTheWay func(t *testing.T, homeDir, otherRepo string)
+		force    bool
 	}{
 		{
 			name: "a broken symbolic link",
@@ -313,7 +314,8 @@ func TestDirReplacesWhatHoldsNothingOfTheUsers(t *testing.T) {
 			},
 		},
 		{
-			name: "a link into gog's data directory",
+			name:  "another repository's link, with force",
+			force: true,
 			inTheWay: func(t *testing.T, homeDir, otherRepo string) {
 				t.Helper()
 				other := filepath.Join(otherRepo, repository.ContentDirName, "$HOME", ".bashrc")
@@ -346,10 +348,60 @@ func TestDirReplacesWhatHoldsNothingOfTheUsers(t *testing.T) {
 			otherRepo := filepath.Join(repository.BaseDir, "other")
 			tt.inTheWay(t, homeDir, otherRepo)
 
-			if err := Dir(repoPath, repository.ContentPath(repoPath)); err != nil {
+			if err := Dir(repoPath, tt.force, repository.ContentPath(repoPath)); err != nil {
 				t.Fatalf("Dir() = %v", err)
 			}
 			assertLink(t, filepath.Join(homeDir, ".bashrc"), intPath)
 		})
+	}
+}
+
+// Another repository's link is that repository's path, and is taken over only
+// with force
+func TestDirLeavesAnotherRepositorysLinkAlone(t *testing.T) {
+	repoPath, homeDir := newSandbox(t)
+	write(t, repoPath, "$HOME/.bashrc", "mine\n")
+	other := write(t, filepath.Join(repository.BaseDir, "other"), "$HOME/.bashrc", "theirs\n")
+	extPath := filepath.Join(homeDir, ".bashrc")
+	if err := os.Symlink(other, extPath); err != nil {
+		t.Fatal(err)
+	}
+
+	var err error
+	out := testout.Capture(t, func() { err = Dir(repoPath, false, repository.ContentPath(repoPath)) })
+
+	if !errors.Is(err, ErrIncomplete) {
+		t.Errorf("Dir() = %v, want ErrIncomplete", err)
+	}
+	if !strings.Contains(out, "repository other's link") {
+		t.Errorf("Dir() printed %q, want the owning repository named", out)
+	}
+	assertLink(t, extPath, other)
+	entries, listErr := List(repoPath)
+	if listErr != nil {
+		t.Fatal(listErr)
+	}
+	if got := stateOf(t, entries, extPath); got != StateConflict {
+		t.Errorf("state of %s = %s, want %s", extPath, got, StateConflict)
+	}
+}
+
+// A file met twice through a symbolic link to a directory is linked from one
+// of its two paths, and the other is a conflict, however many times the
+// repository is applied: replacing the link would move it between the copies
+func TestDirLinksAFileMetTwiceFromOnePath(t *testing.T) {
+	repoPath, homeDir := newSandbox(t)
+	realInt := write(t, repoPath, "$HOME/.config/vim/vimrc", "vimrc\n")
+	write(t, repoPath, "$HOME/.vim/vimrc", "vimrc\n")
+	if err := os.MkdirAll(filepath.Join(homeDir, ".config", "vim"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(homeDir, ".config", "vim"), filepath.Join(homeDir, ".vim")); err != nil {
+		t.Fatal(err)
+	}
+
+	for range 2 {
+		testout.Capture(t, func() { _ = Dir(repoPath, false, repository.ContentPath(repoPath)) })
+		assertLink(t, filepath.Join(homeDir, ".config", "vim", "vimrc"), realInt)
 	}
 }

@@ -367,6 +367,86 @@ func TestAddPathsRefusesALinkWhereTheRepositoryHoldsADirectory(t *testing.T) {
 	}
 }
 
+// A nested repository's .git is left behind with a warning, whether it is a
+// directory or the file a submodule or worktree has, and the rest of the
+// directory is added
+func TestAddPathsSkipsANestedRepositorysGitDirectory(t *testing.T) {
+	repoPath, homeDir := newSandbox(t)
+	vim := filepath.Join(homeDir, ".vim")
+	writeFile(t, filepath.Join(vim, "vimrc"), "vimrc\n")
+	writeFile(t, filepath.Join(vim, "pack", "p", "plugin.vim"), "plugin\n")
+	gittest.Init(t, filepath.Join(vim, "pack", "p"))
+	writeFile(t, filepath.Join(vim, "pack", "q", ".git"), "gitdir: elsewhere\n")
+
+	out := testout.Capture(t, func() {
+		if err := AddPaths(repoPath, false, []string{vim}); err != nil {
+			t.Errorf("AddPaths() = %v", err)
+		}
+	})
+
+	held := filepath.Join(repoPath, ContentDirName, "$HOME", ".vim")
+	for _, rel := range []string{"vimrc", "pack/p/plugin.vim"} {
+		if _, err := os.Stat(filepath.Join(held, rel)); err != nil {
+			t.Errorf("the repository does not hold %s: %v", rel, err)
+		}
+	}
+	for _, rel := range []string{"pack/p/.git", "pack/q/.git"} {
+		if _, err := os.Lstat(filepath.Join(held, rel)); !os.IsNotExist(err) {
+			t.Errorf("the repository holds %s (%v), want it skipped", rel, err)
+		}
+		if want := "skipping " + filepath.Join(vim, rel) + " (a nested git repository"; !strings.Contains(out, want) {
+			t.Errorf("AddPaths() printed %q, want a warning containing %q", out, want)
+		}
+	}
+}
+
+// A path met through a symbolic link to a directory, where the repository
+// already holds the file by the other path, is refused rather than stored twice
+func TestAddPathsRefusesAPathItHoldsByAnotherName(t *testing.T) {
+	repoPath, homeDir := newSandbox(t)
+	held := writeFile(t, filepath.Join(repoPath, ContentDirName, "$HOME", ".config", "vim", "vimrc"), "vimrc\n")
+	symlink(t, held, filepath.Join(homeDir, ".config", "vim", "vimrc"))
+	symlink(t, filepath.Join(homeDir, ".config", "vim"), filepath.Join(homeDir, ".vim"))
+
+	err := AddPaths(repoPath, false, []string{filepath.Join(homeDir, ".vim", "vimrc")})
+
+	if want := "link from " + filepath.Join(homeDir, ".config", "vim", "vimrc"); err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("AddPaths() = %v, want it refused naming %s", err, want)
+	}
+	if _, statErr := os.Lstat(filepath.Join(repoPath, ContentDirName, "$HOME", ".vim")); !os.IsNotExist(statErr) {
+		t.Errorf("the repository holds .vim (%v), want nothing copied", statErr)
+	}
+}
+
+// A directory above an added file is created as 0755 by applying elsewhere, so
+// one whose mode git would widen is reported, and the home directory is not
+func TestAddPathsWarnsAboutANarrowParentDirectory(t *testing.T) {
+	repoPath, homeDir := newSandbox(t)
+	if err := os.Chmod(homeDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	private := filepath.Join(homeDir, ".private")
+	config := writeFile(t, filepath.Join(private, "sub", "config"), "config\n")
+	if err := os.Chmod(private, 0700); err != nil {
+		t.Fatal(err)
+	}
+
+	out := testout.Capture(t, func() {
+		if err := AddPaths(repoPath, false, []string{config}); err != nil {
+			t.Errorf("AddPaths() = %v", err)
+		}
+	})
+
+	if want := "Warning: " + private + " has mode 0700"; !strings.Contains(out, want) {
+		t.Errorf("AddPaths() printed %q, want %q", out, want)
+	}
+	for _, dir := range []string{homeDir, filepath.Join(private, "sub")} {
+		if strings.Contains(out, "Warning: "+dir+" ") {
+			t.Errorf("AddPaths() printed %q, want %s left out", out, dir)
+		}
+	}
+}
+
 // A path inside the data directory is refused by the repository that holds it,
 // and by the path it is linked from
 func TestOwnPathError(t *testing.T) {
@@ -726,6 +806,8 @@ func TestUnsavedWorkCountsWhatNoBranchHolds(t *testing.T) {
 	gittest.Run(t, repoPath, "commit", "-q", "-m", "ignore")
 	gittest.Run(t, repoPath, "push", "-q")
 	writeFile(t, filepath.Join(repoPath, "notes.txt"), "notes\n")
+	// Hides untracked and ignored files from a plain `git status`
+	gittest.Run(t, repoPath, "config", "status.showUntrackedFiles", "no")
 
 	unsaved, err = UnsavedWork(repoPath)
 	if err != nil {

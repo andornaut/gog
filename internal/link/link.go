@@ -17,28 +17,42 @@ import (
 // printed as it happens; this is returned so that the command exits non-zero.
 var ErrIncomplete = errors.New("some paths could not be linked")
 
-// reportFailures returns err if it is set, otherwise ErrIncomplete if anything
-// was reported since `before`
-func reportFailures(before int, err error) error {
-	if err != nil {
+// ErrUnstaged reports that every path was linked but git would not stage some
+// of them. The links work; the repository does not yet record them.
+var ErrUnstaged = errors.New("some linked paths could not be staged in git")
+
+// reportFailures returns err if it is set, otherwise the error for what was
+// reported since `before`: a path that could not be linked outranks one that
+// was linked but not staged
+func reportFailures(before counts, err error) error {
+	switch {
+	case err != nil:
 		return err
-	}
-	if failures > before {
+	case reported.failures > before.failures:
 		return ErrIncomplete
+	case reported.unstaged > before.unstaged:
+		return ErrUnstaged
 	}
 	return nil
 }
 
-// Unlink restores the given external paths as ordinary files
+// Unlink restores the given external paths as ordinary files. A named path
+// with nothing at it is given the file back, since the repository's copy is
+// removed next and would otherwise be the only one.
 func Unlink(repoPath string, paths []string) error {
-	before := failures
-	return reportFailures(before, syncLinks(repoPath, paths, UnlinkDir, UnlinkFile))
+	before := reported
+	return reportFailures(before, syncLinks(repoPath, paths,
+		func(repoPath, intPath string) error { return unlinkDir(repoPath, intPath, true) },
+		func(repoPath, intPath string) error { return unlinkFile(repoPath, intPath, true) }))
 }
 
-// Link links the given external paths to what the repository holds at them
-func Link(repoPath string, paths []string) error {
-	before := failures
-	return reportFailures(before, syncLinks(repoPath, paths, Dir, File))
+// Link links the given external paths to what the repository holds at them.
+// With force, a link that another repository made is replaced.
+func Link(repoPath string, force bool, paths []string) error {
+	before := reported
+	return reportFailures(before, syncLinks(repoPath, paths,
+		func(repoPath, intPath string) error { return Dir(repoPath, force, intPath) },
+		func(repoPath, intPath string) error { return File(repoPath, force, intPath) }))
 }
 
 type syncFunc func(string, string) error
@@ -68,13 +82,14 @@ func syncLinks(repoPath string, paths []string, updateDir, updateFile syncFunc) 
 }
 
 // Dir recursively creates symbolic links from a repository directory's files
-// to the root filesystem
-func Dir(repoPath, intPath string) error {
+// to the root filesystem. With force, a link that another repository made is
+// replaced.
+func Dir(repoPath string, force bool, intPath string) error {
 	// A repository with no content directory holds nothing to link.
 	if _, err := os.Stat(intPath); os.IsNotExist(err) {
 		return nil
 	}
-	before := failures
+	before := reported
 	var linked []string
 	walkErr := filepath.Walk(intPath, func(p string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -109,7 +124,7 @@ func Dir(repoPath, intPath string) error {
 			}
 			return nil
 		}
-		shouldAdd, linkErr := linkFile(repoPath, p)
+		shouldAdd, linkErr := linkFile(repoPath, force, p)
 		if shouldAdd {
 			linked = append(linked, p)
 		}
@@ -122,9 +137,10 @@ func Dir(repoPath, intPath string) error {
 
 // File creates a symbolic link from a repository file to the root filesystem.
 // It returns ErrIncomplete when the link could not be made, having printed why.
-func File(repoPath, intPath string) error {
-	before := failures
-	shouldAdd, err := linkFile(repoPath, intPath)
+// With force, a link that another repository made is replaced.
+func File(repoPath string, force bool, intPath string) error {
+	before := reported
+	shouldAdd, err := linkFile(repoPath, force, intPath)
 	if shouldAdd {
 		addToGit(repoPath, intPath)
 	}
@@ -135,7 +151,7 @@ func File(repoPath, intPath string) error {
 // filesystem, and returns true if the file is linked and should be added to
 // git. A failure that leaves the path alone is printed and returns (false,
 // nil); only one that stops the run is returned.
-func linkFile(repoPath, intPath string) (bool, error) {
+func linkFile(repoPath string, force bool, intPath string) (bool, error) {
 	extPath := repository.ToExternalPath(repoPath, intPath)
 	err := os.Symlink(intPath, extPath)
 	if err == nil {
@@ -159,9 +175,12 @@ func linkFile(repoPath, intPath string) (bool, error) {
 	}
 
 	// Already linked, so the link is not recreated
-	linkTarget, err := os.Readlink(extPath)
-	if err == nil && linkTarget == intPath {
+	if repository.LinksTo(extPath, intPath) {
 		return true, nil
+	}
+	if conflictErr := gogLinkConflict(repoPath, force, extPath); conflictErr != nil {
+		printError(conflictErr)
+		return false, nil
 	}
 
 	ok, discardErr := discardable(extPath)
@@ -190,18 +209,34 @@ const maxGitAddBatch = 1000
 
 // addToGit adds the given paths to git in batched invocations. If a batch
 // fails, its paths are retried individually so that one bad path does not
-// prevent the others from being added.
+// prevent the others from being added. git's explanations are gathered rather
+// than printed as they come, so that a failure of the whole repository, such
+// as a lock another git process holds, is reported once rather than once per
+// path.
 func addToGit(repoPath string, intPaths ...string) {
 	for start := 0; start < len(intPaths); start += maxGitAddBatch {
 		batch := intPaths[start:min(start+maxGitAddBatch, len(intPaths))]
-		args := append([]string{"add", "--force"}, batch...)
-		if err := git.Run(repoPath, args...); err == nil {
+		args := append([]string{"add", "--force", "--"}, batch...)
+		if _, err := git.RunCaptured(repoPath, args...); err == nil {
 			continue
 		}
+		var messages []string
+		failed := map[string][]string{}
 		for _, p := range batch {
-			if err := git.Run(repoPath, "add", "--force", p); err != nil {
-				printError(fmt.Errorf("failed to add %s to git: %w", p, err))
+			msg, err := git.RunCaptured(repoPath, "add", "--force", "--", p)
+			if err == nil {
+				continue
 			}
+			if msg == "" {
+				msg = err.Error()
+			}
+			if _, seen := failed[msg]; !seen {
+				messages = append(messages, msg)
+			}
+			failed[msg] = append(failed[msg], repository.ToExternalPath(repoPath, p))
+		}
+		for _, msg := range messages {
+			printUnstaged(failed[msg], msg)
 		}
 	}
 }
@@ -263,6 +298,37 @@ func symlinkedDir(p string) (dirAction, error) {
 		return refuseDir, refusal(p, nil)
 	}
 	return descendDir, nil
+}
+
+// gogLinkConflict refuses a working link that gog made for something other
+// than the path being linked. Replacing it would discard nothing of the user's,
+// but it would take the path from what it serves:
+//
+//   - A link to another path in this repository is met through a symbolic link
+//     to a directory, which makes one path two. Replacing it would move the
+//     path between the repository's two copies on every run.
+//   - Another repository's link is that repository's path, unless force is
+//     given.
+//
+// Anything else, including a broken link, is left to discardable.
+func gogLinkConflict(repoPath string, force bool, extPath string) error {
+	target, ok := repository.LinkTarget(extPath)
+	if !ok || !repository.WithinBaseDir(target) {
+		return nil
+	}
+	// A broken link points at nothing, whatever made it
+	if _, err := os.Stat(extPath); err != nil {
+		return nil //nolint:nilerr // a link that cannot be followed is discardable's to decide
+	}
+	contentPath := paths.Resolve(repository.ContentPath(repoPath))
+	if rel, err := filepath.Rel(contentPath, target); err == nil && paths.Within(contentPath, target) {
+		other := repository.ToExternalPath(repoPath, filepath.Join(repository.ContentPath(repoPath), rel))
+		return fmt.Errorf("%q is this repository's link from %s, reached through a symbolic link to a directory (remove one of the two from the repository)", extPath, other)
+	}
+	if force {
+		return nil
+	}
+	return fmt.Errorf("%q is repository %s's link (remove it from there first, or pass --force to take it over)", extPath, repository.NameOf(target))
 }
 
 // refusal reports that a path was left alone, naming the error that decided it

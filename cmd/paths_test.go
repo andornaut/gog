@@ -332,3 +332,68 @@ func TestNoteEmpty(t *testing.T) {
 		})
 	}
 }
+
+// A restore that fails stops `gog rm` before the repository gives up its copy,
+// which would otherwise be the only one
+func TestRmKeepsTheRepositorysCopyWhenARestoreFails(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads a file whatever its mode")
+	}
+	_, extPath := newSandbox(t)
+	intPath, err := os.Readlink(extPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(intPath, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(intPath, 0644) })
+
+	if err := rm.RunE(rm, []string{extPath}); err == nil {
+		t.Fatal("rm reported success although the file could not be restored")
+	}
+
+	if _, statErr := os.Lstat(intPath); statErr != nil {
+		t.Errorf("the repository's copy is gone (%v)", statErr)
+	}
+}
+
+// A path that add refuses fails the command, rather than being passed on to be
+// linked and reported as done
+func TestAddFailsForAPathItRefuses(t *testing.T) {
+	_, extPath := newSandbox(t)
+	alias := filepath.Join(filepath.Dir(extPath), ".alias")
+	if err := os.Symlink(filepath.Join(filepath.Dir(extPath), "elsewhere"), alias); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := add.RunE(add, []string{alias}); err == nil || !strings.Contains(err.Error(), "is a symbolic link") {
+		t.Errorf("add = %v, want the link refused", err)
+	}
+}
+
+// A path under a home directory reached through a symbolic link, given by the
+// resolved name, is spelled under $HOME, so that it is stored portably
+func TestCleanPathsSpellsAResolvedHomePathUnderHome(t *testing.T) {
+	root := t.TempDir()
+	realHome := filepath.Join(root, "real", "home")
+	if err := os.MkdirAll(realHome, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(root, "real"), filepath.Join(root, "link")); err != nil {
+		t.Fatal(err)
+	}
+	home := filepath.Join(root, "link", "home")
+	original := repository.SetHomeDirForTest(home)
+	t.Cleanup(func() { repository.SetHomeDirForTest(original) })
+
+	got, err := cleanPaths([]string{filepath.Join(realHome, ".vimrc"), "/etc/hosts", filepath.Join(home, ".bashrc")})
+
+	if err != nil {
+		t.Fatalf("cleanPaths() = %v", err)
+	}
+	want := []string{filepath.Join(home, ".vimrc"), "/etc/hosts", filepath.Join(home, ".bashrc")}
+	if !slices.Equal(got, want) {
+		t.Errorf("cleanPaths() = %q, want %q", got, want)
+	}
+}

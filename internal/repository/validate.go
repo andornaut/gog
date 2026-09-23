@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/andornaut/gog/internal/fscopy"
 	"github.com/andornaut/gog/internal/git"
 	"github.com/andornaut/gog/internal/paths"
 )
@@ -33,7 +34,11 @@ func validateRepoPath(p string) error {
 	if !fileInfo.IsDir() {
 		return fmt.Errorf("repository path %q must be a directory", p)
 	}
-	if !git.Is(p) {
+	isRepo, err := git.Is(p)
+	if err != nil {
+		return fmt.Errorf("repository %q: %w", filepath.Base(p), err)
+	}
+	if !isRepo {
 		return fmt.Errorf("repository %q must be initialized as a git repository (run \"git init\" in it)", p)
 	}
 	return nil
@@ -82,10 +87,24 @@ func linksTo(p, target string) bool {
 	return err == nil && resolved == target
 }
 
-// shouldSkip is handed paths that the copy has already resolved, so the data
-// directory must be resolved too: a home directory reached through a symbolic
-// link spells BaseDir one way and the walk another, and gog would then copy
-// its own data directory into the repository it is adding to.
-func shouldSkip(extPath, _ string) bool {
-	return WithinBaseDir(extPath) || strings.HasSuffix(extPath, ".gog")
+// skipFor returns what a copy of the directory typedRoot, which resolves to
+// resolvedRoot, passes over.
+//
+// The copy hands it paths that are already resolved, so the data directory must
+// be resolved too: a home directory reached through a symbolic link spells
+// BaseDir one way and the walk another, and gog would then copy its own data
+// directory into the repository it is adding to.
+//
+// A nested repository's .git is passed over with a warning. Its files are the
+// other repository's own, and linking them breaks it: git refuses a HEAD that
+// is a symbolic link.
+func skipFor(resolvedRoot, typedRoot string) fscopy.SkipFunc {
+	return func(extPath, _ string) bool {
+		if filepath.Base(extPath) == ".git" {
+			fmt.Fprintf(os.Stderr, "Warning: skipping %s (a nested git repository's own files cannot be managed)\n",
+				paths.Display(asTyped(extPath, resolvedRoot, typedRoot)))
+			return true
+		}
+		return WithinBaseDir(extPath) || strings.HasSuffix(extPath, ".gog")
+	}
 }

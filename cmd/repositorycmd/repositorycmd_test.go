@@ -212,3 +212,57 @@ func TestRmRestoresWhatItHeld(t *testing.T) {
 		t.Errorf("%s holds %q (%v), want the contents restored", extPath, contents, readErr)
 	}
 }
+
+// A repository whose files cannot all be restored is kept: deleting it would
+// leave the path that failed a link to nothing
+func TestRmKeepsARepositoryItCouldNotRestore(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads a file whatever its mode")
+	}
+	repoPath, extPath := newSandbox(t)
+	setFlag(t, rm, "force", true)
+	intPath, err := os.Readlink(extPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(intPath, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(intPath, 0644) })
+
+	if err := rm.RunE(rm, []string{"dots"}); err == nil {
+		t.Fatal("rm reported success although a file could not be restored")
+	}
+
+	if _, statErr := os.Lstat(intPath); statErr != nil {
+		t.Errorf("the repository's copy is gone (%v), want the repository kept", statErr)
+	}
+	if _, statErr := os.Stat(repoPath); statErr != nil {
+		t.Errorf("the repository is gone (%v)", statErr)
+	}
+}
+
+// A repository whose unsaved work cannot be counted is kept, rather than being
+// taken for one that holds none
+func TestRmKeepsARepositoryItCannotExamine(t *testing.T) {
+	repoPath, extPath := newSandbox(t)
+	// A branch naming an object that does not exist makes rev-list fail
+	ref := filepath.Join(repoPath, ".git", "refs", "heads", "broken")
+	if err := os.MkdirAll(filepath.Dir(ref), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(ref, []byte(strings.Repeat("1", 40)+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := rm.RunE(rm, []string{"dots"}); err == nil {
+		t.Fatal("rm reported success for a repository it could not examine")
+	}
+
+	if _, statErr := os.Stat(repoPath); statErr != nil {
+		t.Errorf("the repository is gone (%v)", statErr)
+	}
+	if _, readErr := os.Readlink(extPath); readErr != nil {
+		t.Errorf("%s is no longer the link (%v), want nothing restored", extPath, readErr)
+	}
+}

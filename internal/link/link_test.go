@@ -42,7 +42,7 @@ func TestFileLinksAndStagesOneFile(t *testing.T) {
 	repoPath, homeDir := newSandbox(t)
 	intPath := write(t, repoPath, "$HOME/.bashrc", "bashrc\n")
 
-	if err := File(repoPath, intPath); err != nil {
+	if err := File(repoPath, false, intPath); err != nil {
 		t.Fatalf("File() = %v", err)
 	}
 
@@ -60,7 +60,7 @@ func TestLinkFilePrintsWhatItLinked(t *testing.T) {
 	intPath := write(t, repoPath, "$HOME/.bashrc", "bashrc\n")
 
 	out := testout.Capture(t, func() {
-		if _, err := linkFile(repoPath, intPath); err != nil {
+		if _, err := linkFile(repoPath, false, intPath); err != nil {
 			t.Errorf("linkFile() = %v", err)
 		}
 	})
@@ -82,14 +82,39 @@ func TestFileReportsAPathGitWillNotStage(t *testing.T) {
 	}
 
 	out := testout.Capture(t, func() {
-		if err := File(repoPath, intPath); !errors.Is(err, ErrIncomplete) {
-			t.Errorf("File() = %v, want ErrIncomplete", err)
+		if err := File(repoPath, false, intPath); !errors.Is(err, ErrUnstaged) {
+			t.Errorf("File() = %v, want ErrUnstaged", err)
 		}
 	})
 
 	assertLink(t, filepath.Join(homeDir, ".bashrc"), intPath)
-	if !strings.Contains(out, "Error: failed to add "+intPath+" to git") {
-		t.Errorf("File() printed %q, want the path git would not stage", out)
+	if want := "Error: linked " + filepath.Join(homeDir, ".bashrc") + ", but git would not stage it"; !strings.Contains(out, want) {
+		t.Errorf("File() printed %q, want %q", out, want)
+	}
+}
+
+// A failure of the whole repository, such as a lock, is reported once for the
+// paths it stopped, rather than once per path
+func TestDirReportsARepositoryWideStagingFailureOnce(t *testing.T) {
+	repoPath, _ := newSandbox(t)
+	for _, name := range []string{".a", ".b", ".c"} {
+		write(t, repoPath, "$HOME/"+name, name+"\n")
+	}
+	if err := os.WriteFile(filepath.Join(repoPath, ".git", "index.lock"), nil, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	out := testout.Capture(t, func() {
+		if err := Dir(repoPath, false, repository.ContentPath(repoPath)); !errors.Is(err, ErrUnstaged) {
+			t.Errorf("Dir() = %v, want ErrUnstaged", err)
+		}
+	})
+
+	if got := strings.Count(out, "index.lock"); got != 1 {
+		t.Errorf("Dir() printed git's lock message %d times, want once: %q", got, out)
+	}
+	if !strings.Contains(out, "Error: linked 3 paths, but git would not stage them") {
+		t.Errorf("Dir() printed %q, want the three paths counted", out)
 	}
 }
 
@@ -104,7 +129,7 @@ func TestFileRefusesADirectoryInTheWay(t *testing.T) {
 	}
 
 	out := testout.Capture(t, func() {
-		if err := File(repoPath, intPath); !errors.Is(err, ErrIncomplete) {
+		if err := File(repoPath, false, intPath); !errors.Is(err, ErrIncomplete) {
 			t.Errorf("File() = %v, want ErrIncomplete", err)
 		}
 	})
@@ -213,7 +238,7 @@ func TestLinkDispatchesOnWhatTheRepositoryHolds(t *testing.T) {
 	dirIntPath := write(t, repoPath, "$HOME/.config/app/conf", "conf\n")
 	unheld := filepath.Join(homeDir, ".vimrc")
 
-	err := Link(repoPath, []string{
+	err := Link(repoPath, false, []string{
 		filepath.Join(homeDir, ".bashrc"),
 		filepath.Join(homeDir, ".config"),
 		unheld,

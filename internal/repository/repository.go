@@ -1,11 +1,13 @@
 package repository
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/andornaut/gog/internal/git"
 	"github.com/andornaut/gog/internal/paths"
 )
 
@@ -54,15 +56,33 @@ func WithinBaseDir(resolved string) bool {
 // not the chain it resolves through: a user's link to a path that gog manages
 // points at that path rather than into the data directory, and is the user's.
 func IsGogLink(p string) bool {
+	target, ok := LinkTarget(p)
+	return ok && WithinBaseDir(target)
+}
+
+// LinksTo reports whether p is a symbolic link whose own target is intPath
+func LinksTo(p, intPath string) bool {
+	target, ok := LinkTarget(p)
+	return ok && target == paths.ResolveParent(intPath)
+}
+
+// LinkTarget returns the path that the symbolic link p names, made absolute and
+// with its parent resolved, so that it compares equal to any other spelling of
+// the same path. It reports false if p is not a symbolic link.
+func LinkTarget(p string) (string, bool) {
 	target, err := os.Readlink(p)
 	if err != nil {
-		return false
+		return "", false
 	}
 	if !filepath.IsAbs(target) {
 		target = filepath.Join(filepath.Dir(p), target)
 	}
-	target = filepath.Clean(target)
-	return paths.Within(BaseDir, target) || WithinBaseDir(paths.ResolveParent(target))
+	return paths.ResolveParent(target), true
+}
+
+// NameOf names the repository that holds p, a path within the data directory
+func NameOf(p string) string {
+	return repoNameOf(p)
 }
 
 // List returns a list of repositories
@@ -79,6 +99,11 @@ func List() ([]string, error) {
 		}
 		repoPath := filepath.Join(BaseDir, repoName)
 		if err := validateRepoPath(repoPath); err != nil {
+			// A repository that git refuses to use is still one, so it is
+			// reported rather than passed over as if it were not there
+			if errors.Is(err, git.ErrUnsafe) {
+				fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
+			}
 			continue
 		}
 		repoNames = append(repoNames, repoName)
@@ -150,17 +175,28 @@ func getFirst() (string, error) {
 // getBaseDir returns an absolute, cleaned base directory. Environment
 // variables are normalized because trailing slashes or relative paths would
 // break path-boundary comparisons and git checks.
+//
+// A relative value would name a different directory from each working
+// directory, so each would see its own repositories: GOG_HOME is refused, and
+// XDG_DATA_HOME is ignored, as the XDG Base Directory specification requires.
 func getBaseDir(homeDir string) (string, error) {
 	b := os.Getenv("GOG_HOME")
-	if b == "" {
-		dataDir := os.Getenv("XDG_DATA_HOME")
-		if dataDir != "" {
-			b = filepath.Join(dataDir, "gog")
-		} else {
-			b = filepath.Join(homeDir, ".local/share/gog")
-		}
+	switch dataDir := os.Getenv("XDG_DATA_HOME"); {
+	case b != "" && !filepath.IsAbs(b):
+		return "", fmt.Errorf("GOG_HOME must be an absolute path, not %q", b)
+	case b != "":
+	case filepath.IsAbs(dataDir):
+		b = filepath.Join(dataDir, "gog")
+	default:
+		b = filepath.Join(homeDir, ".local/share/gog")
 	}
 	return filepath.Abs(b)
+}
+
+// HomeDir returns the home directory that paths under $HOME are stored
+// relative to
+func HomeDir() string {
+	return homeDir
 }
 
 // Configure locates the home directory and the data directory that every

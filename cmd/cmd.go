@@ -13,6 +13,7 @@ import (
 	"github.com/andornaut/gog/internal/cli"
 	"github.com/andornaut/gog/internal/git"
 	"github.com/andornaut/gog/internal/link"
+	"github.com/andornaut/gog/internal/paths"
 	"github.com/andornaut/gog/internal/repository"
 )
 
@@ -150,7 +151,7 @@ var add = &cobra.Command{
 		if err := repository.AddPaths(repoPath, isForced, paths); err != nil {
 			return err
 		}
-		return link.Link(repoPath, paths)
+		return link.Link(repoPath, isForced, paths)
 	},
 }
 
@@ -165,7 +166,9 @@ var apply = &cobra.Command{
 			return err
 		}
 		noteEmpty(repoPath)
-		return link.Dir(repoPath, repository.ContentPath(repoPath))
+		err = link.Dir(repoPath, isForced, repository.ContentPath(repoPath))
+		warnStale(repoPath)
+		return err
 	},
 }
 
@@ -189,7 +192,7 @@ var git_ = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		err = git.Run(repoPath, resolveGitPaths(repoPath, args)...)
+		err = git.RunUser(repoPath, resolveGitPaths(repoPath, args)...)
 		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 			// git has already explained itself on stderr, so restating the
 			// wait status here would only add noise above it
@@ -216,12 +219,21 @@ var ls = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		if isStatus {
+			stale, staleErr := link.Stale(repoPath)
+			if staleErr != nil {
+				return staleErr
+			}
+			for _, p := range stale {
+				entries = append(entries, link.Entry{ExternalPath: p, State: link.StateStale})
+			}
+		}
 		for _, entry := range entries {
 			if isStatus {
-				_, _ = fmt.Fprintf(c.OutOrStdout(), "%-8s %s\n", entry.State, entry.ExternalPath)
+				_, _ = fmt.Fprintf(c.OutOrStdout(), "%-8s %s\n", entry.State, paths.Display(entry.ExternalPath))
 				continue
 			}
-			_, _ = fmt.Fprintln(c.OutOrStdout(), entry.ExternalPath)
+			_, _ = fmt.Fprintln(c.OutOrStdout(), paths.Display(entry.ExternalPath))
 		}
 		return nil
 	},
@@ -299,7 +311,8 @@ func takeRepositoryFlag(args []string) ([]string, error) {
 		gitRepositoryFlag = strings.TrimPrefix(arg, "--repository=")
 		return args[1:], nil
 	case strings.HasPrefix(arg, "-r") && len(arg) > 2:
-		gitRepositoryFlag = arg[2:]
+		// -r=NAME is accepted as the other commands' flag parsing accepts it
+		gitRepositoryFlag = strings.TrimPrefix(arg[2:], "=")
 		return args[1:], nil
 	}
 	return args, nil
@@ -347,6 +360,7 @@ func init() {
 	}
 	ls.Flags().BoolVarP(&isStatus, "status", "s", false, "print what applying would do to each path")
 	add.Flags().BoolVar(&isForced, "force", false, "take a path over from the repository that manages it")
+	apply.Flags().BoolVar(&isForced, "force", false, "replace links that another repository made")
 	// A flag cobra could not parse is a wrong invocation, and exits 2 like one.
 	Cmd.SetFlagErrorFunc(func(c *cobra.Command, err error) error { return cli.Usage(err) })
 	// -v is --vault in mrs, so --version is spelled out here rather than

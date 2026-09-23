@@ -34,6 +34,10 @@ func TestValidateRepoName(t *testing.T) {
 		{name: "sub/repo"},
 		{name: "with space"},
 		{name: ""},
+		// A dot would let ".." name the data directory's parent
+		{name: "."},
+		{name: ".."},
+		{name: "a.b"},
 	}
 	for _, tt := range tests {
 		err := validateRepoName(tt.name)

@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"github.com/andornaut/gog/internal/cli"
+	"github.com/andornaut/gog/internal/link"
+	"github.com/andornaut/gog/internal/paths"
 	"github.com/andornaut/gog/internal/repository"
 )
 
@@ -38,7 +40,28 @@ func normalizePath(p string) (string, error) {
 		p = filepath.Join(cwd, p)
 	}
 
-	return filepath.Clean(p), nil
+	return underHome(repository.HomeDir(), filepath.Clean(p)), nil
+}
+
+// underHome returns p spelled under home when p names a path there by the
+// home directory's resolved name. A working directory reported by the system
+// is spelled that way when $HOME is reached through a symbolic link, as on a
+// system whose /home is one, and the path would otherwise be stored by its
+// absolute name rather than under $HOME. Only the parent is resolved, so that
+// a link at p itself is still the path named.
+func underHome(home, p string) string {
+	if home == "" || paths.Within(home, p) {
+		return p
+	}
+	resolvedHome := paths.Resolve(home)
+	if resolvedHome == home {
+		return p
+	}
+	rel, err := filepath.Rel(resolvedHome, paths.ResolveParent(p))
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return p
+	}
+	return filepath.Join(home, rel)
 }
 
 func repoPath(repoName string) (string, error) {
@@ -63,4 +86,19 @@ func noteEmpty(repoPath string) {
 	}
 	fmt.Fprintf(os.Stderr, "Note: %s holds no %s/, so there is nothing to link\n",
 		filepath.Base(repoPath), repository.ContentDirName)
+}
+
+// warnStale reports the links to files the repository no longer holds. A
+// failure to find them is reported too, but fails nothing: the run has already
+// linked what the repository holds.
+func warnStale(repoPath string) {
+	stale, err := link.Stale(repoPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: cannot look for links to files %s no longer holds: %v\n", filepath.Base(repoPath), err)
+		return
+	}
+	for _, p := range stale {
+		fmt.Fprintf(os.Stderr, "Warning: %s links to a file %s no longer holds (remove the link; the file's last contents are in the repository's history)\n",
+			paths.Display(p), filepath.Base(repoPath))
+	}
 }

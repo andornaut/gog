@@ -94,3 +94,24 @@ func TestIsSymlink(t *testing.T) {
 		})
 	}
 }
+
+// A character that is not printable is shown as its escape sequence, so that a
+// file name cannot add a line to the output or send the terminal a control
+// sequence. Everything printable, including a space and non-ASCII letters, is
+// shown as it is.
+func TestDisplay(t *testing.T) {
+	tests := []struct {
+		in, want string
+	}{
+		{in: "/home/example/.bashrc", want: "/home/example/.bashrc"},
+		{in: "/home/example/My Documents/café", want: "/home/example/My Documents/café"},
+		{in: "/home/example/.a\nconflict /etc/passwd", want: `/home/example/.a\nconflict /etc/passwd`},
+		{in: "/home/example/.a\x1b[2K\rhidden", want: `/home/example/.a\x1b[2K\rhidden`},
+		{in: "tab\there", want: `tab\there`},
+	}
+	for _, tt := range tests {
+		if got := Display(tt.in); got != tt.want {
+			t.Errorf("Display(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
