@@ -105,6 +105,12 @@ func TestEnvScrubsInheritedGitVars(t *testing.T) {
 // A repository that git refuses over its owner is reported with git's reason,
 // rather than as a directory that holds no repository
 func TestIsReportsARepositoryGitRefusesToUse(t *testing.T) {
+	// gog removes the variables that would ignore the system configuration, so
+	// a host whose system configuration trusts repositories, as GitHub's runners
+	// do with safe.directory=*, never refuses one
+	if out, _ := exec.Command("git", "config", "--system", "--get-all", "safe.directory").Output(); len(out) > 0 {
+		t.Skipf("the system git configuration sets safe.directory: %s", strings.TrimSpace(string(out)))
+	}
 	root := t.TempDir()
 	t.Setenv("HOME", root)
 	t.Setenv("XDG_CONFIG_HOME", root)
