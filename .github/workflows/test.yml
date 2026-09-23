@@ -133,8 +133,9 @@ jobs:
 
       # Symbol mode, the default, fails only on a known vulnerability the code
       # can reach, which neither `go mod verify` nor a Dependabot bump reports.
+      # The version is the tool directive's in go.mod, which Dependabot updates.
       - name: Run govulncheck
-        run: go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
+        run: go tool govulncheck ./...
 
       # The release config, checked here rather than at the tag. goreleaser
       # validates it as `release` starts, which is after the tag is pushed and
