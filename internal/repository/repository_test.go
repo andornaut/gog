@@ -11,9 +11,10 @@ import (
 )
 
 // newBaseDir points the package at an empty data directory for the duration of
-// the test
+// the test, and the git that gog runs at an empty configuration
 func newBaseDir(t *testing.T) string {
 	t.Helper()
+	gittest.Isolate(t, t.TempDir())
 	original := BaseDir
 	BaseDir = t.TempDir()
 	t.Cleanup(func() { BaseDir = original })

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/andornaut/gog/internal/cli"
 	"github.com/andornaut/gog/internal/repository"
 )
 
@@ -17,7 +18,7 @@ func cleanPaths(paths []string) ([]string, error) {
 	cleanedPaths := make([]string, 0, len(paths))
 	for _, p := range paths {
 		if strings.TrimSpace(p) == "" {
-			return nil, fmt.Errorf("invalid path %q (a path cannot be empty)", p)
+			return nil, cli.Usagef("invalid path %q (a path cannot be empty)", p)
 		}
 		normalized, err := normalizePath(p)
 		if err != nil {

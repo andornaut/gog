@@ -291,7 +291,7 @@ func takeRepositoryFlag(args []string) ([]string, error) {
 	switch arg := args[0]; {
 	case arg == "-r", arg == "--repository":
 		if len(args) < 2 {
-			return nil, fmt.Errorf("flag needs an argument: %s", arg)
+			return nil, cli.Usagef("flag needs an argument: %s", arg)
 		}
 		gitRepositoryFlag = args[1]
 		return args[2:], nil

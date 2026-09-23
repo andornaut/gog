@@ -6,14 +6,17 @@ import (
 	"strings"
 )
 
-// Clone clones repoURL into repoPath
+// Clone clones repoURL into repoPath. `--` ends the options, so that a URL
+// beginning with a dash is not read as one. -q keeps git's progress off stdout,
+// which carries only what a command produces.
 func Clone(baseDir, repoPath string, repoURL string) error {
-	return Run(baseDir, "clone", repoURL, repoPath)
+	return Run(baseDir, "clone", "-q", "--", repoURL, repoPath)
 }
 
-// Init initializes a git repository at repoPath
+// Init initializes a git repository at repoPath. -q keeps git's confirmation off
+// stdout, which carries only what a command produces.
 func Init(baseDir, repoPath string) error {
-	return Run(baseDir, "init", repoPath)
+	return Run(baseDir, "init", "-q", "--", repoPath)
 }
 
 // Is returns true if the given directory is the root of a git repository's
@@ -24,7 +27,7 @@ func Init(baseDir, repoPath string) error {
 func Is(baseDir string) bool {
 	cmd := exec.Command("git", "rev-parse", "--is-bare-repository", "--show-cdup")
 	cmd.Dir = baseDir
-	cmd.Env = commandEnv()
+	cmd.Env = Env()
 	out, err := cmd.Output()
 	return err == nil && strings.TrimSpace(string(out)) == "false"
 }
@@ -36,7 +39,7 @@ func Output(baseDir string, arguments ...string) (string, error) {
 	cmd := exec.Command("git", arguments...)
 	cmd.Stderr = os.Stderr
 	cmd.Dir = baseDir
-	cmd.Env = commandEnv()
+	cmd.Env = Env()
 	out, err := cmd.Output()
 	return string(out), err
 }
@@ -48,7 +51,7 @@ func Run(baseDir string, arguments ...string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Dir = baseDir
-	cmd.Env = commandEnv()
+	cmd.Env = Env()
 	return cmd.Run()
 }
 
@@ -84,9 +87,9 @@ var gitScrubbedEnv = map[string]bool{
 // but the key/value pairs are dropped as well so none can leak through.
 var gitScrubbedPrefixes = []string{"GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_"}
 
-// commandEnv returns the process environment without the variables that would
+// Env returns the process environment without the variables that would
 // redirect git away from the repository at cmd.Dir or override its configuration
-func commandEnv() []string {
+func Env() []string {
 	env := os.Environ()
 	filtered := make([]string, 0, len(env))
 	for _, kv := range env {

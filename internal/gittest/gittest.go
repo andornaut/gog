@@ -6,6 +6,8 @@ import (
 	"os"
 	"os/exec"
 	"testing"
+
+	"github.com/andornaut/gog/internal/git"
 )
 
 // hermetic is what git is told about its configuration and the person running
@@ -32,12 +34,13 @@ func Init(t *testing.T, repoPath string) {
 }
 
 // Run runs a git command in repoPath and returns its output, failing the test
-// if git does
+// if git does. The environment is scrubbed as gog's own is, so that a test run
+// from a git hook cannot write into the repository that invoked it.
 func Run(t *testing.T, repoPath string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command("git", args...)
 	cmd.Dir = repoPath
-	cmd.Env = append(os.Environ(), hermetic...)
+	cmd.Env = append(git.Env(), hermetic...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %v: %v: %s", args, err, out)

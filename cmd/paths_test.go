@@ -51,7 +51,7 @@ func TestCleanPaths(t *testing.T) {
 }
 
 // An empty argument names nothing, and passing it over would report success
-// for work that was never done
+// for work that was never done. It is a wrong invocation, so gog exits 2.
 func TestCleanPathsRefusesAnEmptyPath(t *testing.T) {
 	for _, arg := range []string{"", "   ", "\t"} {
 		got, err := cleanPaths([]string{"/etc/hosts", arg})
@@ -61,6 +61,9 @@ func TestCleanPathsRefusesAnEmptyPath(t *testing.T) {
 		}
 		if !strings.Contains(err.Error(), "cannot be empty") {
 			t.Errorf("cleanPaths(%q) = %v, want a failure naming the empty path", arg, err)
+		}
+		if code := ExitCode(err); code != 2 {
+			t.Errorf("cleanPaths(%q) exits %d, want 2", arg, code)
 		}
 	}
 }

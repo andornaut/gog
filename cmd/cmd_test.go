@@ -208,6 +208,7 @@ func TestTakeRepositoryFlag(t *testing.T) {
 		{name: "no arguments at all", args: []string{}, wantArgs: []string{}},
 		{name: "nothing after the flag", args: []string{"-r"}, wantErr: true},
 	}
+	t.Cleanup(func() { gitRepositoryFlag = "" })
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			gitRepositoryFlag = ""
@@ -215,6 +216,9 @@ func TestTakeRepositoryFlag(t *testing.T) {
 			if tt.wantErr {
 				if err == nil {
 					t.Fatalf("takeRepositoryFlag(%q) = %q, want a failure", tt.args, got)
+				}
+				if code := ExitCode(err); code != 2 {
+					t.Errorf("takeRepositoryFlag(%q) exits %d, want 2", tt.args, code)
 				}
 				return
 			}

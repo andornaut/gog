@@ -11,6 +11,7 @@ import (
 func gitInit(t *testing.T, args ...string) {
 	t.Helper()
 	cmd := exec.Command("git", append([]string{"init", "-q"}, args...)...)
+	cmd.Env = Env()
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git init %v: %v: %s", args, err, out)
 	}
@@ -20,6 +21,10 @@ func gitInit(t *testing.T, args ...string) {
 // directory and a bare repository are all rejected
 func TestIs(t *testing.T) {
 	root := t.TempDir()
+	// Is runs git with gog's environment, which leaves the configuration git
+	// finds through $HOME
+	t.Setenv("HOME", root)
+	t.Setenv("XDG_CONFIG_HOME", root)
 	repoPath := filepath.Join(root, "repo")
 	subPath := filepath.Join(repoPath, "sub")
 	plainPath := filepath.Join(root, "plain")
@@ -64,7 +69,7 @@ func TestIs(t *testing.T) {
 // The variables that bind git to a repository, an index, or a configuration
 // source are removed; the ones that carry transport and identity are kept, or
 // clone and push would stop working
-func TestCommandEnvScrubsInheritedGitVars(t *testing.T) {
+func TestEnvScrubsInheritedGitVars(t *testing.T) {
 	removed := []string{
 		"GIT_DIR", "GIT_INDEX_FILE", "GIT_PREFIX",
 		"GIT_CONFIG_GLOBAL", "GIT_CONFIG_COUNT",
@@ -79,19 +84,19 @@ func TestCommandEnvScrubsInheritedGitVars(t *testing.T) {
 	t.Setenv("GIT_SSH_COMMAND", "ssh -v")
 
 	got := map[string]bool{}
-	for _, kv := range commandEnv() {
+	for _, kv := range Env() {
 		name, _, _ := strings.Cut(kv, "=")
 		got[name] = true
 	}
 
 	for _, name := range removed {
 		if got[name] {
-			t.Errorf("commandEnv() kept %s", name)
+			t.Errorf("Env() kept %s", name)
 		}
 	}
 	for _, name := range kept {
 		if !got[name] {
-			t.Errorf("commandEnv() removed %s", name)
+			t.Errorf("Env() removed %s", name)
 		}
 	}
 }
