@@ -142,6 +142,9 @@ jobs:
         uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
+          # GoReleaser reads GITHUB_TOKEN from the environment, so the write
+          # token need not sit in .git/config while the build runs
+          persist-credentials: false
 
       - name: Set up Go
         uses: actions/setup-go@v7.0.0

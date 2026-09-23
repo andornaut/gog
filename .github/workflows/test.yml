@@ -131,6 +131,11 @@ jobs:
           # is caught either way.
           verify: true
 
+      # Symbol mode, the default, fails only on a known vulnerability the code
+      # can reach, which neither `go mod verify` nor a Dependabot bump reports.
+      - name: Run govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
+
       # The release config, checked here rather than at the tag. goreleaser
       # validates it as `release` starts, which is after the tag is pushed and
       # protect-release-tags has no bypass to take one back with. Held to the
