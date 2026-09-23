@@ -49,6 +49,22 @@ func WithinBaseDir(resolved string) bool {
 	return paths.Within(paths.Resolve(BaseDir), resolved)
 }
 
+// IsGogLink reports whether p is a symbolic link that gog made: one whose own
+// target lies in gog's data directory. Only the link's own target is examined,
+// not the chain it resolves through: a user's link to a path that gog manages
+// points at that path rather than into the data directory, and is the user's.
+func IsGogLink(p string) bool {
+	target, err := os.Readlink(p)
+	if err != nil {
+		return false
+	}
+	if !filepath.IsAbs(target) {
+		target = filepath.Join(filepath.Dir(p), target)
+	}
+	target = filepath.Clean(target)
+	return paths.Within(BaseDir, target) || WithinBaseDir(paths.ResolveParent(target))
+}
+
 // List returns a list of repositories
 func List() ([]string, error) {
 	entries, err := os.ReadDir(BaseDir)

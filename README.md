@@ -130,8 +130,9 @@ say so rather than exiting silently.
 | Path another repository manages | Refused unless `--force` | Skipped, with a warning |
 | Named pipe, socket, device node | Refused | Skipped, with a warning |
 
-- A symbolic link that gog created is followed, so a path the repository already
-  holds can be added again.
+- A symbolic link that gog created, one whose own target is in gog's data
+  directory, is followed, so a path the repository already holds can be added
+  again. A link of yours to a path that gog manages is refused like any other.
 - A path that another repository manages is refused, because taking it over
   leaves that repository holding a copy nothing points at. Inside an added
   directory it is skipped instead, so that one managed file does not fail the
@@ -182,6 +183,10 @@ A path is replaced without asking only when nothing of yours is lost:
   repository that tracks the same path
 - a file whose contents the repository already holds, which is what `gog add`
   leaves behind after copying it in
+
+A symbolic link to a directory, such as a `~/.config` that points elsewhere or
+a home directory reached through a link, is kept, and the repository's files are
+linked inside the directory it points at.
 
 ### `gog ls`
 
@@ -249,6 +254,9 @@ $ gog repository rm dotfiles
 Error: refusing to remove dotfiles: it holds 1 commit that no remote has and 2 uncommitted changes (pass --force to delete it anyway)
 ```
 
+- Work that exists nowhere else is commits that no remote has (including ones
+  reachable only from a tag or a detached `HEAD`), stash entries, uncommitted
+  changes, and ignored files.
 - A repository with no remote at all reports its whole history. Push it, or
   pass `--force`.
 - Nothing is restored or deleted until this check passes.

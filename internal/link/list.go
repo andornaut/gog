@@ -3,7 +3,9 @@ package link
 import (
 	"os"
 	"path/filepath"
+	"slices"
 
+	"github.com/andornaut/gog/internal/paths"
 	"github.com/andornaut/gog/internal/repository"
 )
 
@@ -44,15 +46,28 @@ func List(repoPath string) ([]Entry, error) {
 		return nil, nil
 	}
 	var entries []Entry
+	// The repository directories whose external path applying replaces with a
+	// real directory. What is under one is missing once it has been replaced,
+	// whatever the link it replaces points at.
+	var replaced []string
 	err := filepath.Walk(contentPath, func(p string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
+		extPath := repository.ToExternalPath(repoPath, p)
 		if info.IsDir() {
+			if p != contentPath && paths.IsSymlink(extPath) {
+				if action, _ := symlinkedDir(extPath); action == replaceDir {
+					replaced = append(replaced, p)
+				}
+			}
 			return nil
 		}
-		extPath := repository.ToExternalPath(repoPath, p)
-		entries = append(entries, Entry{ExternalPath: extPath, State: state(p, extPath)})
+		st := state(p, extPath)
+		if slices.ContainsFunc(replaced, func(dir string) bool { return paths.Within(dir, p) }) {
+			st = StateMissing
+		}
+		entries = append(entries, Entry{ExternalPath: extPath, State: st})
 		return nil
 	})
 	if err != nil {

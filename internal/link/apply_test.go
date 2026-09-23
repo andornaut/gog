@@ -133,11 +133,12 @@ func TestDirReportsAConflictAndCarriesOn(t *testing.T) {
 	assertLink(t, filepath.Join(homeDir, ".vimrc"), otherIntPath)
 }
 
-// Creating a directory over a symbolic link writes through it into whatever it
-// points at, so a link of the user's is reported and its tree passed over
-func TestDirRefusesToWriteThroughASymlinkedDirectory(t *testing.T) {
+// A link of the user's to a directory, such as a home directory reached
+// through one, is descended through: the repository's files are linked inside
+// the directory it points at, and the link is kept
+func TestDirDescendsThroughASymlinkedDirectory(t *testing.T) {
 	repoPath, homeDir := newSandbox(t)
-	write(t, repoPath, "$HOME/.config/app/conf", "conf\n")
+	intPath := write(t, repoPath, "$HOME/.config/app/conf", "conf\n")
 	elsewhere := filepath.Join(homeDir, "elsewhere")
 	if err := os.MkdirAll(elsewhere, 0755); err != nil {
 		t.Fatal(err)
@@ -146,13 +147,67 @@ func TestDirRefusesToWriteThroughASymlinkedDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := Dir(repoPath, repository.ContentPath(repoPath))
-
-	if !errors.Is(err, ErrIncomplete) {
-		t.Errorf("Dir() = %v, want ErrIncomplete", err)
+	if err := Dir(repoPath, repository.ContentPath(repoPath)); err != nil {
+		t.Fatalf("Dir() = %v", err)
 	}
-	if entries, readErr := os.ReadDir(elsewhere); readErr != nil || len(entries) != 0 {
-		t.Errorf("%s holds %d entries (%v), want nothing written through the link", elsewhere, len(entries), readErr)
+
+	assertLink(t, filepath.Join(elsewhere, "app/conf"), intPath)
+	if target, err := os.Readlink(filepath.Join(homeDir, ".config")); err != nil || target != elsewhere {
+		t.Errorf("%s -> %s (%v), want the user's link kept", filepath.Join(homeDir, ".config"), target, err)
+	}
+}
+
+// A link where the repository holds a directory is refused, and its tree passed
+// over, when it points at a file, or resolves into gog's data directory through
+// a link that gog did not make: creating the directory would write through it,
+// and linking the files would replace the repository's own with links to
+// themselves
+func TestDirRefusesASymlinkedDirectoryItCannotDescend(t *testing.T) {
+	tests := []struct {
+		name string
+		// target returns what the link at ~/.config points at
+		target func(t *testing.T, repoPath, homeDir string) string
+	}{
+		{
+			name: "a link to a file",
+			target: func(t *testing.T, _, homeDir string) string {
+				t.Helper()
+				p := filepath.Join(homeDir, "file")
+				if err := os.WriteFile(p, []byte("mine\n"), 0644); err != nil {
+					t.Fatal(err)
+				}
+				return p
+			},
+		},
+		{
+			name: "a link to the user's own link into the data directory",
+			target: func(t *testing.T, repoPath, homeDir string) string {
+				t.Helper()
+				cfg := filepath.Join(homeDir, "cfg")
+				if err := os.Symlink(filepath.Join(repoPath, repository.ContentDirName, "$HOME", ".config"), cfg); err != nil {
+					t.Fatal(err)
+				}
+				return cfg
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repoPath, homeDir := newSandbox(t)
+			intPath := write(t, repoPath, "$HOME/.config/app/conf", "conf\n")
+			if err := os.Symlink(tt.target(t, repoPath, homeDir), filepath.Join(homeDir, ".config")); err != nil {
+				t.Fatal(err)
+			}
+
+			err := Dir(repoPath, repository.ContentPath(repoPath))
+
+			if !errors.Is(err, ErrIncomplete) {
+				t.Errorf("Dir() = %v, want ErrIncomplete", err)
+			}
+			if info, lstatErr := os.Lstat(intPath); lstatErr != nil || !info.Mode().IsRegular() {
+				t.Errorf("the repository's %s is no longer a regular file (%v)", intPath, lstatErr)
+			}
+		})
 	}
 }
 

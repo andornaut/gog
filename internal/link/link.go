@@ -89,14 +89,16 @@ func Dir(repoPath, intPath string) error {
 		if info.IsDir() {
 			extPath := repository.ToExternalPath(repoPath, p)
 			if paths.IsSymlink(extPath) {
-				// Creating the directory would otherwise write through the link
-				// into whatever it points at
-				if ok, discardErr := discardable(extPath); !ok {
-					printError(refusal(extPath, discardErr))
-					return filepath.SkipDir
-				}
-				if rmErr := os.Remove(extPath); rmErr != nil {
-					printError(fmt.Errorf("failed to remove %s: %w", extPath, rmErr))
+				switch action, actionErr := symlinkedDir(extPath); action {
+				case replaceDir:
+					if rmErr := os.Remove(extPath); rmErr != nil {
+						printError(fmt.Errorf("failed to remove %s: %w", extPath, rmErr))
+						return filepath.SkipDir
+					}
+				case descendDir:
+					return nil
+				default:
+					printError(actionErr)
 					return filepath.SkipDir
 				}
 			}
@@ -206,7 +208,8 @@ func addToGit(repoPath string, intPaths ...string) {
 
 // discardable reports whether p holds nothing of the user's, so that it can be
 // removed to make way for what the repository holds: a broken link points at
-// nothing, and a link into gog's data directory was made by gog. Anything else
+// nothing, and a link whose own target is in gog's data directory was made by
+// gog, by an earlier run or by another repository that tracks the same path. Anything else
 // is the user's and is not deleted, because what it holds exists nowhere else.
 //
 // The error explains why a link could not be resolved, and is set only when the
@@ -218,7 +221,48 @@ func discardable(p string) (bool, error) {
 		}
 		return true, nil
 	}
-	return isGogOwnedLink(p), nil
+	return repository.IsGogLink(p), nil
+}
+
+// dirAction is what applying does with a symbolic link where the repository
+// holds a directory
+type dirAction int
+
+const (
+	refuseDir dirAction = iota
+	replaceDir
+	descendDir
+)
+
+// symlinkedDir decides what applying does with a symbolic link at a path where
+// the repository holds a directory. A link that holds nothing of the user's is
+// replaced with a real directory. A link of the user's to a directory, such as
+// a home directory reached through one, is descended through: the repository's
+// files are linked inside the directory it points at. Anything else is refused,
+// with the error that says why, because creating the directory would write
+// through the link.
+func symlinkedDir(p string) (dirAction, error) {
+	ok, discardErr := discardable(p)
+	if ok {
+		return replaceDir, nil
+	}
+	if discardErr != nil {
+		return refuseDir, refusal(p, discardErr)
+	}
+	resolved, err := filepath.EvalSymlinks(p)
+	if err != nil {
+		return refuseDir, refusal(p, err)
+	}
+	// A directory inside gog's data directory, reached through a link that gog
+	// did not make, would have the repository's files replaced by links to
+	// themselves
+	if repository.WithinBaseDir(resolved) {
+		return refuseDir, fmt.Errorf("%q is a symbolic link into gog's data directory (remove it, then run the command again)", p)
+	}
+	if info, statErr := os.Stat(resolved); statErr != nil || !info.IsDir() {
+		return refuseDir, refusal(p, nil)
+	}
+	return descendDir, nil
 }
 
 // refusal reports that a path was left alone, naming the error that decided it
@@ -228,20 +272,6 @@ func refusal(p string, err error) error {
 		return fmt.Errorf("cannot resolve %s, leaving it alone: %w", p, err)
 	}
 	return fmt.Errorf("%q already exists (move or remove it, then run the command again)", p)
-}
-
-// isGogOwnedLink reports whether p is a symbolic link that resolves into gog's
-// data directory, which means gog made it: an earlier run, or another
-// repository that tracks the same path. Replacing it discards nothing.
-func isGogOwnedLink(p string) bool {
-	if !paths.IsSymlink(p) {
-		return false
-	}
-	resolved, err := filepath.EvalSymlinks(p)
-	if err != nil {
-		return false
-	}
-	return repository.WithinBaseDir(resolved)
 }
 
 // sameContents reports whether both paths are regular files holding identical
@@ -258,6 +288,11 @@ func sameContents(a, b string) bool {
 	}
 	bInfo, err := os.Lstat(b)
 	if err != nil || !bInfo.Mode().IsRegular() {
+		return false
+	}
+	// One file reached by two paths, such as through a symbolically linked
+	// parent, is not a copy: removing one path to replace it would remove both
+	if os.SameFile(aInfo, bInfo) {
 		return false
 	}
 	if aInfo.Size() != bInfo.Size() {

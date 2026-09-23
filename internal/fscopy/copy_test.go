@@ -100,6 +100,81 @@ func TestFileWritesContentsAndMode(t *testing.T) {
 	}
 }
 
+// A symbolic link at the destination is replaced by the copy. Writing through
+// it would overwrite whatever it points at.
+func TestFileReplacesALinkRatherThanWritingThroughIt(t *testing.T) {
+	root := t.TempDir()
+	src := write(t, filepath.Join(root, "source"), "new\n", 0644)
+	target := write(t, filepath.Join(root, "target"), "untouched\n", 0644)
+	dst := filepath.Join(root, "destination")
+	if err := os.Symlink(target, dst); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := File(src, dst); err != nil {
+		t.Fatalf("File() = %v", err)
+	}
+
+	assertContents(t, target, "untouched\n")
+	assertContents(t, dst, "new\n")
+	if info, err := os.Lstat(dst); err != nil || !info.Mode().IsRegular() {
+		t.Errorf("%s is %v (%v), want a regular file", dst, info.Mode(), err)
+	}
+}
+
+// A destination that is the source itself, reached by a hard link, is refused
+// and left holding what it held
+func TestFileRefusesTheSourceItself(t *testing.T) {
+	root := t.TempDir()
+	src := write(t, filepath.Join(root, "source"), "only copy\n", 0644)
+	dst := filepath.Join(root, "destination")
+	if err := os.Link(src, dst); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := File(src, dst); err == nil {
+		t.Error("File() reported success copying a file onto itself")
+	}
+	assertContents(t, src, "only copy\n")
+}
+
+// A destination whose name is at the length limit is copied: the temporary
+// file beside it has a name of its own
+func TestFileCopiesToALongName(t *testing.T) {
+	root := t.TempDir()
+	src := write(t, filepath.Join(root, "source"), "new\n", 0644)
+	dst := filepath.Join(root, strings.Repeat("n", 250))
+
+	if err := File(src, dst); err != nil {
+		t.Fatalf("File() = %v", err)
+	}
+	assertContents(t, dst, "new\n")
+}
+
+// A copy that cannot be put in place leaves no temporary file behind
+func TestFileLeavesNothingBehindWhenItFails(t *testing.T) {
+	root := t.TempDir()
+	src := write(t, filepath.Join(root, "source"), "new\n", 0644)
+	// A file cannot be renamed over a directory that holds something
+	dst := filepath.Join(root, "destination")
+	write(t, filepath.Join(dst, "inside"), "kept\n", 0644)
+
+	if err := File(src, dst); err == nil {
+		t.Fatal("File() reported success replacing a directory")
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		names = append(names, entry.Name())
+	}
+	if want := []string{"destination", "source"}; !slices.Equal(names, want) {
+		t.Errorf("%s holds %q, want %q", root, names, want)
+	}
+}
+
 // The source is opened before the destination is created, so a source that
 // cannot be read leaves nothing behind
 func TestFileFailsWhenTheSourceDoesNotExist(t *testing.T) {
@@ -134,6 +209,30 @@ func TestDirCopiesATreeAndItsModes(t *testing.T) {
 }
 
 // A directory is skipped whole rather than walked, which is how a copy is kept
+// A symbolic link at a destination directory is refused rather than written
+// through into whatever it points at
+func TestDirRefusesALinkedDestinationDirectory(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "source")
+	write(t, filepath.Join(src, "sub", "file"), "new\n", 0644)
+	elsewhere := filepath.Join(root, "elsewhere")
+	if err := os.MkdirAll(elsewhere, 0755); err != nil {
+		t.Fatal(err)
+	}
+	dst := filepath.Join(root, "destination")
+	if err := os.MkdirAll(dst, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(elsewhere, filepath.Join(dst, "sub")); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Dir(src, dst, copyNothing, reportNothing); err == nil {
+		t.Error("Dir() reported success writing through a link")
+	}
+	assertAbsent(t, filepath.Join(elsewhere, "file"))
+}
+
 // out of the tree it is being written into
 func TestDirHonoursTheSkipFunc(t *testing.T) {
 	root := t.TempDir()

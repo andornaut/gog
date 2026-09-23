@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/andornaut/gog/internal/fscopy"
@@ -100,25 +101,52 @@ func Remove(repoPath string) error {
 }
 
 // UnsavedWork describes what deleting the given repository would destroy:
-// commits that no remote holds, and changes that were never committed. Both
-// exist only in the repository's own directory. A repository with no remote at
-// all reports its whole history.
+// commits that no remote holds, stash entries, changes that were never
+// committed, and ignored files. All of them exist only in the repository's own
+// directory. A repository with no remote at all reports its whole history.
+//
+// The commits are counted from every ref and HEAD, so that one reachable only
+// from a tag or a detached HEAD is counted too. The stash is left out of that
+// count and reported by its entries, each of which is several commits.
 func UnsavedWork(repoPath string) ([]string, error) {
-	unpushed, err := git.Output(repoPath, "log", "--oneline", "--branches", "--not", "--remotes")
+	unpushed, err := git.Output(repoPath, "rev-list", "--count", "--exclude=refs/stash", "--all", "--not", "--remotes")
 	if err != nil {
 		return nil, err
 	}
-	uncommitted, err := git.Output(repoPath, "status", "--porcelain")
+	stashed, err := git.Output(repoPath, "stash", "list", "--format=%gd")
+	if err != nil {
+		return nil, err
+	}
+	status, err := git.Output(repoPath, "status", "--porcelain", "--ignored")
 	if err != nil {
 		return nil, err
 	}
 
+	commits, err := strconv.Atoi(strings.TrimSpace(unpushed))
+	if err != nil {
+		return nil, fmt.Errorf("cannot count the commits in %s: %w", repoPath, err)
+	}
+
 	var unsaved []string
-	if n := countLines(unpushed); n > 0 {
+	if n := commits; n > 0 {
 		unsaved = append(unsaved, quantify(n, "commit")+" that no remote has")
 	}
-	if n := countLines(uncommitted); n > 0 {
-		unsaved = append(unsaved, quantify(n, "uncommitted change"))
+	if n := countLines(stashed); n > 0 {
+		unsaved = append(unsaved, quantify(n, "stash entry"))
+	}
+	uncommitted, ignored := 0, 0
+	for line := range strings.Lines(strings.TrimSpace(status)) {
+		if strings.HasPrefix(line, "!! ") {
+			ignored++
+			continue
+		}
+		uncommitted++
+	}
+	if uncommitted > 0 {
+		unsaved = append(unsaved, quantify(uncommitted, "uncommitted change"))
+	}
+	if ignored > 0 {
+		unsaved = append(unsaved, quantify(ignored, "ignored file"))
 	}
 	return unsaved, nil
 }
@@ -132,8 +160,11 @@ func countLines(s string) int {
 }
 
 func quantify(n int, noun string) string {
-	if n == 1 {
+	switch {
+	case n == 1:
 		return fmt.Sprintf("%d %s", n, noun)
+	case strings.HasSuffix(noun, "y"):
+		return fmt.Sprintf("%d %sies", n, strings.TrimSuffix(noun, "y"))
 	}
 	return fmt.Sprintf("%d %ss", n, noun)
 }
@@ -285,14 +316,23 @@ func resolveAddPath(repoPath string, force bool, targetPath string) (string, err
 	if err := validateTargetPath(targetPath); err != nil {
 		return "", err
 	}
+	// A symbolic link committed to the repository's tree would have the copy
+	// written wherever it points, and would make that place look already added.
+	// A link at the last component is checked once the kind of path is known:
+	// a file's copy replaces it, and a directory's is refused below.
+	intPath := ToInternalPath(repoPath, targetPath)
+	if contentPath := paths.Resolve(ContentPath(repoPath)); !paths.Within(contentPath, paths.ResolveParent(intPath)) {
+		return "", linkInRepositoryError(repoPath, targetPath, intPath)
+	}
 	extPath, err := filepath.EvalSymlinks(targetPath)
-	// A link that resolves into gog's data directory is one gog made, so the
-	// path is already managed and the link is followed. A link to anywhere else
-	// belongs to the user, and copying its target would store the contents
-	// while discarding the link itself, so the target is named instead. This is
-	// decided before the resolution error is reported, so that a broken link is
-	// named as a link rather than as its missing target.
-	if paths.IsSymlink(targetPath) && (err != nil || !WithinBaseDir(extPath)) {
+	// A link whose own target is in gog's data directory is one gog made, so the
+	// path is already managed and the link is followed. Any other link belongs
+	// to the user, including one to a path that gog manages, and copying its
+	// target would store the contents while discarding the link itself, so the
+	// target is named instead. This is decided before the resolution error is
+	// reported, so that a broken link is named as a link rather than as its
+	// missing target.
+	if paths.IsSymlink(targetPath) && (err != nil || !IsGogLink(targetPath)) {
 		target, readErr := os.Readlink(targetPath)
 		if readErr != nil {
 			return "", fmt.Errorf("%q is a symbolic link (add its target instead)", targetPath)
@@ -319,7 +359,19 @@ func resolveAddPath(repoPath string, force bool, targetPath string) (string, err
 	if !info.Mode().IsRegular() && !info.IsDir() {
 		return "", fmt.Errorf("%q is a %s (gog manages files and directories)", targetPath, fscopy.FileKind(info.Mode()))
 	}
+	// A directory is copied into, rather than over, what the repository holds
+	// at its path, so a link there would be written through
+	if info.IsDir() && paths.IsSymlink(intPath) {
+		return "", linkInRepositoryError(repoPath, targetPath, intPath)
+	}
 	return extPath, nil
+}
+
+// linkInRepositoryError refuses a path whose copy would be written through a
+// symbolic link committed to the repository's tree
+func linkInRepositoryError(repoPath, targetPath, intPath string) error {
+	return fmt.Errorf("cannot add %q: %s holds a symbolic link on the way to %s (remove it from the repository first)",
+		targetPath, filepath.Base(repoPath), intPath)
 }
 
 // describePathError states what gog could not do with a path, in the form its

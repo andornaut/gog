@@ -42,6 +42,14 @@ func Resolve(p string) string {
 	return filepath.Join(Resolve(parent), filepath.Base(p))
 }
 
+// ResolveParent returns p with its parent directory resolved through symlinks
+// and its last component kept literally, so that a symbolic link at p is named
+// rather than followed
+func ResolveParent(p string) string {
+	p = filepath.Clean(p)
+	return filepath.Join(Resolve(filepath.Dir(p)), filepath.Base(p))
+}
+
 // IsSymlink reports whether p is a symbolic link, and false if it cannot be
 // examined at all
 func IsSymlink(p string) bool {

@@ -37,6 +37,12 @@ import (
 
 // File copies the contents and mode of src to dst, creating dst or replacing
 // what it holds.
+//
+// The copy is written to a temporary file beside dst and renamed over it, so
+// that dst is never left partly written, a symbolic link at dst is replaced
+// rather than written through, and the contents are never readable with wider
+// permissions than src grants. A dst that is src itself, such as a hard link to
+// it, is refused: nothing would be copied.
 func File(src, dst string) (err error) {
 	in, err := os.Open(src)
 	if err != nil {
@@ -48,36 +54,49 @@ func File(src, dst string) (err error) {
 		}
 	}()
 
-	out, err := os.Create(dst)
+	si, err := in.Stat()
 	if err != nil {
 		return err
 	}
+	if di, statErr := os.Stat(dst); statErr == nil && os.SameFile(si, di) {
+		return fmt.Errorf("copy: %q and %q are the same file", src, dst)
+	}
+
+	// CreateTemp makes the file 0600, which is narrowed or widened to src's mode
+	// only once the contents are complete
+	// The name is short and fixed, so that a dst whose name is near the length
+	// limit still has room for its temporary file beside it
+	out, err := os.CreateTemp(filepath.Dir(dst), ".gog-tmp-*")
+	if err != nil {
+		return err
+	}
+	tmp := out.Name()
 	defer func() {
-		if e := out.Close(); e != nil && err == nil {
-			err = e
+		if out != nil {
+			if e := out.Close(); e != nil && err == nil {
+				err = e
+			}
+		}
+		if err != nil {
+			_ = os.Remove(tmp)
 		}
 	}()
 
-	_, err = io.Copy(out, in)
+	if _, err = io.Copy(out, in); err != nil {
+		return err
+	}
+	if err = out.Chmod(si.Mode()); err != nil {
+		return err
+	}
+	if err = out.Sync(); err != nil {
+		return err
+	}
+	err = out.Close()
+	out = nil
 	if err != nil {
 		return err
 	}
-
-	err = out.Sync()
-	if err != nil {
-		return err
-	}
-
-	si, err := os.Stat(src)
-	if err != nil {
-		return err
-	}
-	err = os.Chmod(dst, si.Mode())
-	if err != nil {
-		return err
-	}
-
-	return err
+	return os.Rename(tmp, dst)
 }
 
 // SkipFunc reports whether a directory entry should be passed over
@@ -148,6 +167,15 @@ func copyDir(src, dst, dstRoot string, skipFunc SkipFunc, report ReportFunc, ens
 		}
 		if err := os.Mkdir(dst, si.Mode()); err != nil && !os.IsExist(err) {
 			return err
+		}
+		// An existing symbolic link to a directory would have the copy written
+		// wherever it points
+		info, err := os.Lstat(dst)
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("copy: destination %q is not a directory", dst)
 		}
 		created = true
 		return nil

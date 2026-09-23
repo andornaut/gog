@@ -43,6 +43,13 @@ func validateTargetPath(p string) error {
 	if paths.Within(BaseDir, p) {
 		return ownPathError(p)
 	}
+	// A path can reach the data directory through a symbolically linked parent,
+	// such as ~/dots pointing at a repository. Only the parent is resolved: a
+	// link that gog made resolves into the data directory, and is a path that
+	// gog manages rather than one inside it.
+	if resolved := paths.ResolveParent(p); WithinBaseDir(resolved) {
+		return ownPathError(resolved)
+	}
 	// .gog is the suffix of a backup that older versions left behind, which
 	// duplicates a file the repository already holds
 	if strings.HasSuffix(p, ".gog") {

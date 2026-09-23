@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -267,6 +268,102 @@ func TestAddPathsFollowsItsOwnLink(t *testing.T) {
 	contents, err := os.ReadFile(held)
 	if err != nil || string(contents) != "bashrc\n" {
 		t.Errorf("the repository holds %q (%v), want what it held", contents, err)
+	}
+}
+
+// A link of the user's to a path that gog manages is the user's, although it
+// resolves into the data directory: adding it would replace the link with a
+// copy of what the managed path holds
+func TestAddPathsRefusesAUserLinkToAManagedPath(t *testing.T) {
+	repoPath, homeDir := newSandbox(t)
+	held := writeFile(t, filepath.Join(repoPath, ContentDirName, "$HOME", ".bashrc"), "bashrc\n")
+	managed := symlink(t, held, filepath.Join(homeDir, ".bashrc"))
+	alias := symlink(t, managed, filepath.Join(homeDir, ".alias"))
+
+	err := AddPaths(repoPath, false, []string{alias})
+
+	if err == nil || !strings.Contains(err.Error(), "is a symbolic link to "+managed) {
+		t.Errorf("AddPaths() = %v, want the link refused and its target named", err)
+	}
+	if target, readErr := os.Readlink(alias); readErr != nil || target != managed {
+		t.Errorf("%s -> %s (%v), want the user's link left alone", alias, target, readErr)
+	}
+	if _, statErr := os.Lstat(filepath.Join(repoPath, ContentDirName, "$HOME", ".alias")); !os.IsNotExist(statErr) {
+		t.Errorf("the repository holds .alias (%v), want nothing copied", statErr)
+	}
+}
+
+// A path that reaches the data directory through a symbolically linked parent
+// is inside it, as the same path spelled without the link is
+func TestValidateTargetPathsResolvesALinkedParent(t *testing.T) {
+	repoPath, homeDir := newSandbox(t)
+	dots := symlink(t, repoPath, filepath.Join(homeDir, "dots"))
+	held := writeFile(t, filepath.Join(repoPath, ContentDirName, "$HOME", ".bashrc"), "bashrc\n")
+	managed := symlink(t, held, filepath.Join(homeDir, ".bashrc"))
+
+	err := ValidateTargetPaths([]string{filepath.Join(dots, ContentDirName, "$HOME", ".bashrc")})
+
+	if err == nil || !strings.Contains(err.Error(), "repository dots holds it") {
+		t.Errorf("ValidateTargetPaths() = %v, want the path refused", err)
+	}
+	// A link that gog made resolves into the data directory too, and is still
+	// a path that gog manages
+	if err := ValidateTargetPaths([]string{managed}); err != nil {
+		t.Errorf("ValidateTargetPaths(%s) = %v, want success", managed, err)
+	}
+}
+
+// A symbolic link committed to the repository's tree is not written through:
+// the copy would land wherever it points, such as over the path being added.
+// It is refused with the other checks, before any path is copied.
+func TestAddPathsRefusesALinkInTheRepositorysTree(t *testing.T) {
+	repoPath, homeDir := newSandbox(t)
+	mine := writeFile(t, filepath.Join(homeDir, ".config", "app", "conf"), "mine\n")
+	symlink(t, filepath.Join(homeDir, ".config"), filepath.Join(repoPath, ContentDirName, "$HOME", ".config"))
+
+	// Named after a path that is fine, so that the refusal has to come before
+	// anything is copied
+	first := writeFile(t, filepath.Join(homeDir, ".bashrc"), "bashrc\n")
+
+	err := AddPaths(repoPath, false, []string{first, filepath.Dir(mine)})
+
+	if err == nil || !strings.Contains(err.Error(), "symbolic link on the way") {
+		t.Errorf("AddPaths() = %v, want the link in the repository named", err)
+	}
+	if contents, readErr := os.ReadFile(mine); readErr != nil || string(contents) != "mine\n" {
+		t.Errorf("%s holds %q (%v), want it left alone", mine, contents, readErr)
+	}
+	if _, statErr := os.Lstat(filepath.Join(repoPath, ContentDirName, "$HOME", ".bashrc")); !os.IsNotExist(statErr) {
+		t.Errorf("the repository holds .bashrc (%v), want nothing copied", statErr)
+	}
+}
+
+// A symbolic link committed where the repository holds a directory is refused
+// up front, rather than failing the copy on every run, or reading as already
+// added when it points at the directory being added
+func TestAddPathsRefusesALinkWhereTheRepositoryHoldsADirectory(t *testing.T) {
+	for _, pointsAtTarget := range []bool{false, true} {
+		repoPath, homeDir := newSandbox(t)
+		dir := filepath.Join(homeDir, ".config", "foo")
+		writeFile(t, filepath.Join(dir, "conf"), "mine\n")
+		elsewhere := filepath.Join(homeDir, "elsewhere")
+		if err := os.MkdirAll(elsewhere, 0755); err != nil {
+			t.Fatal(err)
+		}
+		target := elsewhere
+		if pointsAtTarget {
+			target = dir
+		}
+		symlink(t, target, filepath.Join(repoPath, ContentDirName, "$HOME", ".config", "foo"))
+
+		err := AddPaths(repoPath, false, []string{dir})
+
+		if err == nil || !strings.Contains(err.Error(), "symbolic link on the way") {
+			t.Errorf("AddPaths() with the link pointing at the target = %v: %v, want the link named", pointsAtTarget, err)
+		}
+		if _, statErr := os.Lstat(filepath.Join(elsewhere, "conf")); !os.IsNotExist(statErr) {
+			t.Errorf("%s holds conf (%v), want nothing written through the link", elsewhere, statErr)
+		}
 	}
 }
 
@@ -588,6 +685,55 @@ func TestUnsavedWorkCountsWhatDeletionWouldDestroy(t *testing.T) {
 	}
 	if len(unsaved) != 1 || !strings.Contains(unsaved[0], "1 uncommitted change") {
 		t.Errorf("UnsavedWork() = %v, want the one uncommitted change", unsaved)
+	}
+}
+
+// A stash entry, an ignored file, and a commit reachable only from a tag live
+// in the repository's directory alone, as an unpushed branch does
+func TestUnsavedWorkCountsWhatNoBranchHolds(t *testing.T) {
+	repoPath, homeDir := newSandbox(t)
+	target := writeFile(t, filepath.Join(homeDir, ".bashrc"), "bashrc\n")
+	if err := AddPaths(repoPath, false, []string{target}); err != nil {
+		t.Fatal(err)
+	}
+	gittest.Run(t, repoPath, "add", "-A")
+	gittest.Run(t, repoPath, "commit", "-q", "-m", "init")
+	remote := filepath.Join(t.TempDir(), "origin.git")
+	gittest.Run(t, repoPath, "init", "-q", "--bare", remote)
+	gittest.Run(t, repoPath, "remote", "add", "origin", remote)
+	gittest.Run(t, repoPath, "push", "-q", "-u", "origin", "HEAD")
+
+	unsaved, err := UnsavedWork(repoPath)
+	if err != nil {
+		t.Fatalf("UnsavedWork() = %v", err)
+	}
+	if len(unsaved) != 0 {
+		t.Fatalf("UnsavedWork() = %v for a pushed, clean repository, want nothing", unsaved)
+	}
+
+	// A commit on a branch that is then deleted, kept only by a tag
+	gittest.Run(t, repoPath, "switch", "-q", "-c", "scratch")
+	gittest.Run(t, repoPath, "commit", "-q", "--allow-empty", "-m", "tagged")
+	gittest.Run(t, repoPath, "tag", "kept")
+	gittest.Run(t, repoPath, "switch", "-q", "-")
+	gittest.Run(t, repoPath, "branch", "-q", "-D", "scratch")
+	// A stash entry
+	writeFile(t, filepath.Join(repoPath, ContentDirName, "$HOME", ".bashrc"), "edited\n")
+	gittest.Run(t, repoPath, "stash", "-q")
+	// An ignored file
+	writeFile(t, filepath.Join(repoPath, ".gitignore"), "notes.txt\n")
+	gittest.Run(t, repoPath, "add", ".gitignore")
+	gittest.Run(t, repoPath, "commit", "-q", "-m", "ignore")
+	gittest.Run(t, repoPath, "push", "-q")
+	writeFile(t, filepath.Join(repoPath, "notes.txt"), "notes\n")
+
+	unsaved, err = UnsavedWork(repoPath)
+	if err != nil {
+		t.Fatalf("UnsavedWork() = %v", err)
+	}
+	want := []string{"1 commit that no remote has", "1 stash entry", "1 ignored file"}
+	if !slices.Equal(unsaved, want) {
+		t.Errorf("UnsavedWork() = %q, want %q", unsaved, want)
 	}
 }
 

@@ -151,3 +151,47 @@ func TestListStatesMatchWhatApplyingDoes(t *testing.T) {
 		}
 	}
 }
+
+// A path under a symbolically linked directory is listed as applying treats
+// it: missing inside a link of the user's that applying descends through, and
+// missing under a link of gog's that applying replaces with a real directory,
+// whatever that link's own directory holds at the path
+func TestListStatesUnderASymlinkedDirectory(t *testing.T) {
+	repoPath, homeDir := newSandbox(t)
+	userConf := write(t, repoPath, "$HOME/.config/app/conf", "conf\n")
+	gogConf := write(t, repoPath, "$HOME/.local/app/conf", "conf\n")
+
+	elsewhere := filepath.Join(homeDir, "elsewhere")
+	if err := os.MkdirAll(elsewhere, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(elsewhere, filepath.Join(homeDir, ".config")); err != nil {
+		t.Fatal(err)
+	}
+	other := filepath.Join(repository.BaseDir, "other", repository.ContentDirName, "$HOME", ".local")
+	if err := os.MkdirAll(filepath.Join(other, "app"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(other, "app", "conf"), []byte("theirs\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(other, filepath.Join(homeDir, ".local")); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, err := List(repoPath)
+	if err != nil {
+		t.Fatalf("List() = %v", err)
+	}
+	for _, extPath := range []string{filepath.Join(homeDir, ".config/app/conf"), filepath.Join(homeDir, ".local/app/conf")} {
+		if got := stateOf(t, entries, extPath); got != StateMissing {
+			t.Errorf("state of %s = %s, want %s", extPath, got, StateMissing)
+		}
+	}
+
+	if err := Dir(repoPath, repository.ContentPath(repoPath)); err != nil {
+		t.Fatalf("Dir() = %v, although nothing was listed as a conflict", err)
+	}
+	assertLink(t, filepath.Join(elsewhere, "app/conf"), userConf)
+	assertLink(t, filepath.Join(homeDir, ".local/app/conf"), gogConf)
+}
