@@ -106,7 +106,7 @@ jobs:
               gog LICENSE README.md
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: gog_${{ matrix.goos }}_${{ matrix.asset_arch }}
           path: gog_${{ matrix.goos }}_${{ matrix.asset_arch }}.tar.gz
