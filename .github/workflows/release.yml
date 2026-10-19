@@ -180,7 +180,7 @@ jobs:
       # whatever lands here, so the coverage artifact the called test workflow
       # uploads would otherwise become a dev-release asset no checksum covers.
       - name: Download build artifacts
-        uses: actions/download-artifact@v8.0.1
+        uses: actions/download-artifact@v8.0.2
         with:
           path: artifacts
           pattern: gog_*
