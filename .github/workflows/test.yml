@@ -145,7 +145,7 @@ jobs:
       # floating is the point: a deprecation lands on a push here rather than
       # on the one run that cannot be repeated.
       - name: Check the release config
-        uses: goreleaser/goreleaser-action@v7.2.3
+        uses: goreleaser/goreleaser-action@v7.3.0
         with:
           distribution: goreleaser
           version: "~> v2"
