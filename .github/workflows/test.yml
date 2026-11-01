@@ -74,7 +74,7 @@ jobs:
         run: go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
 
       - name: Upload coverage
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7.0.2
         if: matrix.os == 'ubuntu-latest'
         with:
           name: coverage
@@ -155,7 +155,7 @@ jobs:
       # Dependabot proposes the bump through the github-actions ecosystem. It
       # fetches nothing at run time, so a slow host cannot turn this red.
       - name: Run markdownlint
-        uses: DavidAnson/markdownlint-cli2-action@v24.2.0
+        uses: DavidAnson/markdownlint-cli2-action@v25.0.0
         with:
           # Empty on purpose. The action defaults this to `*.{md,markdown}`,
           # which is the repository root only, and anything passed here outranks
