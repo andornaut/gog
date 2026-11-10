@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+
+go mod verify
+go mod tidy -diff
+go build -v ./...
+CGO_ENABLED=1 go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
+go tool cover -func=coverage.txt

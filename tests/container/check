@@ -1,0 +1,71 @@
+#!/bin/sh
+set -eu
+
+mkdir -p /scratch/go-mod /scratch/go-cache /scratch/go /scratch/home
+if [ ! -f /scratch/go-mod-ready ]; then
+    cp -a /opt/go-mod/. /scratch/go-mod/
+    touch /scratch/go-mod-ready
+fi
+export GOPATH=/scratch/go GOCACHE=/scratch/go-cache GOMODCACHE=/scratch/go-mod
+export GOTOOLCHAIN=local GOPROXY=off GOSUMDB=off
+export GOLANGCI_LINT_CACHE=/scratch/golangci-lint
+
+command=$1
+shift
+case "$command" in
+    check)
+        for task in $CHECK_TASKS; do
+            "$0" "$task"
+        done
+        ;;
+    exec)
+        unset GOPROXY GOSUMDB
+        if [ "$#" -gt 0 ]; then
+            exec "$@"
+        fi
+        if [ -z "${COMMAND:-}" ]; then
+            printf 'COMMAND is required for make exec.\n' >&2
+            exit 2
+        fi
+        exec /bin/sh -ec "$COMMAND"
+        ;;
+    lint)
+        shellcheck -x -P SCRIPTDIR tests/container/run tests/container/check tests/native/run tests/native/check
+        unset GOPROXY GOSUMDB
+        git config --global --add safe.directory /work
+        git init --quiet --initial-branch=main .
+        git add --all
+        git -c user.name='Container checks' -c user.email=checks@example.invalid \
+            commit --quiet -m 'Check source snapshot'
+        git remote add origin https://github.com/andornaut/gog.git
+        go mod verify
+        go mod tidy -diff
+        golangci-lint config verify
+        golangci-lint run
+        go tool govulncheck ./...
+        goreleaser check
+        markdownlint-cli2
+        ;;
+    test)
+        if [ "$#" -eq 0 ]; then
+            set -- ./...
+        fi
+        CGO_ENABLED=1 go test -v -race -coverprofile=coverage.txt -covermode=atomic "$@"
+        go tool cover -func=coverage.txt
+        ;;
+    build)
+        CGO_ENABLED=0 go build -ldflags='-s -w' -trimpath -o gog .
+        go build -v ./...
+        native_target=$(go env GOOS)/$(go env GOARCH)
+        for build_target in linux/amd64 linux/arm64 darwin/arm64; do
+            if [ "$build_target" != "$native_target" ]; then
+                CGO_ENABLED=0 GOOS=${build_target%/*} GOARCH=${build_target#*/} \
+                    go build -ldflags='-s -w' -trimpath -o "/scratch/build-${build_target%/*}-${build_target#*/}" .
+            fi
+        done
+        ;;
+    *)
+        printf 'Unknown check category: %s\n' "$command" >&2
+        exit 2
+        ;;
+esac

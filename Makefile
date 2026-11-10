@@ -7,46 +7,50 @@ TARGET    := gog
 # binary a release ships rather than an unstripped one carrying local paths.
 LDFLAGS   := -s -w
 
-.PHONY: $(TARGET) all build clean coverage fmt install lint test uninstall
+.DEFAULT_GOAL := check
+CHECK_TASKS := lint test build
+TEST_OUTPUTS := coverage.txt
+BUILD_OUTPUTS := gog
+CONTAINER_BUILD_ARGS := GO_VERSION=$(shell awk '$$1 == "go" {print $$2; exit}' go.mod)
+CHECK_NETWORK_LINT := bridge
 
-all: $(TARGET)
+override COMMAND := $(value COMMAND)
+override TEST_ARGS := $(value TEST_ARGS)
 
-build: $(TARGET)
+export CHECK_TASKS BUILD_OUTPUTS TEST_OUTPUTS CONTAINER_BUILD_ARGS CHECK_NETWORK_LINT TEST_ARGS COMMAND
 
-# CGO_ENABLED=0 on the recipe rather than exported for the file, because the
-# test target runs with -race, which needs cgo. Nothing here imports os/user or
-# net outside a test, so this only settles how the binary links.
-$(TARGET):
-	CGO_ENABLED=0 go build -ldflags="$(LDFLAGS)" -trimpath -o $@
+export CHECK_TIMEOUT_SECONDS CHECK_MEMORY CHECK_SCRATCH_SIZE CHECK_WORK_SIZE CHECK_TMP_SIZE CHECK_NETWORK_LINT CONTAINER_IMAGE
+export CHECK_ADMISSION
+
+.PHONY: all check check-info lint test build exec coverage fmt install clean uninstall
+
+all: build
+
+check lint test build exec:
+	@./tests/container/run $@
+
+check-info:
+	@./tests/container/run info
+
+coverage: test
+
+fmt:
+	@./tests/container/run exec golangci-lint fmt
+
+$(TARGET): build
 
 clean:
 	go clean
 	rm -rf $(DISTDIR)
 	rm -f coverage.txt
 
-install: $(TARGET)
+install: build
 	sudo mkdir -p "$(DESTDIR)$(BINPREFIX)"
 	sudo cp -pf $(TARGET) "$(DESTDIR)$(BINPREFIX)/"
 
-test:
-	go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
-
-coverage: test
-	go tool cover -func=coverage.txt
-
-fmt:
-	golangci-lint fmt
-
-# lint: golangci-lint, both of its commands. CI's Lint job also runs
-# markdownlint and `goreleaser check`, which need tooling this repository does
-# not otherwise ask for, so they are left to CI.
-#
-# `run` accepts an unknown key inside `linters.settings` and exits 0, which
-# leaves that setting disabled while CI stays green, so `config verify` is what
-# rejects a misspelled one.
-lint:
-	golangci-lint config verify
-	golangci-lint run
-
 uninstall:
 	sudo rm -f "$(DESTDIR)$(BINPREFIX)/$(TARGET)"
+
+.PHONY: test-native
+test-native:
+	@./tests/native/run

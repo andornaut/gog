@@ -1,0 +1,74 @@
+#!/bin/sh
+set -eu
+
+if [ "$(uname -s)" != Darwin ] || [ "${GITHUB_ACTIONS:-}" != true ]; then
+    printf 'test-native is available only in macOS GitHub Actions.\n' >&2
+    exit 2
+fi
+if [ ! -x /usr/bin/sandbox-exec ]; then
+    printf 'macOS filesystem sandbox is unavailable.\n' >&2
+    exit 2
+fi
+checkout=$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd -P)
+cd "$checkout"
+control=$(mktemp -d "${RUNNER_TEMP:?}/project-check.XXXXXXXX")
+mkdir -p "$control/scratch/home" "$control/scratch/tmp" "$control/denied"
+control=$(CDPATH='' cd -- "$control" && pwd -P)
+scratch=$control/scratch
+fingerprint() {
+    python3 - <<'PY'
+import hashlib
+import os
+import subprocess
+from pathlib import Path
+status = subprocess.check_output(["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"])
+digest = hashlib.sha256(status)
+digest.update(subprocess.check_output(["git", "rev-parse", "HEAD"]))
+entries = iter(status.split(b"\0"))
+for entry in entries:
+    if not entry:
+        continue
+    path = Path(os.fsdecode(entry[3:]))
+    if b"R" in entry[:2] or b"C" in entry[:2]:
+        next(entries, None)
+    if any(part == ".env" or part.startswith(".env.") or part in (".ssh", ".private") for part in path.parts):
+        raise SystemExit("Secret-like dirty path prevents source fingerprinting")
+    if path.is_symlink():
+        digest.update(os.fsencode(os.readlink(path)))
+    elif path.is_file():
+        digest.update(path.read_bytes())
+        digest.update(str(path.stat().st_mode).encode())
+print(digest.hexdigest())
+PY
+}
+before=$(fingerprint)
+sandbox() {
+    /usr/bin/sandbox-exec -D "CHECKOUT=$checkout" -D "SCRATCH=$scratch" \
+        -f "$checkout/tests/native/profile.sb" "$@"
+}
+# Verify enforcement before running repository code.
+sandbox /usr/bin/touch "$scratch/allowed"
+if sandbox /usr/bin/touch "$control/denied/forbidden"; then
+    printf 'macOS sandbox allowed a write outside checkout and scratch.\n' >&2
+    exit 1
+fi
+if [ -e "$control/denied/forbidden" ]; then
+    printf 'macOS sandbox negative probe created a forbidden file.\n' >&2
+    exit 1
+fi
+printf 'macOS sandbox positive and negative write probes passed.\n'
+result=0
+sandbox /usr/bin/env -i PATH="$PATH" HOME="$scratch/home" TMPDIR="$scratch/tmp" \
+    CHECKOUT="$checkout" CHECK_SCRATCH="$scratch" \
+    RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}" \
+    CARGO_HOME="$scratch/cargo" CARGO_TARGET_DIR="$scratch/target" \
+    CARGO_HUSKY_DONT_INSTALL_HOOKS=true \
+    GOPATH="$scratch/go" GOMODCACHE="$scratch/go-mod" GOCACHE="$scratch/go-cache" \
+    GOTOOLCHAIN=local CLANG_MODULE_CACHE_PATH="$scratch/clang-cache" \
+    /bin/sh "$checkout/tests/native/check" || result=$?
+after=$(fingerprint)
+if [ "$before" != "$after" ]; then
+    printf 'Source files changed during native checks; results discarded.\n' >&2
+    exit 1
+fi
+exit "$result"

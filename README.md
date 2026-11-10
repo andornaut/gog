@@ -382,10 +382,22 @@ built itself. Both carry a `checksums.txt`.
 
 | Command | Description |
 | --- | --- |
-| `make build` | Build `./gog` |
+| `make check` | Run lint, tests, and build in isolated containers |
+| `make check-info` | Print the versioned JSON check contract |
+| `make build` | Build and export `./gog` from a container |
 | `make test` | Run the tests with the race detector and coverage |
-| `make coverage` | Report coverage |
-| `make lint` | Run golangci-lint |
+| `make coverage` | Run tests and report coverage |
+| `make lint` | Run all declared lint checks in a container |
+| `make exec COMMAND='go mod tidy'` | Run dependency commands in a container |
+| `make test-native` | Run native tests in the macOS CI filesystem sandbox |
 | `make fmt` | Rewrite the source with golangci-lint's formatter |
 | `make clean` | Run `go clean`, and remove `dist/` and `coverage.txt` |
 | `make install`, `make uninstall` | Copy to `/usr/local/bin` and remove it. Both use sudo |
+
+Checks require Docker, Buildx, and Make. The project owns the image in
+`tests/container/Dockerfile`, its explicit build inputs in `tests/container/context`,
+and check commands in `tests/container/check`. `make test TEST_ARGS='./internal/...'`
+selects focused Go test arguments. `make test` exports `coverage.txt`. Aggregate
+`make check` exports no artifacts.
+Native macOS CI restricts filesystem writes to the checkout and a scratch directory,
+and verifies allowed and denied writes before running the suite.

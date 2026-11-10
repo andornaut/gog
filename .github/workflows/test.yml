@@ -52,26 +52,36 @@ jobs:
           persist-credentials: false
 
       - name: Set up Go
+        if: runner.os == 'macOS'
         uses: actions/setup-go@v7.0.0
         with:
           go-version-file: go.mod
           cache: true
 
-      - name: Verify dependencies
-        run: go mod verify
+      - name: Set up Docker
+        if: runner.os == 'Linux'
+        uses: docker/setup-docker-action@v5.7.0
+        with:
+          version: v29.9.3
 
-      # verify checks the downloaded modules against go.sum, and says nothing
-      # about whether go.mod still describes what the code imports: a dependency
-      # that became direct keeps its // indirect marker until someone runs tidy,
-      # and the next contributor to run it finds a dirty tree.
-      - name: The module file must be tidy
-        run: go mod tidy -diff
+      - name: Set up Buildx
+        if: runner.os == 'Linux'
+        uses: docker/setup-buildx-action@v4.4.1
+        with:
+          version: v0.38.2
+          driver: docker
 
       - name: Build
-        run: go build -v ./...
+        if: runner.os == 'Linux'
+        run: make build
 
       - name: Run tests
-        run: go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
+        if: runner.os == 'Linux'
+        run: make test
+
+      - name: Run native macOS checks
+        if: runner.os == 'macOS'
+        run: make test-native
 
       - name: Upload coverage
         uses: actions/upload-artifact@v7.0.2
@@ -113,52 +123,16 @@ jobs:
           # in .git/config for a later step to read.
           persist-credentials: false
 
-      - name: Set up Go
-        uses: actions/setup-go@v7.0.0
+      - name: Set up Docker
+        uses: docker/setup-docker-action@v5.7.0
         with:
-          go-version-file: go.mod
-          cache: true
+          version: v29.9.3
 
-      - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v9.3.0
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4.4.1
         with:
-          version: v2.15.0
-          # Verification fetches a JSONSchema from golangci-lint.run on every
-          # run, so this step depends on that host being reachable. Kept on
-          # regardless: `run` accepts an unknown key inside `linters.settings`
-          # and exits 0, which leaves that setting disabled while CI stays
-          # green, and only `config verify` rejects it. An unknown linter name
-          # is caught either way.
-          verify: true
+          version: v0.38.2
+          driver: docker
 
-      # Symbol mode, the default, fails only on a known vulnerability the code
-      # can reach, which neither `go mod verify` nor a Dependabot bump reports.
-      # The version is the tool directive's in go.mod, which Dependabot updates.
-      - name: Run govulncheck
-        run: go tool govulncheck ./...
-
-      # The release config, checked here rather than at the tag. goreleaser
-      # validates it as `release` starts, which is after the tag is pushed and
-      # protect-release-tags has no bypass to take one back with. Held to the
-      # same version constraint as the release job, since a check run against a
-      # different goreleaser says nothing about the one that will publish, and
-      # floating is the point: a deprecation lands on a push here rather than
-      # on the one run that cannot be repeated.
-      - name: Check the release config
-        uses: goreleaser/goreleaser-action@v7.3.0
-        with:
-          distribution: goreleaser
-          version: "~> v2"
-          args: check
-
-      # The action bundles markdownlint-cli2, so its own tag is the tool pin and
-      # Dependabot proposes the bump through the github-actions ecosystem. It
-      # fetches nothing at run time, so a slow host cannot turn this red.
-      - name: Run markdownlint
-        uses: DavidAnson/markdownlint-cli2-action@v25.0.0
-        with:
-          # Empty on purpose. The action defaults this to `*.{md,markdown}`,
-          # which is the repository root only, and anything passed here outranks
-          # the `globs` in .markdownlint-cli2.yaml. Empty leaves the config file
-          # deciding, so this gate and a local `markdownlint-cli2` read one list.
-          globs: ""
+      - name: Run lint gate
+        run: make lint
