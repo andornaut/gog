@@ -49,6 +49,8 @@ if [[ ${action} == exec ]]; then
     if [[ $(id -u) == 0 ]]; then printf '%s\n' 'Writable exec requires a non-root host user.' >&2; exit 2; fi
     container_user=$(id -u):$(id -g)
 fi
+container_uid=${container_user%%:*}
+container_gid=${container_user#*:}
 scratch=$(mktemp -d "${TMPDIR:-/tmp}/project-check.XXXXXXXX")
 cidfile=${scratch}/container.id
 run_id=${scratch##*/}
@@ -241,7 +243,7 @@ run_category() {
             mounts+=(--mount "type=bind,source=${scratch}/git-mask,target=/work/.git,readonly")
         fi
     else
-        mounts+=(--mount "type=bind,source=${scratch}/source.tar,target=/source.tar,readonly" --tmpfs "/work:rw,exec,nosuid,size=${work_size},mode=1777")
+        mounts+=(--mount "type=bind,source=${scratch}/source.tar,target=/source.tar,readonly" --tmpfs "/work:rw,exec,nosuid,size=${work_size},uid=${container_uid},gid=${container_gid},mode=1777")
     fi
     if [[ ${category} == command ]]; then dispatcher='exec'; phase='exec'; fi
     run_admission "${phase}"
