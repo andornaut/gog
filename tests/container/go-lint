@@ -1,0 +1,7 @@
+#!/bin/sh
+set -eu
+export GOPATH=/scratch/go GOCACHE=/scratch/go-cache GOMODCACHE=/scratch/go-mod GOTOOLCHAIN=local
+export GOLANGCI_LINT_CACHE=/scratch/golangci-lint
+go mod download
+golangci-lint config verify
+exec golangci-lint run

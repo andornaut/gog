@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+checkout=$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd)
+# shellcheck source=tests/container/stock
+source "${checkout}/tests/container/stock"
+action=${1:-check}
+case "${action}" in check|lint|test|build) ;; *) exit 2 ;; esac
+stock_begin "${checkout}"
+STOCK_NETWORK=bridge stock_run "${GO_IMAGE}" -- sh tests/container/go "${action}"
+if [[ ${action} == check || ${action} == lint ]]; then
+    STOCK_NETWORK=bridge stock_run golangci/golangci-lint:v2.15.0 -- sh tests/container/go-lint
+    stock_run goreleaser/goreleaser:v2.20.0 -- sh tests/container/release-config
+    STOCK_NETWORK=bridge stock_run node:24.22.2 -- sh tests/container/markdown
+    stock_readonly koalaman/shellcheck:v0.11.0 /bin/shellcheck -x -P SCRIPTDIR tests/container/stock tests/container/check-stock tests/container/go tests/container/go-lint tests/container/release-config tests/container/markdown tests/native/run tests/native/check
+fi
+stock_finish

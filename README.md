@@ -380,24 +380,26 @@ built itself. Both carry a `checksums.txt`.
 
 ## Developing
 
+Native commands such as `go test ./...`, `golangci-lint run`, and `go build ./...`
+run directly on the host. Existing Make helpers preserve those native workflows.
+`make check` is the isolated automation entry point.
+
 | Command | Description |
 | --- | --- |
-| `make check` | Run lint, tests, and build in isolated containers |
-| `make check-info` | Print the versioned JSON check contract |
-| `make build` | Build and export `./gog` from a container |
-| `make test` | Run the tests with the race detector and coverage |
-| `make coverage` | Run tests and report coverage |
-| `make lint` | Run all declared lint checks in a container |
-| `make exec COMMAND='go mod tidy'` | Run dependency commands in a container |
-| `make test-native` | Run native tests in the macOS CI filesystem sandbox |
-| `make fmt` | Rewrite the source with golangci-lint's formatter |
+| `make check` | Run lint, race tests, and release-platform builds in containers |
+| `make build` | Build `./gog` natively |
+| `make test` | Run native tests with the race detector and coverage |
+| `make coverage` | Run native tests and report coverage |
+| `make lint` | Run native golangci-lint configuration and source checks |
+| `make fmt` | Rewrite source with the native golangci-lint formatter |
 | `make clean` | Run `go clean`, and remove `dist/` and `coverage.txt` |
 | `make install`, `make uninstall` | Copy to `/usr/local/bin` and remove it. Both use sudo |
 
-Checks require Docker, Buildx, and Make. The project owns the image in
-`tests/container/Dockerfile`, its explicit build inputs in `tests/container/context`,
-and check commands in `tests/container/check`. `make test TEST_ARGS='./internal/...'`
-selects focused Go test arguments. `make test` exports `coverage.txt`. Aggregate
-`make check` exports no artifacts.
-Native macOS CI restricts filesystem writes to the checkout and a scratch directory,
-and verifies allowed and denied writes before running the suite.
+The automation gate requires Docker and Make. It runs the native commands in
+stock Go, lint, release, Node and ShellCheck containers. Dependencies are installed
+in container scratch, and `make check` exports no artifacts.
+Use `go test -run TestName ./...` for focused native tests. Linux CI runs the same native commands in stock containers and exports its coverage report.
+
+`tests/native/run` runs native macOS CI checks in a filesystem sandbox, permitting
+writes only to the checkout and scratch. Positive and negative write probes verify
+enforcement before the suite starts.

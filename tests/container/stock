@@ -1,0 +1,159 @@
+#!/usr/bin/env bash
+# Shared Docker defaults for project-owned native checks.
+
+stock_remove_container() {
+    if [[ -s ${cidfile} ]]; then
+        docker rm --force -- "$(cat "${cidfile}")" >/dev/null 2>&1 || true
+        unlink "${cidfile}"
+    fi
+}
+
+stock_cleanup() {
+    local status=$?
+    trap - EXIT INT TERM HUP
+    stock_remove_container
+    find "${scratch}" -depth -delete
+    exit "${status}"
+}
+
+stock_begin() {
+    checkout=$(realpath -e -- "$1")
+    scratch=$(mktemp -d "${TMPDIR:-/tmp}/project-check.XXXXXXXX")
+    stock_source=${scratch}/source
+    cidfile=${scratch}/container.id
+    git_metadata=(git --no-optional-locks -c core.fsmonitor=false -c core.hooksPath=/dev/null)
+    trap stock_cleanup EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    trap 'exit 129' HUP
+}
+
+stock_image() { printf -v "$1" '%s' "$2"; }
+stock_finish() { stock_remove_container; }
+
+stock_run() {
+    local image=$1
+    shift 2
+    stock_copy_source || return
+    # shellcheck disable=SC2016
+    _stock_container source "${image}" /bin/sh -ec 'cp -R -P /source/. /work/ >&2; exec "$@"' sh "$@"
+}
+
+stock_run_image() {
+    local image=$1
+    shift 2
+    _stock_container image "${image}" "$@"
+}
+
+stock_readonly() {
+    stock_copy_source || return
+    _stock_container readonly "$@"
+}
+
+_stock_container() {
+    local mode=$1 image=$2 entrypoint=$3 status network=${STOCK_NETWORK:-none}
+    local -a mounts=()
+    shift 3
+    if [[ ${mode} == readonly ]]; then
+        network=none
+        mounts+=(--mount "type=bind,source=${stock_source},target=/work,readonly")
+    else
+        mounts+=(--tmpfs "/work:rw,exec,nosuid,size=${CHECK_WORK_SIZE:-2g},uid=19001,gid=19001,mode=1777")
+        if [[ ${mode} == source ]]; then mounts+=(--mount "type=bind,source=${stock_source},target=/source,readonly"); fi
+    fi
+    if [[ -n ${STOCK_OUTPUT_DIR:-} ]]; then
+        mkdir -p -- "${STOCK_OUTPUT_DIR}"
+        chmod 1777 -- "${STOCK_OUTPUT_DIR}"
+        mounts+=(--mount "type=bind,source=${STOCK_OUTPUT_DIR},target=/outputs")
+    fi
+    stock_remove_container
+    set +e
+    timeout --signal=TERM --kill-after=10 "${CHECK_TIMEOUT_SECONDS:-900}" docker run --rm \
+        --cidfile "${cidfile}" --user 19001:19001 --cpus 4 --memory "${CHECK_MEMORY:-4g}" \
+        --ulimit nofile=256:256 --pids-limit 512 --read-only --cap-drop ALL --security-opt no-new-privileges \
+        --network "${network}" "${mounts[@]}" \
+        --tmpfs "/scratch:rw,exec,nosuid,size=${CHECK_SCRATCH_SIZE:-1g},mode=1777" \
+        --tmpfs "/tmp:rw,exec,nosuid,size=${CHECK_TMP_SIZE:-1g},mode=1777" \
+        --env HOME=/tmp --env TMPDIR=/scratch --workdir /work --entrypoint "${entrypoint}" "${image}" "$@"
+    status=$?
+    set -e
+    stock_remove_container
+    return "${status}"
+}
+
+stock_copy_source() {
+    [[ ! -d ${stock_source} ]] || return 0
+    local path source target parent component
+    mkdir "${stock_source}"
+    collect_source "${checkout}" '' > "${scratch}/source.list" || return
+    while IFS= read -r -d '' path; do
+        source=${checkout}/${path}
+        target=${stock_source}/${path}
+        parent=${stock_source}
+        IFS=/ read -r -a components <<< "${path}"
+        for component in "${components[@]:0:${#components[@]}-1}"; do
+            parent+=/${component}
+            if [[ -L ${parent} ]]; then printf 'Source has a symlink parent: %s\n' "${path}" >&2; return 2; fi
+        done
+        mkdir -p -- "$(dirname -- "${target}")" || return
+        if [[ -d ${source} && ! -L ${source} ]]; then
+            mkdir -- "${target}" || return
+        elif [[ -f ${source} || -L ${source} ]]; then
+            cp --no-dereference --preserve=mode,timestamps --no-preserve=ownership -T -- "${source}" "${target}" || return
+        else
+            printf 'Source input is not a regular file, directory or symlink: %s\n' "${path}" >&2
+            return 2
+        fi
+    done < "${scratch}/source.list"
+    find -P "${stock_source}" -type d -exec chmod a+rx {} +
+    find -P "${stock_source}" -type f -exec chmod a+r {} +
+}
+
+excluded() {
+    case "${1,,}" in
+        /*|..|../*|*/../*|*/..|.git|.git/*|*/.git|*/.git/*) return 0 ;;
+        agents.md|*/agents.md|claude.md|*/claude.md|claude.local.md|*/claude.local.md|gemini.md|*/gemini.md) return 0 ;;
+        .env|.env.*|*/.env|*/.env.*|*.env|.dev.vars|.dev.vars.*|*/.dev.vars|*/.dev.vars.*) return 0 ;;
+        .npmrc|*/.npmrc|.pypirc|*/.pypirc|.netrc|*/.netrc|.git-credentials|*/.git-credentials|.private/*|*/.private/*|.ssh/*|*/.ssh/*|.aws/*|*/.aws/*) return 0 ;;
+        credentials|credentials.*|*/credentials|*/credentials.*|*.pem|*.key|*.crt|*.cer|*.p12|*.pfx|*.age|*.gpg|*.sops.*) return 0 ;;
+    esac
+    return 1
+}
+contained() {
+    local path=$1 resolved relative
+    resolved=$(realpath -m -- "${checkout}/$(dirname -- "${path}")")
+    case "${resolved}" in
+        "${checkout}"|"${checkout}"/*) ;;
+        *) printf 'Source path escapes checkout: %s\n' "${path}" >&2; return 2 ;;
+    esac
+    if [[ ${resolved} == "${checkout}" ]]; then
+        relative=$(basename -- "${path}")
+    else
+        relative=${resolved#"${checkout}/"}
+        if excluded "${relative}" || excluded "${relative}/"; then
+            printf 'Source parent resolves to an excluded location: %s\n' "${path}" >&2
+            return 2
+        fi
+        relative+=/$(basename -- "${path}")
+    fi
+    if excluded "${relative}"; then printf 'Source path resolves to an excluded location: %s\n' "${path}" >&2; return 2; fi
+}
+collect_source() {
+    local root=$1 prefix=$2 path relative entries
+    entries=$(mktemp "${scratch}/git-files.XXXXXXXX")
+    "${git_metadata[@]}" -C "${root}" ls-files --cached --others --exclude-standard -z > "${entries}" || return
+    while IFS= read -r -d '' path; do
+        relative=${prefix}${path}
+        if excluded "${relative}"; then continue; fi
+        contained "${relative}" || return
+        if [[ -d ${root}/${path} && ! -L ${root}/${path} ]]; then
+            if [[ -e ${root}/${path}/.git ]]; then
+                collect_source "${root}/${path}" "${relative}/" || return
+            elif [[ $("${git_metadata[@]}" --literal-pathspecs -C "${root}" ls-files --format='%(objectmode)' -- "${path}") == 160000 ]]; then
+                printf '%s\0' "${relative}"
+            fi
+        elif [[ -e ${root}/${path} || -L ${root}/${path} ]]; then
+            printf '%s\0' "${relative}"
+        fi
+    done < "${entries}"
+}

@@ -1,0 +1,6 @@
+#!/bin/sh
+set -eu
+mkdir -p /scratch/markdown
+cp tests/container/package.json tests/container/package-lock.json /scratch/markdown/
+npm ci --prefix /scratch/markdown --ignore-scripts --maxsockets=1 --no-audit --no-fund
+exec /scratch/markdown/node_modules/.bin/markdownlint-cli2

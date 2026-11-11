@@ -1,0 +1,7 @@
+#!/bin/sh
+set -eu
+git init --quiet --initial-branch=main .
+git add --all
+git -c user.name='Container checks' -c user.email=checks@example.invalid commit --quiet -m 'Check source'
+git remote add origin https://github.com/andornaut/gog.git
+exec goreleaser check

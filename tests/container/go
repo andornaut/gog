@@ -1,0 +1,27 @@
+#!/bin/sh
+set -eu
+export GOPATH=/scratch/go GOCACHE=/scratch/go-cache GOMODCACHE=/scratch/go-mod GOTOOLCHAIN=local
+go mod download
+case "${1:-check}" in
+    lint|check)
+        go mod verify
+        go mod tidy -diff
+        go tool govulncheck ./...
+        ;;
+esac
+case "${1:-check}" in
+    test|check)
+        CGO_ENABLED=1 go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
+        go tool cover -func=coverage.txt
+        if [ -d /outputs ]; then cp coverage.txt /outputs/coverage.txt; fi
+        ;;
+esac
+case "${1:-check}" in
+    build|check)
+        go build -v ./...
+        for target in linux/amd64 linux/arm64 darwin/arm64; do
+            CGO_ENABLED=0 GOOS=${target%/*} GOARCH=${target#*/} \
+                go build -ldflags='-s -w' -trimpath -o "/scratch/build-${target%/*}-${target#*/}" .
+        done
+        ;;
+esac
